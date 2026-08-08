@@ -219,7 +219,7 @@ cargo run --bin zsui-uic `
 - 未解析或类型不一致的状态、动作绑定；
 - 非法布局值、主题 token、本地化键和辅助功能字段。
 
-加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、`settings_card`、`items_repeater`、`image`、
+加上 `--json` 可输出确定性结构化诊断。当前第一阶段支持 `stack`、`border`、`settings_card`、`items_repeater`、`image`、`video`、
 `text`、`badge`、`split_view`、`canvas`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
@@ -1020,7 +1020,7 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-全部 48 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
+全部 49 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
 身份：绑定类型和普通/安全存储通道兼容时保留值；绑定被删除、改型或改变存储通道时，
 `source.last_reload.binding_state_resets` 输出确定性原因，旧值不会进入新 View 编译。Win32、
 AppKit 与 Linux Direct 均已有固定 Runner Viewer 证据；仍需补齐高级控件在 AppKit/Linux

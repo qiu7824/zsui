@@ -1158,6 +1158,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_slider_value_change_count: usize,
     pub native_view_slider_keyboard_change_count: usize,
     pub native_view_slider_drag_count: usize,
+    pub native_view_scrollbar_drag_count: usize,
     pub native_view_items_repeater_viewport_change_count: usize,
     pub native_view_items_repeater_scrollbar_drag_count: usize,
     pub native_view_color_picker_value_change_count: usize,
@@ -1320,6 +1321,7 @@ impl NativeWindowSmokeRunReport {
             native_view_slider_value_change_count: 0,
             native_view_slider_keyboard_change_count: 0,
             native_view_slider_drag_count: 0,
+            native_view_scrollbar_drag_count: 0,
             native_view_items_repeater_viewport_change_count: 0,
             native_view_items_repeater_scrollbar_drag_count: 0,
             native_view_color_picker_value_change_count: 0,
@@ -1438,8 +1440,10 @@ pub(crate) struct NativeViewInputRuntime {
     combo_type_ahead: NativeComboTypeAheadState,
     #[cfg(feature = "slider")]
     slider_drag: Option<crate::WidgetId>,
+    #[cfg(feature = "scroll")]
+    scrollbar_drag: Option<NativeScrollbarDrag>,
     #[cfg(feature = "virtual-list")]
-    items_repeater_scrollbar_drag: Option<NativeItemsRepeaterScrollbarDrag>,
+    items_repeater_scrollbar_drag: Option<NativeScrollbarDrag>,
     #[cfg(feature = "color-picker")]
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(any(
@@ -1518,9 +1522,9 @@ struct NativeCanvasPointerCapture {
     last_point: Point,
 }
 
-#[cfg(feature = "virtual-list")]
+#[cfg(feature = "scroll")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct NativeItemsRepeaterScrollbarDrag {
+struct NativeScrollbarDrag {
     widget: crate::WidgetId,
     pointer_offset_in_thumb: i32,
 }
@@ -1629,6 +1633,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub slider_value_changed: bool,
     #[cfg(feature = "slider")]
     pub slider_drag_active: bool,
+    #[cfg(feature = "scroll")]
+    pub scrollbar_drag_active: bool,
     #[cfg(feature = "virtual-list")]
     pub items_repeater_viewport_changed: bool,
     #[cfg(feature = "virtual-list")]
@@ -1790,6 +1796,8 @@ impl NativeViewInputRuntime {
             combo_type_ahead: NativeComboTypeAheadState::default(),
             #[cfg(feature = "slider")]
             slider_drag: None,
+            #[cfg(feature = "scroll")]
+            scrollbar_drag: None,
             #[cfg(feature = "virtual-list")]
             items_repeater_scrollbar_drag: None,
             #[cfg(feature = "color-picker")]
@@ -1887,6 +1895,10 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "slider")]
         {
             self.slider_drag = None;
+        }
+        #[cfg(feature = "scroll")]
+        {
+            self.scrollbar_drag = None;
         }
         #[cfg(feature = "virtual-list")]
         {
@@ -2015,6 +2027,24 @@ impl NativeViewInputRuntime {
         self.focused_widget
     }
 
+    #[cfg(feature = "accessibility")]
+    pub(crate) fn semantic_accessibility_focus(&self) -> Option<crate::WidgetId> {
+        #[cfg(feature = "dialog")]
+        if let Some(dialog) = self.focused_widget {
+            if let Some((state, spec)) = self.widget_content_dialog_state(dialog) {
+                if state.open && spec.has_button(state.focused_button) {
+                    return Some(
+                        crate::content_dialog::zs_content_dialog_button_accessibility_id(
+                            dialog,
+                            state.focused_button,
+                        ),
+                    );
+                }
+            }
+        }
+        self.focused_widget
+    }
+
     #[cfg(all(feature = "accessibility", feature = "tabs"))]
     pub(crate) fn tab_accessibility_snapshots(
         &self,
@@ -2060,6 +2090,43 @@ impl NativeViewInputRuntime {
         &mut self,
         widget: crate::WidgetId,
     ) -> NativeViewInputDispatchReport {
+        #[cfg(all(feature = "accessibility", feature = "dialog"))]
+        if let Some(action) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.accessibility_action_for_widget(widget))
+        {
+            let (dialog, button) =
+                crate::content_dialog::zs_content_dialog_accessibility_action_button(action);
+            let Some((state, spec)) = self.widget_content_dialog_state(dialog) else {
+                return NativeViewInputDispatchReport::default();
+            };
+            if !state.open || !spec.has_button(button) {
+                return NativeViewInputDispatchReport::default();
+            }
+            let mut report = NativeViewInputDispatchReport {
+                handled: true,
+                hit_target_count: self.hit_target_count(),
+                focused_widget: self.focused_widget.map(|focused| focused.0),
+                content_dialog_focus_changed: state.focused_button != button,
+                focus_visual_changed: state.focused_button != button,
+                ..NativeViewInputDispatchReport::default()
+            };
+            if self.focused_widget != Some(dialog) {
+                if let Some(target) = self
+                    .current_interaction_plan()
+                    .and_then(|plan| plan.focus_target_for_widget(dialog))
+                {
+                    self.focus_target(target, &mut report);
+                }
+            }
+            return self.dispatch_view_event(
+                ViewEvent::ContentDialogFocused {
+                    widget: dialog,
+                    button,
+                },
+                report,
+            );
+        }
         let mut report = NativeViewInputDispatchReport::default();
         let Some(target) = self
             .current_interaction_plan()
@@ -2077,6 +2144,33 @@ impl NativeViewInputRuntime {
         &mut self,
         widget: crate::WidgetId,
     ) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "dialog")]
+        if let Some(action) = self
+            .current_interaction_plan()
+            .and_then(|plan| plan.accessibility_action_for_widget(widget))
+        {
+            let (dialog, button) =
+                crate::content_dialog::zs_content_dialog_accessibility_action_button(action);
+            let Some((state, spec)) = self.widget_content_dialog_state(dialog) else {
+                return NativeViewInputDispatchReport::default();
+            };
+            if !state.open || !spec.has_button(button) {
+                return NativeViewInputDispatchReport::default();
+            }
+            return self.dispatch_view_event(
+                ViewEvent::ContentDialogResponded {
+                    widget: dialog,
+                    button,
+                },
+                NativeViewInputDispatchReport {
+                    handled: true,
+                    hit_target_count: self.hit_target_count(),
+                    focused_widget: self.focused_widget.map(|focused| focused.0),
+                    content_dialog_responded: true,
+                    ..NativeViewInputDispatchReport::default()
+                },
+            );
+        }
         let Some(target) = self
             .current_interaction_plan()
             .and_then(|plan| plan.hit_target_for_widget(widget))
@@ -2230,6 +2324,87 @@ impl NativeViewInputRuntime {
         report
     }
 
+    #[cfg(all(
+        feature = "accessibility",
+        any(feature = "slider", feature = "number-box")
+    ))]
+    pub(crate) fn dispatch_accessibility_set_numeric_value(
+        &mut self,
+        widget: crate::WidgetId,
+        value: f64,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = self.dispatch_accessibility_focus(widget);
+        if !value.is_finite() {
+            return report;
+        }
+        #[cfg(feature = "slider")]
+        if let Some((current, range)) = self.widget_slider_state(widget) {
+            let value = range.snap(value as f32);
+            report.handled = true;
+            report.focused_widget = Some(widget.0);
+            report.slider_value = Some(value);
+            if (value - current).abs() <= f32::EPSILON {
+                return report;
+            }
+            report.slider_value_changed = true;
+            return self.dispatch_view_event(ViewEvent::SliderChanged { widget, value }, report);
+        }
+
+        #[cfg(feature = "number-box")]
+        if let Some((current, range)) = self.widget_number_box_accessibility_state(widget) {
+            let value = range.clamp(value);
+            report.handled = true;
+            report.focused_widget = Some(widget.0);
+            if current == Some(value) {
+                return report;
+            }
+            return self.dispatch_view_event(
+                ViewEvent::NumberBoxValueChanged {
+                    widget,
+                    value: Some(value),
+                },
+                report,
+            );
+        }
+
+        report
+    }
+
+    #[cfg(all(
+        feature = "accessibility",
+        any(feature = "slider", feature = "number-box")
+    ))]
+    pub(crate) fn dispatch_accessibility_adjust_numeric_value(
+        &mut self,
+        widget: crate::WidgetId,
+        steps: i32,
+    ) -> NativeViewInputDispatchReport {
+        #[cfg(feature = "slider")]
+        if let Some((current, range)) = self.widget_slider_state(widget) {
+            return self.dispatch_accessibility_set_numeric_value(
+                widget,
+                range.offset_steps(current, steps) as f64,
+            );
+        }
+
+        #[cfg(feature = "number-box")]
+        if self.widget_number_box_accessibility_state(widget).is_some() {
+            let mut report = self.dispatch_accessibility_focus(widget);
+            report.handled = true;
+            report.focused_widget = Some(widget.0);
+            return self.dispatch_view_event(
+                ViewEvent::NumberBoxStep {
+                    widget,
+                    steps,
+                    large: false,
+                },
+                report,
+            );
+        }
+
+        NativeViewInputDispatchReport::default()
+    }
+
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     pub(crate) fn dispatch_accessibility_set_selection(
         &mut self,
@@ -2275,6 +2450,7 @@ impl NativeViewInputRuntime {
         report.handled = true;
         report.text_selection_changed = previous != state.selection;
         report.text_caret = Some(state.selection.caret);
+        #[cfg(feature = "textbox")]
         if report.text_selection_changed {
             report = self.dispatch_view_event(
                 ViewEvent::TextSelectionChanged {
@@ -2381,6 +2557,10 @@ impl NativeViewInputRuntime {
                 #[cfg(feature = "slider")]
                 {
                     self.slider_drag = None;
+                }
+                #[cfg(feature = "scroll")]
+                {
+                    self.scrollbar_drag = None;
                 }
                 #[cfg(feature = "virtual-list")]
                 {
@@ -2703,6 +2883,10 @@ impl NativeViewInputRuntime {
         if self.slider_drag.take().is_some() {
             return report;
         }
+        #[cfg(feature = "scroll")]
+        if self.scrollbar_drag.is_some() {
+            return self.dispatch_pointer_up(point);
+        }
         #[cfg(feature = "virtual-list")]
         if self.items_repeater_scrollbar_drag.is_some() {
             return self.dispatch_pointer_up(point);
@@ -2843,10 +3027,48 @@ impl NativeViewInputRuntime {
             report.slider_drag_active = true;
             return self.dispatch_slider_pointer(target, point, report);
         }
+        #[cfg(feature = "scroll")]
+        if target.kind == crate::ViewHitTargetKind::ScrollbarThumb {
+            self.text_drag = None;
+            if let Some(layout) = self.widget_scrollbar_layout(target.widget) {
+                self.scrollbar_drag = Some(NativeScrollbarDrag {
+                    widget: target.widget,
+                    pointer_offset_in_thumb: point.y.saturating_sub(layout.thumb.y),
+                });
+                report.handled = true;
+                report.scrollbar_drag_active = true;
+            }
+            return report;
+        }
+        #[cfg(feature = "scroll")]
+        if target.kind == crate::ViewHitTargetKind::ScrollbarTrack {
+            self.text_drag = None;
+            if let Some(layout) = self.widget_scrollbar_layout(target.widget) {
+                let drag_range = layout
+                    .track
+                    .height
+                    .saturating_sub(layout.thumb.height)
+                    .max(1);
+                let desired_top = point
+                    .y
+                    .saturating_sub(layout.thumb.height / 2)
+                    .clamp(layout.track.y, layout.track.y.saturating_add(drag_range));
+                let ratio = desired_top.saturating_sub(layout.track.y) as f32 / drag_range as f32;
+                report.handled = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ScrollToRatio {
+                        widget: target.widget,
+                        ratio,
+                    },
+                    report,
+                );
+            }
+            return report;
+        }
         #[cfg(feature = "virtual-list")]
         if target.kind == crate::ViewHitTargetKind::ItemsRepeaterScrollbarThumb {
             self.text_drag = None;
-            self.items_repeater_scrollbar_drag = Some(NativeItemsRepeaterScrollbarDrag {
+            self.items_repeater_scrollbar_drag = Some(NativeScrollbarDrag {
                 widget: target.widget,
                 pointer_offset_in_thumb: point.y.saturating_sub(target.bounds.y),
             });
@@ -3137,6 +3359,32 @@ impl NativeViewInputRuntime {
             return report;
         }
         let Some(drag) = self.text_drag else {
+            #[cfg(feature = "scroll")]
+            if let Some(drag) = self.scrollbar_drag {
+                if let Some(layout) = self.widget_scrollbar_layout(drag.widget) {
+                    let drag_range = layout
+                        .track
+                        .height
+                        .saturating_sub(layout.thumb.height)
+                        .max(1);
+                    let desired_top = point
+                        .y
+                        .saturating_sub(drag.pointer_offset_in_thumb)
+                        .clamp(layout.track.y, layout.track.y.saturating_add(drag_range));
+                    let ratio =
+                        desired_top.saturating_sub(layout.track.y) as f32 / drag_range as f32;
+                    report.handled = true;
+                    report.scrollbar_drag_active = true;
+                    return self.dispatch_view_event(
+                        ViewEvent::ScrollToRatio {
+                            widget: drag.widget,
+                            ratio,
+                        },
+                        report,
+                    );
+                }
+                self.scrollbar_drag = None;
+            }
             #[cfg(feature = "virtual-list")]
             if let Some(drag) = self.items_repeater_scrollbar_drag {
                 let geometry = self.current_interaction_plan().and_then(|plan| {
@@ -3429,6 +3677,14 @@ impl NativeViewInputRuntime {
                 feature = "tree"
             ))]
             self.update_pointer_visual_state(self.pointer_hover, None, &mut report);
+            return report;
+        }
+        #[cfg(feature = "scroll")]
+        if self.scrollbar_drag.is_some() {
+            let mut report = self.dispatch_pointer_move(point);
+            self.scrollbar_drag = None;
+            report.handled = true;
+            report.scrollbar_drag_active = false;
             return report;
         }
         #[cfg(feature = "virtual-list")]
@@ -3956,6 +4212,8 @@ impl NativeViewInputRuntime {
         let had_drag = had_drag | self.password_peek.take().is_some();
         #[cfg(feature = "slider")]
         let had_drag = had_drag | self.slider_drag.take().is_some();
+        #[cfg(feature = "scroll")]
+        let had_drag = had_drag | self.scrollbar_drag.take().is_some();
         #[cfg(feature = "virtual-list")]
         let had_drag = had_drag | self.items_repeater_scrollbar_drag.take().is_some();
         #[cfg(feature = "color-picker")]
@@ -3973,6 +4231,8 @@ impl NativeViewInputRuntime {
             canvas_pointer_button: canvas_pointer.map(|capture| capture.button),
             #[cfg(feature = "slider")]
             slider_drag_active: false,
+            #[cfg(feature = "scroll")]
+            scrollbar_drag_active: false,
             #[cfg(feature = "virtual-list")]
             items_repeater_scrollbar_drag_active: false,
             #[cfg(feature = "color-picker")]
@@ -7060,6 +7320,36 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "number-box")]
+    pub(crate) fn widget_number_box_accessibility_state(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<(Option<f64>, crate::ZsNumberRange)> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_number_box_accessibility_state(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_number_box_accessibility_state(widget))
+            })
+    }
+
+    #[cfg(feature = "scroll")]
+    pub(crate) fn widget_scrollbar_layout(
+        &self,
+        widget: crate::WidgetId,
+    ) -> Option<crate::ZsScrollbarLayout> {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_scrollbar_layout(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_scrollbar_layout(widget))
+            })
+    }
+
     #[cfg(feature = "auto-suggest")]
     pub(crate) fn widget_auto_suggest_state(
         &self,
@@ -8265,6 +8555,21 @@ pub(crate) fn record_native_view_input_reports(
                 .is_some_and(|dispatch| !dispatch.items_repeater_scrollbar_drag_active)
         {
             report.native_view_items_repeater_scrollbar_drag_count += 1;
+        }
+        #[cfg(feature = "scroll")]
+        if matches!(
+            input,
+            NativeViewSmokeInput::Drag { .. }
+                | NativeViewSmokeInput::DragWidget(_)
+                | NativeViewSmokeInput::PointerDrag { .. }
+        ) && input_dispatches
+            .iter()
+            .any(|dispatch| dispatch.scrollbar_drag_active)
+            && input_dispatches
+                .last()
+                .is_some_and(|dispatch| !dispatch.scrollbar_drag_active)
+        {
+            report.native_view_scrollbar_drag_count += 1;
         }
 
         match input {
@@ -11084,6 +11389,91 @@ mod tests {
         assert_eq!(left.slider_value, Some(70.0));
         assert_eq!(coarse_right.slider_value, Some(100.0));
         assert_eq!(runtime.widget_slider_state(slider_id), Some((100.0, range)));
+
+        #[cfg(feature = "accessibility")]
+        {
+            let set = runtime.dispatch_accessibility_set_numeric_value(slider_id, 33.0);
+            assert!(set.handled);
+            assert!(set.slider_value_changed);
+            assert_eq!(set.slider_value, Some(35.0));
+            let increment = runtime.dispatch_accessibility_adjust_numeric_value(slider_id, 1);
+            assert_eq!(increment.slider_value, Some(40.0));
+            let decrement = runtime.dispatch_accessibility_adjust_numeric_value(slider_id, -1);
+            assert_eq!(decrement.slider_value, Some(35.0));
+            assert_eq!(runtime.widget_slider_state(slider_id), Some((35.0, range)));
+        }
+    }
+
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    #[test]
+    fn native_view_runtime_routes_scrollbar_track_and_offset_preserving_thumb_drag() {
+        #[derive(Clone)]
+        enum Msg {
+            Scrolled(crate::Dp),
+        }
+
+        let scroll_id = crate::WidgetId::new(811);
+        let builder = native_window("Platform Scrollbar")
+            .size(320, 160)
+            .stateful_view(
+                crate::Dp::new(0.0),
+                move |offset| {
+                    crate::scroll(
+                        crate::column((0..12).map(|index| {
+                            crate::text(format!("Row {index}")).height(crate::Dp::new(32.0))
+                        }))
+                        .gap(crate::Dp::new(4.0)),
+                    )
+                    .id(scroll_id)
+                    .content_height(crate::Dp::new(428.0))
+                    .scroll_y(*offset)
+                    .on_scroll(Msg::Scrolled)
+                },
+                |offset, message, _cx| match message {
+                    Msg::Scrolled(next) => *offset = next,
+                },
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        let initial = runtime
+            .widget_scrollbar_layout(scroll_id)
+            .expect("overflowing Scroll should expose a scrollbar");
+
+        let track_click = Point {
+            x: initial.track_hit.x,
+            y: initial.track.y + initial.track.height / 2,
+        };
+        let clicked = runtime.dispatch_pointer_down(track_click, false);
+        assert!(clicked.handled);
+        assert_eq!(clicked.message_count, 1);
+        let after_click = runtime
+            .widget_scrollbar_layout(scroll_id)
+            .expect("track click should retain scrollbar geometry");
+        assert!(after_click.offset_y.0 > 0.0);
+
+        let thumb_press = Point {
+            x: after_click.thumb_hit.x,
+            y: after_click.thumb.y + after_click.thumb.height / 3,
+        };
+        let pressed = runtime.dispatch_pointer_down(thumb_press, false);
+        let dragged = runtime.dispatch_pointer_move(Point {
+            x: thumb_press.x,
+            y: after_click.track.y + after_click.track.height,
+        });
+        let released = runtime.dispatch_pointer_up(Point {
+            x: thumb_press.x,
+            y: after_click.track.y + after_click.track.height,
+        });
+
+        assert!(pressed.handled);
+        assert!(pressed.scrollbar_drag_active);
+        assert!(dragged.handled);
+        assert!(dragged.scrollbar_drag_active);
+        assert_eq!(dragged.message_count, 1);
+        assert!(!released.scrollbar_drag_active);
+        let final_layout = runtime
+            .widget_scrollbar_layout(scroll_id)
+            .expect("drag should retain scrollbar geometry");
+        assert_eq!(final_layout.offset_y, final_layout.maximum_offset);
     }
 
     #[cfg(all(feature = "virtual-list", feature = "label"))]
@@ -11272,6 +11662,29 @@ mod tests {
         assert!(typed.handled);
         assert!(committed.handled);
         assert_eq!(runtime.focused_text_input_value().as_deref(), Some("-1.5"));
+
+        #[cfg(feature = "accessibility")]
+        {
+            let set = runtime.dispatch_accessibility_set_numeric_value(number_id, 7.25);
+            assert!(set.handled);
+            assert_eq!(set.message_count, 1);
+            assert_eq!(
+                runtime.widget_number_box_accessibility_state(number_id),
+                Some((Some(7.2), range))
+            );
+            let increment = runtime.dispatch_accessibility_adjust_numeric_value(number_id, 1);
+            assert!(increment.handled);
+            assert_eq!(
+                runtime.widget_number_box_accessibility_state(number_id),
+                Some((Some(7.7), range))
+            );
+            let decrement = runtime.dispatch_accessibility_adjust_numeric_value(number_id, -1);
+            assert!(decrement.handled);
+            assert_eq!(
+                runtime.widget_number_box_accessibility_state(number_id),
+                Some((Some(7.2), range))
+            );
+        }
     }
 
     #[cfg(feature = "radio")]
@@ -12072,29 +12485,33 @@ mod tests {
             crate::platform_component_profile::PlatformComponentProfile::current()
                 .dialog
                 .relative_button(&dialog_spec, crate::ZsContentDialogButton::Primary, 1);
-        let builder = native_window("Platform Dialog")
-            .size(640, 400)
-            .stateful_view(
-                State {
-                    open: true,
-                    result: None,
-                },
-                move |state| {
-                    crate::content_dialog(
-                        widget,
-                        state.open,
-                        dialog_spec.clone(),
-                        crate::spacer().id(background),
-                    )
-                    .on_dialog_result(Msg::Responded)
-                },
-                |state, message, _cx| match message {
-                    Msg::Responded(result) => {
-                        state.open = false;
-                        state.result = Some(result);
-                    }
-                },
-            );
+        let build = || {
+            let dialog_spec = dialog_spec.clone();
+            native_window("Platform Dialog")
+                .size(640, 400)
+                .stateful_view(
+                    State {
+                        open: true,
+                        result: None,
+                    },
+                    move |state| {
+                        crate::content_dialog(
+                            widget,
+                            state.open,
+                            dialog_spec.clone(),
+                            crate::spacer().id(background),
+                        )
+                        .on_dialog_result(Msg::Responded)
+                    },
+                    |state, message, _cx| match message {
+                        Msg::Responded(result) => {
+                            state.open = false;
+                            state.result = Some(result);
+                        }
+                    },
+                )
+        };
+        let builder = build();
         let interaction = builder
             .native_view_interaction_plan()
             .expect("open dialog interaction plan");
@@ -12144,6 +12561,43 @@ mod tests {
                 .map(|target| target.widget),
             Some(background)
         );
+
+        #[cfg(feature = "accessibility")]
+        {
+            let mut accessibility_runtime = build().native_view_input_runtime();
+            let secondary = crate::content_dialog::zs_content_dialog_button_accessibility_id(
+                widget,
+                crate::ZsContentDialogButton::Secondary,
+            );
+            let primary = crate::content_dialog::zs_content_dialog_button_accessibility_id(
+                widget,
+                crate::ZsContentDialogButton::Primary,
+            );
+            assert_eq!(
+                accessibility_runtime.semantic_accessibility_focus(),
+                Some(primary)
+            );
+            let focused = accessibility_runtime.dispatch_accessibility_focus(secondary);
+            assert!(focused.handled);
+            assert!(focused.content_dialog_focus_changed);
+            assert_eq!(
+                accessibility_runtime.semantic_accessibility_focus(),
+                Some(secondary)
+            );
+            assert_eq!(
+                accessibility_runtime
+                    .widget_content_dialog_state(widget)
+                    .map(|(state, _)| state.focused_button),
+                Some(crate::ZsContentDialogButton::Secondary)
+            );
+            let invoked = accessibility_runtime.dispatch_accessibility_invoke(primary);
+            assert!(invoked.handled);
+            assert!(invoked.content_dialog_responded);
+            assert_eq!(invoked.message_count, 1);
+            assert!(accessibility_runtime
+                .widget_content_dialog_state(widget)
+                .is_some_and(|(state, _)| !state.open));
+        }
     }
 
     #[cfg(all(feature = "button", feature = "flyout", feature = "label"))]

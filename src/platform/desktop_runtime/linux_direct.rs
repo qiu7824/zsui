@@ -85,7 +85,7 @@ impl DesktopRuntimeBackend for Backend {
                 screenshot_backend: if cfg!(feature = "linux-direct") {
                     "winit_softbuffer_cairo_pango"
                 } else {
-                    "winit_softbuffer_cosmic_text_tiny_skia"
+                    crate::linux_direct::LINUX_DIRECT_LITE_CAPTURE_BACKEND
                 },
                 missing_capture_error:
                     "the Linux direct event loop exited before the final surface capture",

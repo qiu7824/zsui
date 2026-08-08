@@ -898,6 +898,27 @@ pub fn image<Msg>(frame: crate::ZsImageFrame) -> ViewNode<Msg> {
     })
 }
 
+/// Creates a retained video surface backed by a cloneable latest-frame source.
+///
+/// A camera or decoder thread may call [`crate::ZsVideoSource::present`] while
+/// the native View is running. ZSUI retains only the newest complete frame and
+/// presents it through the normal buffered raster path.
+#[cfg(feature = "video")]
+pub fn video<Msg>(source: crate::ZsVideoSource) -> ViewNode<Msg> {
+    let node = ViewNode::<Msg>::new(ViewNodeKind::Video {
+        source,
+        fit: crate::ZsVideoFit::Contain,
+        interpolation: NativeImageInterpolation::Smooth,
+    })
+    .min_width(Dp::new(160.0))
+    .min_height(Dp::new(90.0));
+    #[cfg(feature = "accessibility")]
+    let node = node.accessibility(crate::ZsAccessibilitySpec::new(
+        crate::ZsAccessibilityRole::Image,
+    ));
+    node
+}
+
 pub fn spacer<Msg>() -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Spacer)
 }

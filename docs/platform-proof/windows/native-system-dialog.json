@@ -1,0 +1,21 @@
+{
+  "schema": "zsui.native-system-dialog-proof/v1",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "native_surface": "win32_message_box",
+  "title": "ZSUI 系统消息对话框验证 / Native System Dialog Proof",
+  "owner_window_supplied": false,
+  "localized_button_labels": [
+    "确定",
+    "取消",
+    "是",
+    "否"
+  ],
+  "expected_response": "yes",
+  "actual_response": "yes",
+  "response_matched": true,
+  "screenshot_file": "native-system-dialog.png",
+  "screenshot_captured": true,
+  "elapsed_ms": 1453,
+  "errors": []
+}

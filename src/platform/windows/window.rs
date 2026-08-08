@@ -169,6 +169,24 @@ unsafe fn windows_win32_outer_size_for_client(
     style: u32,
     ex_style: u32,
 ) -> (i32, i32) {
+    windows_win32_outer_size_for_client_at_dpi(
+        width,
+        height,
+        style,
+        ex_style,
+        false,
+        GetDpiForSystem().max(96),
+    )
+}
+
+unsafe fn windows_win32_outer_size_for_client_at_dpi(
+    width: i32,
+    height: i32,
+    style: u32,
+    ex_style: u32,
+    has_menu: bool,
+    dpi: u32,
+) -> (i32, i32) {
     let width = width.max(1);
     let height = height.max(1);
     let mut rect = RECT {
@@ -177,8 +195,7 @@ unsafe fn windows_win32_outer_size_for_client(
         right: width,
         bottom: height,
     };
-    let dpi = GetDpiForSystem().max(96);
-    if AdjustWindowRectExForDpi(&mut rect, style, 0, ex_style, dpi) == 0 {
+    if AdjustWindowRectExForDpi(&mut rect, style, i32::from(has_menu), ex_style, dpi.max(96)) == 0 {
         (width, height)
     } else {
         (

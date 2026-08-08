@@ -108,6 +108,7 @@ pub(crate) struct LinuxAccessibilityAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinuxAccessibilityTarget {
     View(ViewHitTarget),
+    Semantic(crate::WidgetId),
     Menu(LinuxMenuAccessibilityTarget),
 }
 
@@ -261,6 +262,8 @@ fn build_tree_update(
     focused_widget: Option<crate::WidgetId>,
     tab_snapshots: LinuxTabAccessibilitySnapshots,
 ) -> (TreeUpdate, HashMap<NodeId, LinuxAccessibilityTarget>) {
+    #[cfg(not(feature = "tabs"))]
+    let _ = &tab_snapshots;
     let (targets, semantic_nodes) = interaction
         .map(|interaction| (interaction.hit_targets, interaction.accessibility_nodes))
         .unwrap_or_default();
@@ -456,6 +459,19 @@ fn build_tree_update(
             widget_node_ids.insert(semantic.widget, node_id);
             node_id
         };
+        if semantic.action_target.is_some() && semantic.enabled {
+            if let Some((_, node)) = nodes
+                .iter_mut()
+                .find(|(candidate, _)| *candidate == node_id)
+            {
+                node.add_action(Action::Focus);
+                node.add_action(Action::Click);
+            }
+            node_targets.insert(node_id, LinuxAccessibilityTarget::Semantic(semantic.widget));
+        }
+        if focused_widget == Some(semantic.widget) {
+            focused_node = node_id;
+        }
         semantic_entries.push((node_id, semantic));
     }
 
@@ -594,6 +610,7 @@ fn accesskit_semantic_role(role: crate::ZsAccessibilityRole) -> Role {
         crate::ZsAccessibilityRole::Application => Role::Application,
         crate::ZsAccessibilityRole::Article => Role::Article,
         crate::ZsAccessibilityRole::Button => Role::Button,
+        crate::ZsAccessibilityRole::Canvas => Role::Canvas,
         crate::ZsAccessibilityRole::ColorWell => Role::ColorWell,
         crate::ZsAccessibilityRole::ComboBox => Role::ComboBox,
         crate::ZsAccessibilityRole::Complementary => Role::Complementary,
@@ -653,6 +670,19 @@ fn apply_semantic_accessibility_node(
     if let Some(selected) = semantic.selected {
         node.set_selected(selected);
     }
+    if let Some(checked) = semantic.checked {
+        node.set_toggled(Toggled::from(checked));
+    }
+    if let Some(range) = semantic.range_value {
+        node.set_numeric_value(range.value);
+        node.set_min_numeric_value(range.minimum);
+        node.set_max_numeric_value(range.maximum);
+        if semantic.enabled && !range.interaction.is_read_only() {
+            node.add_action(Action::SetValue);
+            node.add_action(Action::Increment);
+            node.add_action(Action::Decrement);
+        }
+    }
 }
 
 fn push_accessibility_child(nodes: &mut [(NodeId, Node)], parent: NodeId, child: NodeId) {
@@ -670,6 +700,7 @@ fn semantic_role_can_contain_children(role: crate::ZsAccessibilityRole) -> bool 
         role,
         crate::ZsAccessibilityRole::Application
             | crate::ZsAccessibilityRole::Article
+            | crate::ZsAccessibilityRole::Canvas
             | crate::ZsAccessibilityRole::Complementary
             | crate::ZsAccessibilityRole::Form
             | crate::ZsAccessibilityRole::Group
@@ -1025,6 +1056,9 @@ mod tests {
                     live_region: None,
                     enabled: true,
                     selected: None,
+                    checked: None,
+                    range_value: None,
+                    action_target: None,
                 },
                 crate::ZsAccessibilityNode {
                     widget: image_widget,
@@ -1041,6 +1075,9 @@ mod tests {
                     live_region: None,
                     enabled: true,
                     selected: None,
+                    checked: None,
+                    range_value: None,
+                    action_target: None,
                 },
             ],
             #[cfg(feature = "tooltip")]
@@ -1087,6 +1124,197 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(child_roles.contains(&Role::Image));
         assert!(child_roles.contains(&Role::Button));
+    }
+
+    #[test]
+    fn progress_semantics_project_numeric_range_into_accesskit() {
+        let mut node = Node::new(Role::ProgressIndicator);
+        apply_semantic_accessibility_node(
+            &mut node,
+            &crate::ZsAccessibilityNode {
+                widget: crate::WidgetId(22),
+                parent: None,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 8,
+                },
+                role: crate::ZsAccessibilityRole::ProgressBar,
+                label: Some("Download".to_owned()),
+                description: None,
+                live_region: None,
+                enabled: true,
+                selected: None,
+                checked: None,
+                range_value: Some(crate::ZsAccessibilityRangeValue::new(42.0, 0.0, 100.0)),
+                action_target: None,
+            },
+            0,
+        );
+
+        assert_eq!(node.role(), Role::ProgressIndicator);
+        assert_eq!(node.numeric_value(), Some(42.0));
+        assert_eq!(node.min_numeric_value(), Some(0.0));
+        assert_eq!(node.max_numeric_value(), Some(100.0));
+        assert!(!node.supports_action(Action::SetValue));
+    }
+
+    #[test]
+    fn adjustable_range_semantics_enable_accesskit_numeric_actions() {
+        let mut node = Node::new(Role::Slider);
+        apply_semantic_accessibility_node(
+            &mut node,
+            &crate::ZsAccessibilityNode {
+                widget: crate::WidgetId(23),
+                parent: None,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 32,
+                },
+                role: crate::ZsAccessibilityRole::Slider,
+                label: Some("Volume".to_owned()),
+                description: None,
+                live_region: None,
+                enabled: true,
+                selected: None,
+                checked: None,
+                range_value: Some(
+                    crate::ZsAccessibilityRangeValue::new(25.0, 0.0, 100.0).adjustable(5.0, 50.0),
+                ),
+                action_target: None,
+            },
+            0,
+        );
+
+        assert_eq!(node.role(), Role::Slider);
+        assert_eq!(node.numeric_value(), Some(25.0));
+        assert!(node.supports_action(Action::SetValue));
+        assert!(node.supports_action(Action::Increment));
+        assert!(node.supports_action(Action::Decrement));
+    }
+
+    #[test]
+    fn checked_button_semantics_project_accesskit_toggled_state() {
+        let mut node = Node::new(Role::Button);
+        apply_semantic_accessibility_node(
+            &mut node,
+            &crate::ZsAccessibilityNode {
+                widget: crate::WidgetId(24),
+                parent: None,
+                bounds: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 120,
+                    height: 32,
+                },
+                role: crate::ZsAccessibilityRole::Button,
+                label: Some("Pin panel".to_owned()),
+                description: None,
+                live_region: None,
+                enabled: true,
+                selected: None,
+                checked: Some(true),
+                range_value: None,
+                action_target: None,
+            },
+            0,
+        );
+
+        assert_eq!(node.role(), Role::Button);
+        assert_eq!(node.toggled(), Some(Toggled::True));
+    }
+
+    #[cfg(feature = "dialog")]
+    #[test]
+    fn content_dialog_semantic_buttons_are_focusable_action_targets() {
+        let dialog = crate::WidgetId(30);
+        let button = crate::content_dialog::zs_content_dialog_button_accessibility_id(
+            dialog,
+            crate::ZsContentDialogButton::Secondary,
+        );
+        let interaction = ViewInteractionPlan {
+            hit_targets: Vec::new(),
+            accessibility_nodes: vec![
+                crate::ZsAccessibilityNode {
+                    widget: dialog,
+                    parent: None,
+                    bounds: Rect {
+                        x: 20,
+                        y: 20,
+                        width: 260,
+                        height: 180,
+                    },
+                    role: crate::ZsAccessibilityRole::Dialog,
+                    label: Some("Save changes?".to_owned()),
+                    description: None,
+                    live_region: None,
+                    enabled: true,
+                    selected: None,
+                    checked: None,
+                    range_value: None,
+                    action_target: None,
+                },
+                crate::ZsAccessibilityNode {
+                    widget: button,
+                    parent: Some(dialog),
+                    bounds: Rect {
+                        x: 140,
+                        y: 150,
+                        width: 100,
+                        height: 32,
+                    },
+                    role: crate::ZsAccessibilityRole::Button,
+                    label: Some("Review".to_owned()),
+                    description: None,
+                    live_region: None,
+                    enabled: true,
+                    selected: None,
+                    checked: None,
+                    range_value: None,
+                    action_target: Some(
+                        crate::ZsAccessibilityActionTarget::ContentDialogSecondary { dialog },
+                    ),
+                },
+            ],
+            #[cfg(feature = "tooltip")]
+            tooltip_targets: Vec::new(),
+        };
+        #[cfg(feature = "tabs")]
+        let tabs = Vec::new();
+        #[cfg(not(feature = "tabs"))]
+        let tabs = ();
+        let (tree, targets) = build_tree_update(
+            "Editor",
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 240,
+            },
+            1.0,
+            0,
+            None,
+            &NativeDrawPlan::new([]),
+            Some(interaction),
+            Some(button),
+            tabs,
+        );
+        let focused = tree
+            .nodes
+            .iter()
+            .find(|(node_id, _)| *node_id == tree.focus)
+            .expect("focused semantic dialog button");
+        assert_eq!(focused.1.role(), Role::Button);
+        assert_eq!(focused.1.label(), Some("Review"));
+        assert!(focused.1.supports_action(Action::Focus));
+        assert!(focused.1.supports_action(Action::Click));
+        assert_eq!(
+            targets.get(&focused.0),
+            Some(&LinuxAccessibilityTarget::Semantic(button))
+        );
     }
 
     #[cfg(feature = "menu-flyout")]

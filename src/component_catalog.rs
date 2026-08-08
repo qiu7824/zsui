@@ -124,16 +124,18 @@ const TEXT_INPUT_GAPS: &[&str] = &[
     "complete UIA rich attributes/embedded-object ranges and AppKit/GTK target assistive-technology proof",
     "macOS and Linux CJK target interaction proof",
 ];
-const VIRTUAL_LIST_GAPS: &[&str] = &[
-    "variable-height row metrics",
-    "scrollbar thumb dragging",
-    "non-Windows runtime smoke",
-];
+const VIRTUAL_LIST_GAPS: &[&str] = &["variable-height row metrics", "non-Windows runtime smoke"];
 const IMAGE_PREVIEW_GAPS: &[&str] = &[
     "animated and multi-frame image formats",
     "color-profile, HDR and wide-gamut management",
     "image accessibility semantics",
     "AppKit and GTK4 target screenshot evidence",
+];
+const VIDEO_GAPS: &[&str] = &[
+    "framework media-source adapters for camera, file and network decoding",
+    "audio output, transport controls, seeking and subtitle tracks",
+    "hardware surfaces, HDR and color-space management",
+    "media accessibility semantics and three-platform target playback proof",
 ];
 const PLATFORM_GAPS: &[&str] = &[
     "settings-row accessibility relationships",
@@ -146,14 +148,13 @@ const NAVIGATION_GAPS: &[&str] = &[
     "AppKit and GTK4 target interaction smoke",
 ];
 const TOOLTIP_GAPS: &[&str] = &[
-    "accessibility relationship",
     "top-level overflow popup",
     "macOS and Linux target interaction smoke",
 ];
 const CONTENT_DIALOG_GAPS: &[&str] = &[
-    "accessibility dialog role, labelled-by relationships and previous-focus restoration",
+    "explicit title/body labelled-by and described-by relationships",
     "custom ViewNode body plus validation and asynchronous response deferrals",
-    "AppKit and GTK4 target interaction smoke",
+    "AppKit and Linux target interaction and assistive-technology smoke",
 ];
 const FLYOUT_GAPS: &[&str] = &[
     "platform accessibility announcement and Flyout-specific AT-SPI action proof",
@@ -182,13 +183,12 @@ const BREADCRUMB_GAPS: &[&str] = &[
     "scroll/resize validation plus AppKit and GTK4 target interaction smoke",
 ];
 const SLIDER_GAPS: &[&str] = &[
-    "accessibility range-value provider",
     "AppKit and GTK4 target interaction smoke",
     "touch and precision-trackpad tuning",
 ];
 const NUMBER_BOX_GAPS: &[&str] = &[
     "localized decimal formatting and expression evaluation",
-    "accessibility spin-button and range-value provider",
+    "assistive range representation while the nullable value is empty",
     "button hover/pressed polish, press-and-hold autorepeat, mouse-wheel stepping and macOS modifier stepping",
     "AppKit and GTK4 target interaction smoke",
 ];
@@ -220,7 +220,6 @@ const TABLE_GAPS: &[&str] = &[
 ];
 const TOGGLE_BUTTON_GAPS: &[&str] = &[
     "optional indeterminate state and grouped selection behavior",
-    "accessibility toggle-button role and checked-state provider",
     "AppKit and GTK4 target interaction smoke",
 ];
 const PASSWORD_BOX_GAPS: &[&str] = &[
@@ -233,15 +232,11 @@ const RADIO_GAPS: &[&str] = &[
     "accessibility selection provider",
     "AppKit and GTK4 target interaction smoke",
 ];
-const PROGRESS_GAPS: &[&str] = &[
-    "indeterminate animation",
-    "accessibility range-value provider",
-    "AppKit and GTK4 target screenshot smoke",
-];
+const PROGRESS_GAPS: &[&str] =
+    &["AppKit and Linux target screenshot and assistive-technology smoke"];
 const PROGRESS_RING_GAPS: &[&str] = &[
-    "accessibility progress role and determinate value provider",
     "system reduced-motion preference",
-    "AppKit and GTK4 target animation screenshot smoke",
+    "AppKit and Linux target animation screenshot and assistive-technology smoke",
 ];
 const COMBO_GAPS: &[&str] = &[
     "accessibility expanded and selection providers",
@@ -270,10 +265,7 @@ const GRID_GAPS: &[&str] = &[
     "accessibility grouping semantics",
     "AppKit and GTK4 target layout smoke",
 ];
-const CANVAS_GAPS: &[&str] = &[
-    "accessibility grouping semantics",
-    "path-construction primitives and multi-pointer or touch input",
-];
+const CANVAS_GAPS: &[&str] = &["path-construction primitives and multi-pointer or touch input"];
 const MENU_FLYOUT_GAPS: &[&str] = &[];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
@@ -453,7 +445,7 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         Input,
         FirstPass,
         Some("toggle"),
-        "src/widget_render.rs",
+        "src/progress.rs + src/view/widgets/button.rs + src/widget_render.rs + UIA/AppKit/AccessKit accessibility providers",
         BASIC_CONTROL_GAPS
     ),
     component!(
@@ -700,6 +692,15 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         IMAGE_PREVIEW_GAPS
     ),
     component!(
+        "video",
+        "MediaPlayerElement",
+        Media,
+        FirstPass,
+        Some("video"),
+        "src/video.rs + src/view/widgets/data.rs + three desktop raster renderers",
+        VIDEO_GAPS
+    ),
+    component!(
         "icon",
         "FontIcon/ImageIcon",
         Media,
@@ -781,7 +782,8 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"image"));
         assert!(!summary.missing_component_names.contains(&"canvas"));
         assert!(!summary.missing_component_names.contains(&"flyout"));
-        assert_eq!(summary.first_pass_count, 48);
+        assert!(!summary.missing_component_names.contains(&"video"));
+        assert_eq!(summary.first_pass_count, 49);
         assert_eq!(summary.contract_only_count, 0);
     }
 

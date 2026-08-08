@@ -3903,7 +3903,7 @@ impl<State, Msg> UiBindingManifest<State, Msg> {
 
     /// Registers one bounded immutable raster frame for a document-backed
     /// Image. `None` retains the platform image placeholder.
-    #[cfg(feature = "image-preview")]
+    #[cfg(any(feature = "image-preview", feature = "video"))]
     pub fn register_image_frame_property(
         &mut self,
         name: impl Into<String>,
@@ -4791,6 +4791,7 @@ impl UiFeatureSet {
         include_feature!("image");
         include_feature!("icon");
         include_feature!("image-preview");
+        include_feature!("video");
         Self { names }
     }
 
@@ -5559,6 +5560,47 @@ impl<'a> UiDocumentValidator<'a> {
                     UiDiagnosticCode::InvalidPropertyValue,
                     format!("{path}.properties.interpolation"),
                     "image interpolation must be nearest or smooth".to_owned(),
+                );
+            }
+        }
+
+        if node.component == "video" {
+            for name in ["frame", "fit", "interpolation"] {
+                if node.localization.contains_key(name) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.localization.{name}"),
+                        format!("video property {name:?} is structural and cannot be localized"),
+                    );
+                }
+            }
+            if !node.property_bindings.contains_key("fit")
+                && node
+                    .properties
+                    .get("fit")
+                    .and_then(Value::as_str)
+                    .is_some_and(|fit| !matches!(fit, "contain" | "cover" | "stretch"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.fit"),
+                    "video fit must be contain, cover or stretch".to_owned(),
+                );
+            }
+            if !node.property_bindings.contains_key("interpolation")
+                && node
+                    .properties
+                    .get("interpolation")
+                    .and_then(Value::as_str)
+                    .is_some_and(|interpolation| !matches!(interpolation, "nearest" | "smooth"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.interpolation"),
+                    "video interpolation must be nearest or smooth".to_owned(),
                 );
             }
         }
@@ -6997,6 +7039,23 @@ const IMAGE_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
 ];
+const VIDEO_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "frame",
+        value_type: UiValueType::NullableImageFrame,
+        required: true,
+    },
+    PropertySpec {
+        name: "fit",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "interpolation",
+        value_type: UiValueType::String,
+        required: false,
+    },
+];
 const TEXT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec {
         name: "text",
@@ -8241,6 +8300,7 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         }),
         "canvas" => Some(leaf(CANVAS_PROPERTIES, CANVAS_ACTIONS)),
         "image" => Some(leaf(IMAGE_PROPERTIES, NO_ACTIONS)),
+        "video" => Some(leaf(VIDEO_PROPERTIES, NO_ACTIONS)),
         "workbench_shell" => Some(ComponentSchema {
             properties: WORKBENCH_SHELL_PROPERTIES,
             actions: WORKBENCH_SHELL_ACTIONS,
@@ -11479,7 +11539,7 @@ mod tests {
             missing.is_empty(),
             "missing UiDocument schemas: {missing:?}"
         );
-        assert_eq!(crate::component_catalog::zsui_component_catalog().len(), 48);
+        assert_eq!(crate::component_catalog::zsui_component_catalog().len(), 49);
     }
 
     #[test]

@@ -261,7 +261,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-base"],
-            "modal self-drawn content dialog with semantic responses and platform-specific action layout",
+            "modal self-drawn content dialog with platform action layout, typed responses and independently focusable accessibility buttons",
         ),
         ZsuiCargoFeature::new(
             "toggle-button",
@@ -269,7 +269,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-input"],
-            "explicit-state toggle button with self-drawn platform profiles and typed activation",
+            "explicit-state toggle button with self-drawn platform profiles, typed activation and native accessibility toggle state",
         ),
         ZsuiCargoFeature::new(
             "checkbox",
@@ -293,7 +293,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-input"],
-            "range-normalized slider layout, paint and typed pointer or keyboard input",
+            "range-normalized slider layout, paint, typed input and adjustable native accessibility range",
         ),
         ZsuiCargoFeature::new(
             "number-box",
@@ -301,7 +301,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["text-input-core"],
-            "editable finite number input with validated range, platform-style steppers and typed commit events",
+            "editable finite number input with validated range, platform-style steppers, typed commits and native SpinButton range semantics",
         ),
         ZsuiCargoFeature::new(
             "radio",
@@ -317,7 +317,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-base"],
-            "determinate progress range, semantic paint and feedback-only hit behavior",
+            "determinate/indeterminate progress, platform-native status styling and read-only UIA/AppKit/AccessKit range semantics",
         ),
         ZsuiCargoFeature::new(
             "progress-ring",
@@ -325,7 +325,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec!["widgets-base"],
-            "independently selectable determinate/indeterminate ring with platform metrics and native animation timers",
+            "independently selectable determinate/indeterminate ring with platform metrics, native animation timers and read-only progress semantics",
         ),
         ZsuiCargoFeature::new(
             "auto-suggest",
@@ -530,6 +530,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "list",
                 "virtual-list",
                 "image-preview",
+                "video",
                 "tabs",
                 "grid",
                 "progress",
@@ -596,6 +597,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Vec::new(),
             vec!["image", "widgets-base"],
             "retained image preview with coalesced background PNG decode and atomic frame replacement",
+        ),
+        ZsuiCargoFeature::new(
+            "video",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["widgets-base"],
+            "latest-frame video and camera-preview surface with application-owned decoding, capture and audio",
         ),
         ZsuiCargoFeature::new(
             "native-smoke",
@@ -689,6 +698,46 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "direct Win32 HWND host, transient window host and message loop",
         ),
         ZsuiCargoFeature::new(
+            "windows-directwrite",
+            Backend,
+            false,
+            vec!["windows", "windows-core"],
+            vec!["windows-gdi"],
+            "opt-in system DirectWrite shaping and rasterization inside the buffered Win32 GDI surface",
+        ),
+        ZsuiCargoFeature::new(
+            "rust-text",
+            Backend,
+            false,
+            vec!["cosmic-text", "swash", "ttf-parser"],
+            Vec::new(),
+            "opt-in ZSUI-owned Rust shaping, retained layout and hinted rasterization pipeline",
+        ),
+        ZsuiCargoFeature::new(
+            "rust-text-proof",
+            Tooling,
+            false,
+            Vec::new(),
+            vec!["rust-text"],
+            "development-only text geometry, JSON, SVG and pixel-difference support",
+        ),
+        ZsuiCargoFeature::new(
+            "windows-rust-text",
+            Backend,
+            false,
+            Vec::new(),
+            vec!["windows-gdi", "rust-text"],
+            "ZSUI Rust text compositor inside the buffered Win32 GDI surface with GDI fallback",
+        ),
+        ZsuiCargoFeature::new(
+            "windows-text-proof",
+            Tooling,
+            false,
+            Vec::new(),
+            vec!["windows-directwrite", "rust-text-proof"],
+            "safe DirectWrite glyph-geometry oracle for ZSUI Rust JSON and SVG comparison",
+        ),
+        ZsuiCargoFeature::new(
             "macos-appkit",
             Backend,
             false,
@@ -716,9 +765,9 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "linux-direct-lite",
             Backend,
             false,
-            vec!["cosmic-text", "tiny-skia"],
-            vec!["linux-direct-host"],
-            "opt-in pure-Rust Linux renderer using cosmic-text, swash and tiny-skia on the shared Wayland/X11 host",
+            vec!["tiny-skia"],
+            vec!["linux-direct-host", "rust-text"],
+            "opt-in pure-Rust Linux renderer using the retained ZSUI text engine and tiny-skia on the shared Wayland/X11 host",
         ),
         ZsuiCargoFeature::new(
             "linux-system-icons",
@@ -767,6 +816,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "virtual-list",
                 "paged-list",
                 "image-preview",
+                "video",
                 "textbox",
                 "password-box",
                 "tooltip",
@@ -864,6 +914,8 @@ mod tests {
         assert!(names.contains(&"image"));
         assert!(names.contains(&"desktop-winit"));
         assert!(names.contains(&"windows-gdi"));
+        assert!(names.contains(&"windows-directwrite"));
+        assert!(names.contains(&"rust-text"));
         assert!(names.contains(&"macos-appkit"));
         assert!(names.contains(&"linux-direct"));
         assert!(names.contains(&"linux-system-icons"));
@@ -873,6 +925,41 @@ mod tests {
         assert!(names.contains(&"localization"));
         assert!(!names.contains(&"button"));
         assert!(!names.contains(&"label"));
+    }
+
+    #[test]
+    fn text_feature_graph_is_explicit() {
+        let manifest = zsui_feature_manifest();
+        let windows_rust = manifest
+            .iter()
+            .find(|feature| feature.name == "windows-rust-text")
+            .expect("Windows Rust text feature should be listed");
+        assert_eq!(windows_rust.enables, vec!["windows-gdi", "rust-text"]);
+        assert!(windows_rust.optional_dependency_names.is_empty());
+
+        let proof = manifest
+            .iter()
+            .find(|feature| feature.name == "windows-text-proof")
+            .expect("Windows text proof feature should be listed");
+        assert_eq!(
+            proof.enables,
+            vec!["windows-directwrite", "rust-text-proof"]
+        );
+        assert!(proof.optional_dependency_names.is_empty());
+
+        let rust_proof = manifest
+            .iter()
+            .find(|feature| feature.name == "rust-text-proof")
+            .expect("portable text proof feature should be listed");
+        assert_eq!(rust_proof.enables, vec!["rust-text"]);
+        assert!(rust_proof.optional_dependency_names.is_empty());
+
+        let linux_lite = manifest
+            .iter()
+            .find(|feature| feature.name == "linux-direct-lite")
+            .expect("Linux lite text feature should be listed");
+        assert_eq!(linux_lite.enables, vec!["linux-direct-host", "rust-text"]);
+        assert_eq!(linux_lite.optional_dependency_names, vec!["tiny-skia"]);
     }
 
     #[test]
@@ -1019,6 +1106,10 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "image-preview")
             .expect("image preview feature should be listed");
+        let video = manifest
+            .iter()
+            .find(|feature| feature.name == "video")
+            .expect("video feature should be listed");
         let all_widgets = manifest
             .iter()
             .find(|feature| feature.name == "all-widgets")
@@ -1032,6 +1123,7 @@ mod tests {
         assert_eq!(menu_flyout.enables, vec!["widgets-base"]);
         assert_eq!(table.enables, vec!["widgets-list"]);
         assert_eq!(image_preview.enables, vec!["image", "widgets-base"]);
+        assert_eq!(video.enables, vec!["widgets-base"]);
         assert!(!table.enables.contains(&"list"));
         assert!(!table.enables.contains(&"scroll"));
         assert!(!all_widgets.default_enabled);
@@ -1042,6 +1134,7 @@ mod tests {
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"image-preview"));
+        assert!(all_widgets.enables.contains(&"video"));
         assert!(all_widgets.enables.contains(&"tooltip"));
         assert!(all_widgets.enables.contains(&"dialog"));
         assert!(all_widgets.enables.contains(&"toggle-button"));

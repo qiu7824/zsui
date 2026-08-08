@@ -1,9 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use cosmic_text::{
-    Align, Attrs, Buffer, Color as CosmicColor, Family, FontSystem, Metrics, Shaping, SwashCache,
-    Weight, Wrap,
-};
 use tiny_skia::{
     FillRule, Mask, Paint, Path, PathBuilder, PixmapMut, Rect as SkRect, Stroke, Transform,
 };
@@ -17,28 +13,21 @@ use crate::{
     Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
     NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand, NativeImageInterpolation,
     NativeStyleResolver, Rect, Size, TextStyle, TextWeight, TextWrap, VerticalAlign,
+    ZsRustTextEngine, ZsTextPixelRect, ZsTextRasterProfile,
 };
 
 #[derive(Clone)]
 pub(crate) struct LinuxLiteTextSystem {
-    inner: Arc<Mutex<LinuxLiteTextState>>,
+    inner: Arc<Mutex<ZsRustTextEngine>>,
     ui_family: Arc<str>,
     ui_scale: f32,
-}
-
-struct LinuxLiteTextState {
-    font_system: FontSystem,
-    swash_cache: SwashCache,
 }
 
 impl LinuxLiteTextSystem {
     pub(crate) fn new(configured_font: &str) -> Self {
         let (family, logical_pixels) = parse_configured_font(configured_font);
         Self {
-            inner: Arc::new(Mutex::new(LinuxLiteTextState {
-                font_system: FontSystem::new(),
-                swash_cache: SwashCache::new(),
-            })),
+            inner: Arc::new(Mutex::new(ZsRustTextEngine::new())),
             ui_family: Arc::from(family),
             ui_scale: (logical_pixels / 14.0).clamp(0.75, 3.0),
         }
@@ -59,23 +48,21 @@ impl LinuxLiteTextSystem {
                 height: 0,
             };
         }
-        let Some(mut state) = self.inner.lock().ok() else {
+        let Some(mut engine) = self.inner.lock().ok() else {
             return Size {
                 width: 0,
                 height: 0,
             };
         };
-        let mut buffer = make_buffer(
-            &mut state.font_system,
-            text,
-            style,
-            max_width,
-            None,
-            style.wrap,
-            None,
-        );
-        buffer.shape_until_scroll(&mut state.font_system, true);
-        measure_buffer(&buffer)
+        engine
+            .layout(
+                text,
+                style,
+                max_width.map_or(0, |width| width.ceil().max(0.0) as i32),
+                0,
+                1.0,
+            )
+            .size()
     }
 
     fn draw(
@@ -91,43 +78,28 @@ impl LinuxLiteTextSystem {
         if text.is_empty() || bounds.width <= 0 || bounds.height <= 0 {
             return;
         }
-        let Some(mut state) = self.inner.lock().ok() else {
+        let Some(mut engine) = self.inner.lock().ok() else {
             return;
         };
-        let scaled_style = scaled_text_style(style, scale_factor);
-        let width = bounds.width.max(0) as f32 * scale_factor;
-        let height = bounds.height.max(0) as f32 * scale_factor;
-        let alignment = match style.horizontal_align {
-            HorizontalAlign::Start => Some(Align::Left),
-            HorizontalAlign::Center => Some(Align::Center),
-            HorizontalAlign::End => Some(Align::Right),
-        };
+        let width_px = (bounds.width.max(0) as f32 * scale_factor).round() as i32;
+        let height_px = (bounds.height.max(0) as f32 * scale_factor).round() as i32;
         let constrain_width = style.wrap == TextWrap::Word || style.ellipsis;
-        let mut buffer = make_buffer(
-            &mut state.font_system,
+        let layout = engine.layout(
             text,
-            &scaled_style,
-            constrain_width.then_some(width),
-            (style.wrap == TextWrap::Word).then_some(height),
-            style.wrap,
-            constrain_width.then_some(alignment).flatten(),
+            style,
+            if constrain_width { width_px } else { 0 },
+            height_px,
+            scale_factor,
         );
-        buffer.shape_until_scroll(&mut state.font_system, true);
-        let measured = measure_buffer(&buffer);
         let mut x = bounds.x as f32 * scale_factor;
         if !constrain_width {
             x += match style.horizontal_align {
                 HorizontalAlign::Start => 0.0,
-                HorizontalAlign::Center => (width - measured.width as f32).max(0.0) / 2.0,
-                HorizontalAlign::End => (width - measured.width as f32).max(0.0),
+                HorizontalAlign::Center => (width_px - layout.size().width).max(0) as f32 / 2.0,
+                HorizontalAlign::End => (width_px - layout.size().width).max(0) as f32,
             };
         }
-        let mut y = bounds.y.saturating_add(origin_y) as f32 * scale_factor;
-        y += match style.vertical_align {
-            VerticalAlign::Start => 0.0,
-            VerticalAlign::Center => (height - measured.height as f32).max(0.0) / 2.0,
-            VerticalAlign::End => (height - measured.height as f32).max(0.0),
-        };
+        let y = bounds.y.saturating_add(origin_y) as f32 * scale_factor;
         let clip = intersect_rect(
             clip,
             Rect {
@@ -144,36 +116,26 @@ impl LinuxLiteTextSystem {
         let clip_top = (clip.y as f32 * scale_factor).floor() as i32;
         let clip_right = ((clip.x + clip.width) as f32 * scale_factor).ceil() as i32;
         let clip_bottom = ((clip.y + clip.height) as f32 * scale_factor).ceil() as i32;
-        let frame_width = pixmap.width() as i32;
-        let frame_height = pixmap.height() as i32;
+        let frame_width = pixmap.width();
+        let frame_height = pixmap.height();
+        let stride = frame_width as usize * 4;
         let pixels = pixmap.data_mut();
-        let cosmic_color = cosmic_color(style.color);
-        let LinuxLiteTextState {
-            font_system,
-            swash_cache,
-        } = &mut *state;
-        buffer.draw(
-            font_system,
-            swash_cache,
-            cosmic_color,
-            |gx, gy, width, height, color| {
-                let base_x = x.round() as i32 + gx;
-                let base_y = y.round() as i32 + gy;
-                for row in 0..height as i32 {
-                    let py = base_y + row;
-                    if py < clip_top || py >= clip_bottom || py < 0 || py >= frame_height {
-                        continue;
-                    }
-                    for column in 0..width as i32 {
-                        let px = base_x + column;
-                        if px < clip_left || px >= clip_right || px < 0 || px >= frame_width {
-                            continue;
-                        }
-                        let offset = (py as usize * frame_width as usize + px as usize) * 4;
-                        blend_swapped_pixel(&mut pixels[offset..offset + 4], color);
-                    }
-                }
-            },
+        let _ = engine.composite_bgra_clipped(
+            &layout,
+            pixels,
+            frame_width,
+            frame_height,
+            stride,
+            x.round() as i32,
+            y.round() as i32,
+            ZsTextPixelRect::new(
+                clip_left,
+                clip_top,
+                clip_right.saturating_sub(clip_left).max(0) as u32,
+                clip_bottom.saturating_sub(clip_top).max(0) as u32,
+            ),
+            style.color,
+            ZsTextRasterProfile::grayscale(),
         );
     }
 }
@@ -790,12 +752,12 @@ pub(crate) fn linux_lite_typography_profile(
     let family = text_system.ui_family().to_string();
     let mut profile = crate::NativeTypographyProfile::new(
         crate::ZsTypographyPlatformStyle::Gtk,
-        "fontdb_cosmic_text",
+        crate::linux_direct::LINUX_DIRECT_LITE_TYPOGRAPHY_SOURCE,
         family.clone(),
         "Monospace",
         family,
         typography_scale,
-        "cosmic_text_swash_tiny_skia_softbuffer",
+        crate::linux_direct::LINUX_DIRECT_LITE_RASTERIZATION,
     )
     .with_configured_ui_font(crate::linux_direct::linux_direct_configured_font_name());
     let body = profile.body_metrics;
@@ -811,20 +773,11 @@ pub(crate) fn linux_lite_typography_profile(
         wrap: TextWrap::NoWrap,
         ellipsis: false,
     };
-    if let Ok(mut state) = text_system.inner.lock() {
-        let mut buffer = make_buffer(
-            &mut state.font_system,
-            "Hg",
-            &style,
-            None,
-            None,
-            TextWrap::NoWrap,
-            None,
-        );
-        buffer.shape_until_scroll(&mut state.font_system, true);
-        if let Some(run) = buffer.layout_runs().next() {
-            let ascent = run.line_y - run.line_top;
-            let descent = (run.line_top + run.line_height - run.line_y).max(0.0);
+    if let Ok(mut engine) = text_system.inner.lock() {
+        let layout = engine.layout("Hg", &style, 0, 0, 1.0);
+        if let Some(line) = layout.lines().first() {
+            let ascent = line.baseline_px - line.top_px;
+            let descent = (line.top_px + line.height_px - line.baseline_px).max(0.0);
             let leading = (body.line_height - ascent - descent).max(0.0);
             profile = profile.with_body_vertical_metrics(ascent, descent, leading);
         }
@@ -852,18 +805,10 @@ pub(crate) fn shape_linux_lite_text_line(
     );
     style.line_height = body.line_height * text_system.ui_scale();
     style.ellipsis = false;
-    let mut state = text_system.inner.lock().ok()?;
-    let mut buffer = make_buffer(
-        &mut state.font_system,
-        text,
-        &style,
-        None,
-        None,
-        TextWrap::NoWrap,
-        None,
-    );
-    buffer.shape_until_scroll(&mut state.font_system, true);
-    let run = buffer.layout_runs().next()?;
+    let mut engine = text_system.inner.lock().ok()?;
+    let layout = engine.layout(text, &style, 0, 0, 1.0);
+    let line = layout.lines().first()?;
+    let glyphs = layout.glyphs_for_line(line.line_index)?;
     let boundaries = crate::native_text_edit::grapheme_boundaries(text);
     let byte_offsets = boundaries
         .iter()
@@ -874,26 +819,25 @@ pub(crate) fn shape_linux_lite_text_line(
         let mut left = f32::INFINITY;
         let mut right = f32::NEG_INFINITY;
         let mut rtl = false;
-        for glyph in run
-            .glyphs
+        for glyph in glyphs
             .iter()
-            .filter(|glyph| glyph.end > bytes[0] && glyph.start < bytes[1])
+            .filter(|glyph| glyph.cluster_end > bytes[0] && glyph.cluster_start < bytes[1])
         {
             let cluster_boundaries = byte_offsets
                 .iter()
                 .copied()
-                .filter(|offset| *offset >= glyph.start && *offset <= glyph.end)
+                .filter(|offset| *offset >= glyph.cluster_start && *offset <= glyph.cluster_end)
                 .collect::<Vec<_>>();
             let part_count = cluster_boundaries.len().saturating_sub(1).max(1) as f32;
             let part = cluster_boundaries
                 .windows(2)
                 .position(|pair| pair[0] <= bytes[0] && pair[1] >= bytes[1])
                 .unwrap_or(0) as f32;
-            let glyph_left = glyph.x + glyph.w * part / part_count;
-            let glyph_right = glyph.x + glyph.w * (part + 1.0) / part_count;
+            let glyph_left = glyph.origin_x_px + glyph.advance_px * part / part_count;
+            let glyph_right = glyph.origin_x_px + glyph.advance_px * (part + 1.0) / part_count;
             left = left.min(glyph_left.min(glyph_right));
             right = right.max(glyph_left.max(glyph_right));
-            rtl = glyph.level.is_rtl();
+            rtl = glyph.rtl;
         }
         if !left.is_finite() || !right.is_finite() {
             let fallback = clusters
@@ -930,66 +874,7 @@ pub(crate) fn shape_linux_lite_text_line(
             secondary_x: secondary,
         });
     }
-    NativeShapedTextLine::new(run.line_w.ceil() as i32, clusters, carets)
-}
-
-fn make_buffer(
-    font_system: &mut FontSystem,
-    text: &str,
-    style: &TextStyle,
-    width: Option<f32>,
-    height: Option<f32>,
-    wrap: TextWrap,
-    alignment: Option<Align>,
-) -> Buffer {
-    let size = style.size.max(1.0);
-    let line_height = style.line_height.max(size);
-    let mut buffer = Buffer::new(font_system, Metrics::new(size, line_height));
-    buffer.set_wrap(
-        font_system,
-        if wrap == TextWrap::Word {
-            Wrap::WordOrGlyph
-        } else {
-            Wrap::None
-        },
-    );
-    buffer.set_size(font_system, width, height);
-    let attrs = Attrs::new()
-        .family(if style.font_family.eq_ignore_ascii_case("monospace") {
-            Family::Monospace
-        } else if style.font_family.trim().is_empty() {
-            Family::SansSerif
-        } else {
-            Family::Name(&style.font_family)
-        })
-        .weight(match style.weight {
-            TextWeight::Automatic | TextWeight::Regular => Weight::NORMAL,
-            TextWeight::Medium => Weight::MEDIUM,
-            TextWeight::Semibold => Weight::SEMIBOLD,
-            TextWeight::Bold => Weight::BOLD,
-        });
-    buffer.set_text(font_system, text, &attrs, Shaping::Advanced, alignment);
-    buffer
-}
-
-fn measure_buffer(buffer: &Buffer) -> Size {
-    let mut width = 0.0f32;
-    let mut height = 0.0f32;
-    for run in buffer.layout_runs() {
-        width = width.max(run.line_w);
-        height = height.max(run.line_top + run.line_height);
-    }
-    Size {
-        width: width.ceil().max(0.0) as i32,
-        height: height.ceil().max(0.0) as i32,
-    }
-}
-
-fn scaled_text_style(style: &TextStyle, scale: f32) -> TextStyle {
-    let mut scaled = style.clone();
-    scaled.size = (style.size * scale).max(1.0);
-    scaled.line_height = (style.line_height.max(style.size) * scale).max(scaled.size);
-    scaled
+    NativeShapedTextLine::new(line.width_px.ceil() as i32, clusters, carets)
 }
 
 fn parse_configured_font(configured: &str) -> (String, f32) {
@@ -1009,24 +894,8 @@ fn parse_configured_font(configured: &str) -> (String, f32) {
     )
 }
 
-fn cosmic_color(color: Color) -> CosmicColor {
-    CosmicColor::rgba(color.b, color.g, color.r, color.a)
-}
-
 fn sk_color(color: Color) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(color.b, color.g, color.r, color.a)
-}
-
-fn blend_swapped_pixel(target: &mut [u8], source: CosmicColor) {
-    let alpha = u16::from(source.a());
-    let inverse = 255 - alpha;
-    for (target, source) in target[..3]
-        .iter_mut()
-        .zip([source.r(), source.g(), source.b()])
-    {
-        *target = ((u16::from(source) * alpha + u16::from(*target) * inverse + 127) / 255) as u8;
-    }
-    target[3] = 255;
 }
 
 fn blend_premultiplied_bgra(target: &mut [u8], source: &[u8]) {
@@ -1171,5 +1040,31 @@ mod tests {
                 height: 0,
             }
         );
+    }
+
+    #[test]
+    fn menu_measurement_reuses_the_bounded_zsui_layout_cache() {
+        let system = LinuxLiteTextSystem::new("Sans 11");
+        let first = system.measure_menu_text("Open / 打开");
+        let second = system.measure_menu_text("Open / 打开");
+        assert_eq!(first, second);
+
+        let engine = system.inner.lock().expect("ZSUI text engine lock");
+        assert_eq!(engine.layout_cache_len(), 1);
+        assert_eq!(engine.cache_stats().layout_misses, 1);
+        assert_eq!(engine.cache_stats().layout_hits, 1);
+    }
+
+    #[cfg(feature = "text-input-core")]
+    #[test]
+    fn input_geometry_comes_from_the_same_retained_zsui_layout() {
+        let system = LinuxLiteTextSystem::new("Sans 11");
+        let line = shape_linux_lite_text_line(&system, "ZSUI 中文🙂").expect("shaped line");
+        assert!(line.width > 0);
+        assert!(line.clusters.len() >= 7);
+        assert_eq!(line.carets.len(), line.clusters.len() + 1);
+
+        let engine = system.inner.lock().expect("ZSUI text engine lock");
+        assert_eq!(engine.layout_cache_len(), 1);
     }
 }

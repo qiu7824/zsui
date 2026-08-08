@@ -90,16 +90,24 @@ Windows 图为本机 Win32 最终缓冲表面；macOS 图来自 `macos-15` Runne
   <tr>
     <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof" width="100%"></td>
   </tr>
-  <tr><th>tiny-skia + cosmic-text/swash</th></tr>
+  <tr><th>tiny-skia + pure Rust text（统一上下文前的历史证据）</th></tr>
   <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust notepad proof" width="100%"></td>
+    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust historical notepad proof before shared ZSUI text context" width="100%"></td>
   </tr>
 </table>
 
 两种 Linux 配置复用完全相同的应用代码和平台体验层，只替换框架内部的文字与
-光栅 profile。5 次采样中，纯 Rust 配置中位 RSS 为 15.77 MiB，默认配置为
-25.32 MiB；完整测量见
+光栅 profile。纯 Rust 配置的测量、绘制、菜单和输入几何现在共享同一个有界
+ZSUI 文字上下文。迁移前的 5 次采样中，纯 Rust 配置中位 RSS 为 15.77 MiB，默认
+配置为 25.32 MiB；完整测量见
 [UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)。
+该行是历史基线，统一上下文后的数字必须由新一次相同场景测量更新。
+
+可选 `rust-text` 不是单字体替换层：它保留 UTF-8 字簇、字形推进、换行尾空格、段落
+基线、GPOS 配对和合成字重，并让测量、绘制、光标、选择与 IME 读取同一个有界布局。
+JSON、SVG、PNG 与像素比较只存在于开发期 proof feature，不进入普通应用。当前 Windows
+多字体 DirectWrite 对照为 61/66 组几何通过，剩余差异集中在物理回退字体选择；完整边界
+与验收数据见[文字渲染](docs/text-rendering.md)。
 
 </details>
 
@@ -223,6 +231,10 @@ fn volume_control(value: f32) -> ViewNode<Msg> {
 }
 ```
 
+启用 `accessibility` 后，同一范围和步长会直接投影为 UIA、AppKit
+Accessibility 与 AccessKit 的可调原生 RangeValue 语义；辅助技术设置数值或执行
+增减动作时，仍通过同一 `VolumeChanged` 消息更新应用状态。
+
 保持按下状态的 ToggleButton 也是独立可选组件；状态由应用显式持有，点击或
 Space 都通过同一强类型消息返回：
 
@@ -236,6 +248,12 @@ fn pin_button(checked: bool) -> ViewNode<Msg> {
     toggle_button("Pin panel", checked).on_toggle(Msg::PinChanged)
 }
 ```
+
+启用 `accessibility` 后，这个显式布尔状态同时进入三平台原生无障碍树：
+Windows 保持 `Button` 控件类型并仅暴露有状态的 `TogglePattern`，AppKit 以
+按钮值和 `accessibilityPerformPress` 表达，Linux Direct 则投影为 AccessKit
+`toggled` 状态与 `Click` 动作。辅助技术触发后仍回到同一 `PinChanged` 消息，
+不会在平台后端保存第二份状态。
 
 可编辑数值输入同样是独立的可选组件；草稿与已提交值分离，输入过程中不会被
 格式化逻辑反复改写：
@@ -252,6 +270,11 @@ fn amount_control(value: Option<f64>) -> ViewNode<Msg> {
         .on_number_change(Msg::AmountChanged)
 }
 ```
+
+启用 `accessibility` 后，有值的 NumberBox 在 Windows 暴露 Spinner 与可写
+RangeValue，同时保留 Edit 的 Value/TextPattern；AppKit 使用 Incrementor 数值及增减
+选择器，Linux Direct 使用 AccessKit SpinButton 数值动作。设置值会先按显示精度归一，
+再通过原有 `AmountChanged` 消息回写，屏幕朗读值不会与可见文本分离。
 
 密码输入使用独立的 `password-box` feature。`ZsPassword` 在释放时清零自己持有的
 字符串分配，`Debug` 固定脱敏且不实现序列化；默认掩码、IME 预编辑报告、事件 JSON
@@ -298,6 +321,27 @@ use zsui::{progress_bar, ProgressRange, ViewNode};
 
 fn download_progress(percent: f32) -> ViewNode<()> {
     progress_bar(percent, ProgressRange::new(0.0, 100.0))
+}
+```
+
+Windows 的 ProgressBar 直接按 WinUI 3 模板资源绘制 3 DP 指示器、1 DP 强轨道，
+并支持正常、暂停、错误和不确定状态；它仍是 ZSUI 缓冲原生绘制计划的一部分，不创建
+经典 Win32 `PROGRESS_CLASS`、XAML Island 或第二套控件树：
+
+```rust,no_run
+use zsui::{
+    indeterminate_progress_bar, progress_bar_from_spec, ProgressRange, ViewNode,
+    ZsProgressBarSpec, ZsProgressBarStatus,
+};
+
+fn progress_states() -> [ViewNode<()>; 2] {
+    [
+        progress_bar_from_spec(
+            ZsProgressBarSpec::determinate(45.0, ProgressRange::new(0.0, 100.0))
+                .status(ZsProgressBarStatus::Paused),
+        ),
+        indeterminate_progress_bar(),
+    ]
 }
 ```
 
@@ -528,21 +572,30 @@ native_window("Monitor")
 
 ```rust,no_run
 use zsui::{
-    DialogButtons, DialogLevel, NativeDesktopDialogService, NativeDialogService,
-    NativeDialogSpec,
+    DialogButtonLabels, DialogButtons, DialogLevel, NativeDesktopDialogService,
+    NativeDialogService, NativeDialogSpec,
 };
 
 let response = NativeDesktopDialogService::new().show_native_dialog(
-    &NativeDialogSpec::message("Save changes?", "Unsaved edits will be lost.")
+    &NativeDialogSpec::message("保存更改？", "未保存的编辑将会丢失。")
         .level(DialogLevel::Warning)
-        .buttons(DialogButtons::YesNoCancel),
+        .buttons(DialogButtons::YesNoCancel)
+        .button_labels(DialogButtonLabels::new("确定", "取消", "是", "否")),
 )?;
 # Ok::<(), zsui::ZsuiError>(())
 ```
 
-应用只处理 `DialogResponse`；Windows 使用有所有者的 `MessageBoxW`，macOS 使用
-`NSAlert` 窗口 Sheet，GTK 兼容后端使用 `GtkAlertDialog`。默认 Linux 轻量宿主调用
-桌面提供的 Zenity 表面，并在提供者不存在时明确返回 `ZsuiError::Unsupported`。
+应用只处理 `DialogResponse`，也可以一次提供四个本地化语义按钮文本；框架仍按目标
+平台决定按钮顺序。Windows 在存在活动窗口时使用绑定所有者的系统 `MessageBoxW`，
+否则使用任务模态表面，并用一次性的线程钩子设置显式按钮文本；macOS 使用 `NSAlert`
+窗口 Sheet，GTK 兼容后端使用
+`GtkAlertDialog`。默认 Linux 轻量宿主调用桌面提供的 Zenity 表面，并在提供者不存在时
+明确返回 `ZsuiError::Unsupported`。
+
+这项 API 是操作系统消息服务，不是 ZSUI 的 `ContentDialog` 组件样式。应用内
+`content_dialog(...)` 继续使用统一 Rust 声明；Windows 配置按当前 WinUI 3
+`ContentDialog` 资源绘制分层内容区和命令区、等宽操作列及 Accent 默认按钮，macOS
+与 Linux 则分别使用各自的平台组件配置。
 
 ## 按需编译
 
@@ -600,6 +653,9 @@ UiDocument 的 `page_padding`、`content_padding` 和 `content_gap` 等语义间
 `item_heights` 覆盖已知项目的逻辑 DP 高度；选择和视口通过强类型绑定回到应用，滚动条
 采用各目标平台 profile 并把滚轮、轨道点击和滑块拖动统一路由为视口更新。即使逻辑项目
 总数很大，文档也不携带完整数据集或平台句柄。
+普通 `scroll(...)` 与 `.auto_scroll_y()` 也使用同一套滚动条规则：视觉宽度保持平台原生
+的细轨道，命中区域独立扩展；轨道和滑块分别识别，轨道点击按滑块中心映射，拖动保留
+按下点在滑块内的偏移并持续夹取到有效范围。应用不需要自行计算 Win32 矩形。
 `image` 接收有界的不可变预乘像素帧以及 Contain/Cover/Stretch 和插值语义，最终仍由
 Win32、Core Graphics 或 GTK/Cairo 绘制；大型动态 PNG 保持使用应用拥有的后台解码状态。
 现有 Rust `view` builder 继续保留，完整
@@ -660,9 +716,10 @@ ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；�
 | 计算器 | Decimal 运算、内存、历史、三平台自适应键盘布局、语义图标 | `calculator` |
 | 基础 View | 文本与输入、选择控件、弹层反馈、导航、日期时间、进度、列表、树和数据表格 | 按控件启用 |
 | 图片预览 | 后台解码、请求合并、旧结果隔离、保留上一完整帧、原子换帧 | `image-preview` |
+| 视频/摄像头预览 | 线程安全的最新帧源、无界队列抑制、播放状态与按需刷新、Contain/Cover/Stretch | `video` |
 | 分页虚拟列表 | 可见区绘制、方向感知预取、请求去重、LRU 页缓存、同步重排锚点 | `paged-list` |
 
-组件目录记录 48 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
+组件目录记录 49 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
 内容，并由 Windows、macOS 与 Linux 的独立组件 profile 决定放置、圆角、箭头和间距。
 控件均通过独立 Cargo feature 按需启用，并复用强类型状态、布局、绘制和事件协议。
 详细能力与验证状态以 [`src/component_catalog.rs`](src/component_catalog.rs) 和
@@ -724,6 +781,13 @@ cargo run --example image_preview --no-default-features --features window,button
 上一完整帧。Win32 将图片与其余绘制命令写入同一缓冲目标后统一提交，详见
 [图片预览](docs/image-preview.md)。
 
+### 视频与摄像头预览
+
+`ZsVideoSource` 可由摄像头回调或解码线程克隆持有，每次只发布一个完整 RGBA 帧；
+`video(...)` 只保留最新帧，并在播放或缓冲状态下通过原有原生绘制计时器刷新。
+设备枚举、权限、解码、网络重连和音频输出仍由应用或可选媒体适配器负责，不会进入
+只使用普通控件的依赖图。接口与边界见[视频表面](docs/video.md)。
+
 ### 工作台
 
 ```powershell
@@ -764,11 +828,13 @@ cargo run --example zsui_notepad_lite --no-default-features --features notepad-d
 仓库 CI 还会检查根包依赖图和 Rust 源码入口，阻止 WebView2、WKWebView、
 WebKitGTK、Wry、Tauri 等浏览器壳能力进入 ZSUI；`comparisons/` 中隔离的基准不属于框架。
 
-Ubuntu 24.04 固定双语场景的 5 次首帧空闲采样中，纯 Rust 配置的中位 RSS 为
+统一文字上下文前，Ubuntu 24.04 固定双语场景的 5 次首帧空闲采样中，纯 Rust
+配置的中位 RSS 为
 15.77 MiB、私有 RSS 为 10.74 MiB、PSS 为 12.09 MiB，可执行文件为 5.14 MiB；
 默认 Cairo/Pango 配置分别为 25.32、15.15、18.18 和 3.14 MiB。该结果来自
 [UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)，
-不代表所有发行版、字体集或显示服务器上的固定值。
+不代表当前提交或所有发行版、字体集、显示服务器上的固定值；当前实现需要重新运行
+同一矩阵。
 
 ### 现代计算器
 
@@ -788,7 +854,7 @@ Windows Calculator 对比方法，并区分工作集、私有工作集与私有�
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
 | macOS | 原生运行与 CI 证据 | 统一入口进入 NSApplication/NSWindow；AppKit 最终 NSView 截图、输入、布局报告及 NSStatusItem 状态栏菜单已由 macos-15 Runner 验证 |
-| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用 cosmic-text/swash 与 tiny-skia 降低常驻内存；X11 最终表面及 Wayland/AT-SPI/菜单已有目标机证据 |
+| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用共享的 ZSUI Rust 文字上下文与 tiny-skia；X11 最终表面及 Wayland/AT-SPI/菜单已有目标机证据，统一上下文后的 Lite 目标数据待重跑 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 
 平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，

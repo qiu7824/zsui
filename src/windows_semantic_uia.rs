@@ -6,25 +6,28 @@ use windows::Win32::System::Com::SAFEARRAY;
 use windows::Win32::System::Ole::{SafeArrayCreateVector, SafeArrayDestroy, SafeArrayPutElement};
 use windows::Win32::System::Variant::{VARIANT, VT_I4};
 use windows::Win32::UI::Accessibility::{
-    Assertive as LiveAssertive, IInvokeProvider, IInvokeProvider_Impl, IRawElementProviderFragment,
-    IRawElementProviderFragmentRoot, IRawElementProviderFragmentRoot_Impl,
-    IRawElementProviderFragment_Impl, IRawElementProviderSimple, IRawElementProviderSimple_Impl,
-    ISelectionItemProvider, ISelectionItemProvider_Impl, NavigateDirection,
+    Assertive as LiveAssertive, IInvokeProvider, IInvokeProvider_Impl, IRangeValueProvider,
+    IRangeValueProvider_Impl, IRawElementProviderFragment, IRawElementProviderFragmentRoot,
+    IRawElementProviderFragmentRoot_Impl, IRawElementProviderFragment_Impl,
+    IRawElementProviderSimple, IRawElementProviderSimple_Impl, ISelectionItemProvider,
+    ISelectionItemProvider_Impl, IToggleProvider, IToggleProvider_Impl, NavigateDirection,
     NavigateDirection_FirstChild, NavigateDirection_LastChild, NavigateDirection_NextSibling,
     NavigateDirection_Parent, NavigateDirection_PreviousSibling, Polite as LivePolite,
-    ProviderOptions, ProviderOptions_ServerSideProvider, UIA_AutomationIdPropertyId,
-    UIA_ButtonControlTypeId, UIA_ClassNamePropertyId, UIA_ComboBoxControlTypeId,
-    UIA_ControlTypePropertyId, UIA_CustomControlTypeId, UIA_DataGridControlTypeId,
-    UIA_EditControlTypeId, UIA_FrameworkIdPropertyId, UIA_GroupControlTypeId,
-    UIA_HasKeyboardFocusPropertyId, UIA_HeaderControlTypeId, UIA_HelpTextPropertyId,
-    UIA_ImageControlTypeId, UIA_InvokePatternId, UIA_IsEnabledPropertyId,
-    UIA_IsKeyboardFocusablePropertyId, UIA_ListControlTypeId, UIA_ListItemControlTypeId,
-    UIA_LiveSettingPropertyId, UIA_NamePropertyId, UIA_NativeWindowHandlePropertyId,
-    UIA_PaneControlTypeId, UIA_ProgressBarControlTypeId, UIA_SelectionItemIsSelectedPropertyId,
-    UIA_SelectionItemPatternId, UIA_SliderControlTypeId, UIA_SpinnerControlTypeId,
-    UIA_TabControlTypeId, UIA_TabItemControlTypeId, UIA_TextControlTypeId, UIA_TreeControlTypeId,
-    UiaAppendRuntimeId, UiaHostProviderFromHwnd, UiaRect, UiaReturnRawElementProvider,
-    UiaRootObjectId, UIA_PATTERN_ID, UIA_PROPERTY_ID,
+    ProviderOptions, ProviderOptions_ServerSideProvider, ToggleState, ToggleState_Off,
+    ToggleState_On, UIA_AutomationIdPropertyId, UIA_ButtonControlTypeId, UIA_ClassNamePropertyId,
+    UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId, UIA_CustomControlTypeId,
+    UIA_DataGridControlTypeId, UIA_EditControlTypeId, UIA_FrameworkIdPropertyId,
+    UIA_GroupControlTypeId, UIA_HasKeyboardFocusPropertyId, UIA_HeaderControlTypeId,
+    UIA_HelpTextPropertyId, UIA_ImageControlTypeId, UIA_InvokePatternId, UIA_IsDialogPropertyId,
+    UIA_IsEnabledPropertyId, UIA_IsKeyboardFocusablePropertyId, UIA_ListControlTypeId,
+    UIA_ListItemControlTypeId, UIA_LiveSettingPropertyId, UIA_NamePropertyId,
+    UIA_NativeWindowHandlePropertyId, UIA_PaneControlTypeId, UIA_ProgressBarControlTypeId,
+    UIA_RangeValuePatternId, UIA_SelectionItemIsSelectedPropertyId, UIA_SelectionItemPatternId,
+    UIA_SliderControlTypeId, UIA_SpinnerControlTypeId, UIA_TabControlTypeId,
+    UIA_TabItemControlTypeId, UIA_TextControlTypeId, UIA_TogglePatternId,
+    UIA_ToggleToggleStatePropertyId, UIA_TreeControlTypeId, UiaAppendRuntimeId,
+    UiaHostProviderFromHwnd, UiaRect, UiaReturnRawElementProvider, UiaRootObjectId, UIA_PATTERN_ID,
+    UIA_PROPERTY_ID,
 };
 use windows_core::{IUnknownImpl, BOOL};
 
@@ -41,7 +44,9 @@ struct WindowsSemanticUiaRootProvider {
     IRawElementProviderSimple,
     IRawElementProviderFragment,
     IInvokeProvider,
-    ISelectionItemProvider
+    IRangeValueProvider,
+    ISelectionItemProvider,
+    IToggleProvider
 )]
 struct WindowsSemanticUiaNodeProvider {
     hwnd: isize,
@@ -105,6 +110,10 @@ fn invalid_operation() -> Error {
     Error::from_hresult(HRESULT(
         windows::Win32::UI::Accessibility::UIA_E_INVALIDOPERATION as i32,
     ))
+}
+
+fn invalid_argument() -> Error {
+    Error::from_hresult(HRESULT(0x8007_0057_u32 as i32))
 }
 
 fn not_implemented() -> Error {
@@ -195,6 +204,7 @@ fn root_bounds(nodes: &[crate::ZsAccessibilityNode]) -> crate::Rect {
 fn control_type(role: crate::ZsAccessibilityRole) -> i32 {
     match role {
         crate::ZsAccessibilityRole::Button => UIA_ButtonControlTypeId.0,
+        crate::ZsAccessibilityRole::Canvas => UIA_CustomControlTypeId.0,
         crate::ZsAccessibilityRole::ColorWell => UIA_CustomControlTypeId.0,
         crate::ZsAccessibilityRole::ComboBox => UIA_ComboBoxControlTypeId.0,
         crate::ZsAccessibilityRole::Grid => UIA_DataGridControlTypeId.0,
@@ -377,6 +387,7 @@ impl IRawElementProviderSimple_Impl for WindowsSemanticUiaNodeProvider_Impl {
         let node = node(self.hwnd, self.widget)?;
         if pattern_id == UIA_InvokePatternId
             && node.enabled
+            && node.checked.is_none()
             && matches!(
                 node.role,
                 crate::ZsAccessibilityRole::Button
@@ -387,6 +398,10 @@ impl IRawElementProviderSimple_Impl for WindowsSemanticUiaNodeProvider_Impl {
             let provider: IInvokeProvider = self.to_interface();
             return provider.cast();
         }
+        if pattern_id == UIA_TogglePatternId && node.enabled && node.checked.is_some() {
+            let provider: IToggleProvider = self.to_interface();
+            return provider.cast();
+        }
         if pattern_id == UIA_SelectionItemPatternId
             && node.enabled
             && node.role == crate::ZsAccessibilityRole::Tab
@@ -394,8 +409,15 @@ impl IRawElementProviderSimple_Impl for WindowsSemanticUiaNodeProvider_Impl {
             let provider: ISelectionItemProvider = self.to_interface();
             return provider.cast();
         }
+        if pattern_id == UIA_RangeValuePatternId && node.range_value.is_some() {
+            let provider: IRangeValueProvider = self.to_interface();
+            return provider.cast();
+        }
         #[cfg(feature = "text-input-core")]
-        if node.role == crate::ZsAccessibilityRole::TextBox {
+        if matches!(
+            node.role,
+            crate::ZsAccessibilityRole::TextBox | crate::ZsAccessibilityRole::SpinButton
+        ) {
             return crate::windows_uia::text_pattern_provider(self.hwnd, pattern_id);
         }
         Err(Error::empty())
@@ -411,10 +433,17 @@ impl IRawElementProviderSimple_Impl for WindowsSemanticUiaNodeProvider_Impl {
             UIA_HasKeyboardFocusPropertyId => VARIANT::from(focused),
             UIA_IsKeyboardFocusablePropertyId => VARIANT::from(keyboard_focusable(node.role)),
             UIA_IsEnabledPropertyId => VARIANT::from(node.enabled),
-            UIA_FrameworkIdPropertyId => VARIANT::from(BSTR::from("ZSUI")),
-            UIA_ClassNamePropertyId => {
-                VARIANT::from(BSTR::from(format!("ZsuiSemantic{}", node.role)))
+            UIA_IsDialogPropertyId => {
+                VARIANT::from(node.role == crate::ZsAccessibilityRole::Dialog)
             }
+            UIA_FrameworkIdPropertyId => VARIANT::from(BSTR::from("ZSUI")),
+            UIA_ClassNamePropertyId => VARIANT::from(BSTR::from(
+                if node.role == crate::ZsAccessibilityRole::Button && node.checked.is_some() {
+                    "ToggleButton".to_owned()
+                } else {
+                    format!("ZsuiSemantic{}", node.role)
+                },
+            )),
             UIA_AutomationIdPropertyId => {
                 VARIANT::from(BSTR::from(format!("zsui-semantic-{}", node.widget.0)))
             }
@@ -430,6 +459,16 @@ impl IRawElementProviderSimple_Impl for WindowsSemanticUiaNodeProvider_Impl {
             UIA_SelectionItemIsSelectedPropertyId => {
                 node.selected.map(VARIANT::from).unwrap_or_default()
             }
+            UIA_ToggleToggleStatePropertyId => node
+                .checked
+                .map(|checked| {
+                    VARIANT::from(if checked {
+                        ToggleState_On.0
+                    } else {
+                        ToggleState_Off.0
+                    })
+                })
+                .unwrap_or_default(),
             _ => VARIANT::default(),
         };
         Ok(value)
@@ -557,6 +596,34 @@ impl IInvokeProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
     }
 }
 
+impl IToggleProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
+    fn Toggle(&self) -> Result<()> {
+        let node = node(self.hwnd, self.widget)?;
+        if !node.enabled || node.checked.is_none() {
+            return Err(invalid_operation());
+        }
+        crate::windows_win32_host::invoke_windows_win32_window_accessible_semantic_node(
+            self.hwnd as _,
+            self.widget,
+        )
+        .then_some(())
+        .ok_or_else(element_not_available)
+    }
+
+    fn ToggleState(&self) -> Result<ToggleState> {
+        node(self.hwnd, self.widget)?
+            .checked
+            .map(|checked| {
+                if checked {
+                    ToggleState_On
+                } else {
+                    ToggleState_Off
+                }
+            })
+            .ok_or_else(invalid_operation)
+    }
+}
+
 impl ISelectionItemProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
     fn Select(&self) -> Result<()> {
         let node = node(self.hwnd, self.widget)?;
@@ -596,6 +663,73 @@ impl ISelectionItemProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
             || root_simple_provider(self.hwnd),
             |parent| node_simple_provider(self.hwnd, parent),
         ))
+    }
+}
+
+impl IRangeValueProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
+    fn SetValue(&self, value: f64) -> Result<()> {
+        let node = node(self.hwnd, self.widget)?;
+        let range = node.range_value.ok_or_else(invalid_operation)?;
+        if !node.enabled || range.interaction.is_read_only() {
+            return Err(invalid_operation());
+        }
+        if !value.is_finite() || value < range.minimum || value > range.maximum {
+            return Err(invalid_argument());
+        }
+        #[cfg(any(feature = "slider", feature = "number-box"))]
+        {
+            return crate::windows_win32_host::set_windows_win32_window_accessible_semantic_numeric_value(
+                self.hwnd as _,
+                self.widget,
+                value,
+            )
+            .then_some(())
+            .ok_or_else(invalid_operation);
+        }
+        #[cfg(not(any(feature = "slider", feature = "number-box")))]
+        Err(invalid_operation())
+    }
+
+    fn Value(&self) -> Result<f64> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| range.value)
+            .ok_or_else(invalid_operation)
+    }
+
+    fn IsReadOnly(&self) -> Result<BOOL> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| BOOL::from(range.interaction.is_read_only()))
+            .ok_or_else(invalid_operation)
+    }
+
+    fn Maximum(&self) -> Result<f64> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| range.maximum)
+            .ok_or_else(invalid_operation)
+    }
+
+    fn Minimum(&self) -> Result<f64> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| range.minimum)
+            .ok_or_else(invalid_operation)
+    }
+
+    fn LargeChange(&self) -> Result<f64> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| range.interaction.large_change().unwrap_or(f64::NAN))
+            .ok_or_else(invalid_operation)
+    }
+
+    fn SmallChange(&self) -> Result<f64> {
+        node(self.hwnd, self.widget)?
+            .range_value
+            .map(|range| range.interaction.small_change().unwrap_or(f64::NAN))
+            .ok_or_else(invalid_operation)
     }
 }
 
@@ -652,13 +786,15 @@ pub(crate) fn proof_provider_tree(
         .iter()
         .filter(|node| {
             node.enabled
-                && matches!(
+                && (matches!(
                     node.role,
                     crate::ZsAccessibilityRole::Button
                         | crate::ZsAccessibilityRole::ListItem
                         | crate::ZsAccessibilityRole::Tab
                         | crate::ZsAccessibilityRole::TextBox
-                )
+                ) || node
+                    .range_value
+                    .is_some_and(|range| !range.interaction.is_read_only()))
         })
         .count();
     Some((provider_node_count, action_count))
@@ -692,6 +828,8 @@ mod tests {
         assert!(node.cast::<IRawElementProviderFragment>().is_ok());
         assert!(node.cast::<IInvokeProvider>().is_ok());
         assert!(node.cast::<ISelectionItemProvider>().is_ok());
+        assert!(node.cast::<IRangeValueProvider>().is_ok());
+        assert!(node.cast::<IToggleProvider>().is_ok());
     }
 
     #[test]
@@ -703,6 +841,10 @@ mod tests {
         assert_eq!(
             control_type(crate::ZsAccessibilityRole::Group),
             UIA_GroupControlTypeId.0
+        );
+        assert_eq!(
+            control_type(crate::ZsAccessibilityRole::Canvas),
+            UIA_CustomControlTypeId.0
         );
         assert_eq!(
             control_type(crate::ZsAccessibilityRole::TextBox),

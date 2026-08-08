@@ -14,6 +14,7 @@ pub(crate) struct NativeDrawPalette {
     pub surface_raised: Color,
     pub control: Color,
     pub border: Color,
+    pub strong_stroke: Color,
     pub success: Color,
     pub warning: Color,
     pub danger: Color,
@@ -67,6 +68,7 @@ impl NativeDrawPalette {
             surface_raised: theme.colors.surface_raised,
             control: theme.colors.control,
             border: theme.colors.border,
+            strong_stroke: theme.colors.text_primary,
             success: theme.colors.success,
             warning: theme.colors.warning,
             danger: theme.colors.danger,
@@ -85,6 +87,7 @@ impl NativeDrawPalette {
             surface_raised: theme.colors.surface_raised,
             control: theme.colors.control,
             border: theme.colors.border,
+            strong_stroke: strong_stroke_color(theme.colors.text_primary, theme.colors.surface),
             success: theme.colors.success,
             warning: theme.colors.warning,
             danger: theme.colors.danger,
@@ -103,6 +106,7 @@ impl NativeDrawPalette {
             ColorRole::SurfaceRaised => self.surface_raised,
             ColorRole::Control => self.control,
             ColorRole::Border => self.border,
+            ColorRole::StrongStroke => self.strong_stroke,
             ColorRole::Success => self.success,
             ColorRole::Warning => self.warning,
             ColorRole::Danger => self.danger,
@@ -153,6 +157,13 @@ const fn high_contrast_alpha(alpha: u8) -> u8 {
         21..=63 => 112,
         alpha => alpha,
     }
+}
+
+pub(crate) const fn strong_stroke_color(foreground: Color, background: Color) -> Color {
+    let luminance =
+        background.r as u32 * 299 + background.g as u32 * 587 + background.b as u32 * 114;
+    let alpha = if luminance < 128_000 { 139 } else { 114 };
+    blend_color(foreground, background, alpha)
 }
 
 const fn blend_color(foreground: Color, background: Color, alpha: u8) -> Color {

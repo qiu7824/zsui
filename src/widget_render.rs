@@ -155,6 +155,24 @@ use crate::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 pub type ZsBaseControlPlatformStyle = crate::ZsPlatformStyle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsProgressBarSegmentMetrics {
+    pub width_fraction: f32,
+    pub start_offset_fraction: f32,
+    pub end_offset_fraction: f32,
+    pub delay_ms: u64,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsProgressBarIndeterminateMetrics {
+    pub cycle_ms: u64,
+    pub frame_interval_ms: u64,
+    pub primary: ZsProgressBarSegmentMetrics,
+    pub secondary: Option<ZsProgressBarSegmentMetrics>,
+    pub easing: Option<[f32; 4]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ZsBaseControlMetrics {
     pub body_line_height: Dp,
     pub average_character_width: Dp,
@@ -191,6 +209,8 @@ pub struct ZsBaseControlMetrics {
     pub radio_dot_size: Dp,
     pub progress_slot_height: Dp,
     pub progress_track_height: Dp,
+    pub progress_indicator_height: Dp,
+    pub progress_indeterminate: ZsProgressBarIndeterminateMetrics,
     pub selection_minimum_width: Dp,
     pub selection_height: Dp,
     pub time_picker_minimum_width: Dp,
@@ -2659,7 +2679,12 @@ pub struct ZsProgressBarRenderPlan {
     pub bounds: Rect,
     pub track: Rect,
     pub filled_track: Option<Rect>,
+    pub secondary_indicator: Option<Rect>,
+    pub track_visible: bool,
     pub radius: i32,
+    pub track_radius: i32,
+    pub indicator_role: ColorRole,
+    pub frame_interval_ms: Option<u64>,
 }
 
 #[cfg(feature = "progress")]
@@ -2683,9 +2708,32 @@ pub fn zs_progress_bar_render_plan_for_platform(
     platform: ZsBaseControlPlatformStyle,
     dpi: Dpi,
 ) -> ZsProgressBarRenderPlan {
+    zs_progress_bar_render_plan_for_spec(
+        bounds,
+        crate::ZsProgressBarSpec::determinate(fraction, crate::ProgressRange::new(0.0, 1.0)),
+        platform,
+        dpi,
+        0,
+    )
+}
+
+#[cfg(feature = "progress")]
+pub fn zs_progress_bar_render_plan_for_spec(
+    bounds: Rect,
+    spec: crate::ZsProgressBarSpec,
+    platform: ZsBaseControlPlatformStyle,
+    dpi: Dpi,
+    elapsed_ms: u64,
+) -> ZsProgressBarRenderPlan {
     let metrics = ZsBaseControlMetrics::for_platform(platform);
     let track_height = metrics
         .progress_track_height
+        .to_px(dpi)
+        .round_i32()
+        .min(bounds.height.max(1))
+        .max(1);
+    let indicator_height = metrics
+        .progress_indicator_height
         .to_px(dpi)
         .round_i32()
         .min(bounds.height.max(1))
@@ -2698,34 +2746,166 @@ pub fn zs_progress_bar_render_plan_for_platform(
         width: bounds.width.max(1),
         height: track_height,
     };
-    let fraction = if fraction.is_finite() {
-        fraction.clamp(0.0, 1.0)
-    } else {
-        0.0
+    let indicator_track = Rect {
+        x: bounds.x,
+        y: bounds
+            .y
+            .saturating_add((bounds.height.saturating_sub(indicator_height)) / 2),
+        width: bounds.width.max(1),
+        height: indicator_height,
     };
-    let filled_width = ((track.width as f32) * fraction).round() as i32;
+    let indicator_role = match spec.status_value() {
+        crate::ZsProgressBarStatus::Normal => ColorRole::Accent,
+        crate::ZsProgressBarStatus::Paused => ColorRole::Warning,
+        crate::ZsProgressBarStatus::Error => ColorRole::Danger,
+    };
+    let (filled_track, secondary_indicator, track_visible, frame_interval_ms) = match spec.mode() {
+        crate::ZsProgressBarMode::Determinate { value, range } => {
+            let filled_width =
+                ((indicator_track.width as f32) * range.fraction(value)).round() as i32;
+            (
+                (filled_width > 0).then_some(Rect {
+                    width: filled_width.min(indicator_track.width),
+                    ..indicator_track
+                }),
+                None,
+                true,
+                None,
+            )
+        }
+        crate::ZsProgressBarMode::Indeterminate
+            if spec.status_value() != crate::ZsProgressBarStatus::Normal =>
+        {
+            (Some(indicator_track), None, false, None)
+        }
+        crate::ZsProgressBarMode::Indeterminate => {
+            let animation = metrics.progress_indeterminate;
+            let phase_ms = elapsed_ms % animation.cycle_ms.max(1);
+            let first = progress_bar_segment_for_metrics(
+                indicator_track,
+                phase_ms,
+                animation.primary,
+                animation.easing,
+            );
+            let second = animation.secondary.and_then(|segment| {
+                progress_bar_segment_for_metrics(
+                    indicator_track,
+                    phase_ms,
+                    segment,
+                    animation.easing,
+                )
+            });
+            (
+                first,
+                second,
+                false,
+                Some(animation.frame_interval_ms.max(1)),
+            )
+        }
+    };
     ZsProgressBarRenderPlan {
         bounds,
         track,
-        filled_track: (filled_width > 0).then_some(Rect {
-            width: filled_width.min(track.width),
-            ..track
-        }),
-        radius: (track_height / 2).max(1),
+        filled_track,
+        secondary_indicator,
+        track_visible,
+        radius: (indicator_height + 1) / 2,
+        track_radius: (track_height + 1) / 2,
+        indicator_role,
+        frame_interval_ms,
     }
 }
 
 #[cfg(feature = "progress")]
+fn progress_bar_lerp(start: f32, end: f32, amount: f32) -> f32 {
+    start + (end - start) * amount.clamp(0.0, 1.0)
+}
+
+#[cfg(feature = "progress")]
+fn progress_bar_segment_for_metrics(
+    track: Rect,
+    phase_ms: u64,
+    segment: ZsProgressBarSegmentMetrics,
+    easing: Option<[f32; 4]>,
+) -> Option<Rect> {
+    let progress = (phase_ms.saturating_sub(segment.delay_ms) as f32
+        / segment.duration_ms.max(1) as f32)
+        .clamp(0.0, 1.0);
+    let eased = easing.map_or(progress, |control_points| {
+        progress_bar_key_spline(progress, control_points)
+    });
+    let translation = progress_bar_lerp(
+        segment.start_offset_fraction,
+        segment.end_offset_fraction,
+        eased,
+    ) * track.width as f32;
+    progress_bar_clipped_segment(track, segment.width_fraction, translation)
+}
+
+#[cfg(feature = "progress")]
+fn progress_bar_key_spline(progress: f32, [x1, y1, x2, y2]: [f32; 4]) -> f32 {
+    let target = progress.clamp(0.0, 1.0);
+    let mut low = 0.0_f32;
+    let mut high = 1.0_f32;
+    for _ in 0..14 {
+        let parameter = (low + high) * 0.5;
+        let inverse = 1.0 - parameter;
+        let x = 3.0 * inverse * inverse * parameter * x1
+            + 3.0 * inverse * parameter * parameter * x2
+            + parameter * parameter * parameter;
+        if x < target {
+            low = parameter;
+        } else {
+            high = parameter;
+        }
+    }
+    let parameter = (low + high) * 0.5;
+    let inverse = 1.0 - parameter;
+    3.0 * inverse * inverse * parameter * y1
+        + 3.0 * inverse * parameter * parameter * y2
+        + parameter * parameter * parameter
+}
+
+#[cfg(feature = "progress")]
+fn progress_bar_clipped_segment(
+    track: Rect,
+    width_fraction: f32,
+    translation: f32,
+) -> Option<Rect> {
+    let segment_width = ((track.width as f32) * width_fraction).round() as i32;
+    let left = track.x.saturating_add(translation.round() as i32);
+    let right = left.saturating_add(segment_width);
+    let clipped_left = left.max(track.x);
+    let clipped_right = right.min(track.x.saturating_add(track.width));
+    (clipped_right > clipped_left).then_some(Rect {
+        x: clipped_left,
+        y: track.y,
+        width: clipped_right - clipped_left,
+        height: track.height,
+    })
+}
+
+#[cfg(feature = "progress")]
 pub fn zs_progress_bar_native_draw_plan(plan: &ZsProgressBarRenderPlan) -> NativeDrawPlan {
-    let mut commands = vec![NativeDrawCommand::RoundFill {
-        rect: plan.track,
-        fill: NativeDrawFill::Role(ColorRole::Control),
-        radius: plan.radius,
-    }];
+    let mut commands = Vec::with_capacity(3);
+    if plan.track_visible {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: plan.track,
+            fill: NativeDrawFill::Role(ColorRole::StrongStroke),
+            radius: plan.track_radius,
+        });
+    }
     if let Some(filled_track) = plan.filled_track {
         commands.push(NativeDrawCommand::RoundFill {
             rect: filled_track,
-            fill: NativeDrawFill::Role(ColorRole::Accent),
+            fill: NativeDrawFill::Role(plan.indicator_role),
+            radius: plan.radius,
+        });
+    }
+    if let Some(indicator) = plan.secondary_indicator {
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: indicator,
+            fill: NativeDrawFill::Role(plan.indicator_role),
             radius: plan.radius,
         });
     }
@@ -6572,6 +6752,10 @@ pub type ZsContentDialogPlatformStyle = crate::ZsPlatformStyle;
 pub struct ZsContentDialogMetrics {
     pub minimum_width: Dp,
     pub maximum_width: Dp,
+    /// Optional platform resource floor for the complete modal surface.
+    pub minimum_height: Option<Dp>,
+    /// Optional platform resource ceiling for the complete modal surface.
+    pub maximum_height: Option<Dp>,
     pub viewport_margin: Dp,
     pub content_padding: Dp,
     pub title_gap: Dp,
@@ -6579,6 +6763,8 @@ pub struct ZsContentDialogMetrics {
     pub button_gap: Dp,
     pub button_height: Dp,
     pub minimum_button_width: Dp,
+    /// Separator between content and the persistent command area.
+    pub separator_thickness: Dp,
     pub surface_radius: Dp,
     pub button_radius: Dp,
 }
@@ -6606,9 +6792,12 @@ pub struct ZsContentDialogButtonRenderPlan {
 pub struct ZsContentDialogRenderPlan {
     pub viewport: Rect,
     pub surface: Rect,
+    pub content_surface_bounds: Rect,
+    pub command_space_bounds: Rect,
     pub title_bounds: Option<Rect>,
     pub content_bounds: Rect,
     pub buttons: Vec<ZsContentDialogButtonRenderPlan>,
+    pub separator_thickness: i32,
     pub surface_radius: i32,
     pub button_radius: i32,
     pub platform: ZsContentDialogPlatformStyle,
@@ -6642,29 +6831,60 @@ pub fn zs_content_dialog_render_plan(
     let inner_width = surface_width
         .saturating_sub(padding.saturating_mul(2))
         .max(1);
+    let title_line_height = Dp::new(
+        TextRole::Subtitle
+            .metrics_for(platform.typography())
+            .line_height,
+    )
+    .to_px(dpi)
+    .round_i32()
+    .max(1);
+    let body_line_height = Dp::new(
+        TextRole::Body
+            .metrics_for(platform.typography())
+            .line_height,
+    )
+    .to_px(dpi)
+    .round_i32()
+    .max(1);
     let title_height = spec
         .dialog_title()
         .map(|title| {
             let units = zs_estimated_text_flow_units(title).max(1) as usize;
             let lines = units.div_ceil(40).clamp(1, 2) as i32;
-            lines.saturating_mul(scale(24, dpi))
+            lines.saturating_mul(title_line_height)
         })
         .unwrap_or(0);
     let content_units = zs_estimated_text_flow_units(spec.content()).max(1) as usize;
     let content_lines = content_units.div_ceil(56).clamp(1, 5) as i32;
-    let content_height = content_lines.saturating_mul(scale(20, dpi));
+    let content_height = content_lines.saturating_mul(body_line_height);
     let desired_height = padding
-        .saturating_mul(2)
+        // Content top/bottom padding plus command-space bottom padding.
+        .saturating_mul(3)
         .saturating_add(title_height)
         .saturating_add((title_height > 0).then_some(title_gap).unwrap_or(0))
         .saturating_add(content_height)
+        // The command space owns a separate top inset.
         .saturating_add(action_gap)
         .saturating_add(button_height);
     let available_height = viewport
         .height
         .saturating_sub(margin.saturating_mul(2))
         .max(1);
-    let surface_height = desired_height.min(available_height);
+    let minimum_height = metrics
+        .minimum_height
+        .map(|height| height.to_px(dpi).round_i32().max(1))
+        .unwrap_or(1);
+    let maximum_height = metrics
+        .maximum_height
+        .map(|height| height.to_px(dpi).round_i32().max(1))
+        .unwrap_or(available_height)
+        .max(minimum_height);
+    let surface_height = desired_height
+        .max(minimum_height)
+        .min(maximum_height)
+        .min(available_height)
+        .max(1);
     let surface = Rect {
         x: viewport.x + (viewport.width - surface_width) / 2,
         y: viewport.y + (viewport.height - surface_height) / 2,
@@ -6690,19 +6910,41 @@ pub fn zs_content_dialog_render_plan(
         .y
         .saturating_add(surface.height)
         .saturating_sub(padding)
-        .saturating_sub(button_height);
+        .saturating_sub(button_height)
+        .max(surface.y);
+    let command_space_top = buttons_y.saturating_sub(action_gap).max(surface.y);
+    let content_surface_bounds = Rect {
+        x: surface.x,
+        y: surface.y,
+        width: surface.width,
+        height: command_space_top.saturating_sub(surface.y),
+    };
+    let command_space_bounds = Rect {
+        x: surface.x,
+        y: command_space_top,
+        width: surface.width,
+        height: surface
+            .y
+            .saturating_add(surface.height)
+            .saturating_sub(command_space_top),
+    };
     let content_bounds = Rect {
         x: content_left,
         y: content_y,
         width: inner_width,
-        height: buttons_y
-            .saturating_sub(action_gap)
+        height: command_space_top
+            .saturating_sub(padding)
             .saturating_sub(content_y)
             .max(0),
     };
 
     let visual_buttons = dialog.visual_buttons(spec);
-    let total_gap = button_gap.saturating_mul(visual_buttons.len().saturating_sub(1) as i32);
+    let action_column_count = if dialog.equal_action_widths() {
+        visual_buttons.len().clamp(2, 3)
+    } else {
+        visual_buttons.len().max(1)
+    };
+    let total_gap = button_gap.saturating_mul(action_column_count.saturating_sub(1) as i32);
     let minimum_button_width = metrics.minimum_button_width.to_px(dpi).round_i32().max(1);
     let available_button_width = inner_width.saturating_sub(total_gap).max(1);
     let equal_width = available_button_width
@@ -6733,12 +6975,19 @@ pub fn zs_content_dialog_render_plan(
             *width = equal_width;
         }
     }
+    let visible_gap = button_gap.saturating_mul(button_layout.len().saturating_sub(1) as i32);
     let buttons_width = button_layout
         .iter()
-        .fold(total_gap, |total, (_, _, width)| {
+        .fold(visible_gap, |total, (_, _, width)| {
             total.saturating_add(*width)
         });
-    let mut button_x = if dialog.trailing_actions() {
+    let mut button_x = if dialog.equal_action_widths() && button_layout.len() == 1 {
+        // WinUI keeps two star-sized action columns even when only one slot is
+        // visible and places that action in the right column.
+        content_left
+            .saturating_add(equal_width)
+            .saturating_add(button_gap)
+    } else if dialog.trailing_actions() {
         surface
             .x
             .saturating_add(surface.width)
@@ -6773,9 +7022,12 @@ pub fn zs_content_dialog_render_plan(
     ZsContentDialogRenderPlan {
         viewport,
         surface,
+        content_surface_bounds,
+        command_space_bounds,
         title_bounds,
         content_bounds,
         buttons,
+        separator_thickness: metrics.separator_thickness.to_px(dpi).round_i32().max(0),
         surface_radius: metrics.surface_radius.to_px(dpi).round_i32().max(0),
         button_radius: metrics.button_radius.to_px(dpi).round_i32().max(0),
         platform,
@@ -6814,11 +7066,61 @@ pub fn zs_content_dialog_native_draw_plan(
         },
         NativeDrawCommand::RoundRect {
             rect: plan.surface,
-            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            fill: NativeDrawFill::Role(if dialog.equal_action_widths() {
+                ColorRole::Surface
+            } else {
+                ColorRole::SurfaceRaised
+            }),
             stroke: Some(NativeDrawFill::Role(ColorRole::Border)),
             radius: plan.surface_radius,
         },
     ];
+    if dialog.equal_action_widths() && plan.content_surface_bounds.height > 0 {
+        let inset = 1;
+        let overlay = Rect {
+            x: plan.content_surface_bounds.x.saturating_add(inset),
+            y: plan.content_surface_bounds.y.saturating_add(inset),
+            width: plan
+                .content_surface_bounds
+                .width
+                .saturating_sub(inset.saturating_mul(2)),
+            height: plan.content_surface_bounds.height.saturating_sub(inset),
+        };
+        let overlay_radius = plan.surface_radius.saturating_sub(inset);
+        commands.push(NativeDrawCommand::RoundFill {
+            rect: overlay,
+            fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            radius: overlay_radius,
+        });
+        if overlay.height > overlay_radius {
+            commands.push(NativeDrawCommand::FillRect {
+                rect: Rect {
+                    x: overlay.x,
+                    y: overlay
+                        .y
+                        .saturating_add(overlay.height)
+                        .saturating_sub(overlay_radius),
+                    width: overlay.width,
+                    height: overlay_radius,
+                },
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+            });
+        }
+        if plan.separator_thickness > 0 {
+            commands.push(NativeDrawCommand::FillRect {
+                rect: Rect {
+                    x: plan.surface.x.saturating_add(inset),
+                    y: plan.command_space_bounds.y,
+                    width: plan.surface.width.saturating_sub(inset.saturating_mul(2)),
+                    height: plan.separator_thickness,
+                },
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Border,
+                    alpha: 96,
+                },
+            });
+        }
+    }
     if let (Some(title), Some(bounds)) = (spec.dialog_title(), plan.title_bounds) {
         commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
             title,
@@ -6846,7 +7148,8 @@ pub fn zs_content_dialog_native_draw_plan(
         },
     )));
     for button in &plan.buttons {
-        let (fill, stroke, text_color) = if button.destructive {
+        let native_destructive_treatment = button.destructive && !dialog.equal_action_widths();
+        let (fill, stroke, text_color) = if native_destructive_treatment {
             (
                 NativeDrawFill::Role(ColorRole::Control),
                 NativeDrawFill::Role(ColorRole::Danger),
@@ -7391,13 +7694,23 @@ mod tests {
         assert!(windows.buttons[1].destructive);
         assert!(windows.buttons[0].focused);
         assert!(macos.buttons[0].bounds.x > macos.surface.x);
-        assert!(
-            ZsContentDialogMetrics::for_platform(ZsContentDialogPlatformStyle::Windows)
-                .button_height
-                .0
-                > ZsContentDialogMetrics::for_platform(ZsContentDialogPlatformStyle::Macos)
-                    .button_height
-                    .0
+        let windows_metrics =
+            ZsContentDialogMetrics::for_platform(ZsContentDialogPlatformStyle::Windows);
+        assert_eq!(windows_metrics.minimum_width, Dp::new(320.0));
+        assert_eq!(windows_metrics.maximum_width, Dp::new(548.0));
+        assert_eq!(windows_metrics.minimum_height, Some(Dp::new(184.0)));
+        assert_eq!(windows_metrics.maximum_height, Some(Dp::new(756.0)));
+        assert_eq!(windows_metrics.content_padding, Dp::new(24.0));
+        assert_eq!(windows_metrics.title_gap, Dp::new(12.0));
+        assert_eq!(windows_metrics.button_gap, Dp::new(8.0));
+        assert_eq!(windows_metrics.button_height, Dp::new(32.0));
+        assert_eq!(windows_metrics.separator_thickness, Dp::new(1.0));
+        assert!(windows.surface.height >= 184);
+        assert_eq!(windows.command_space_bounds.height, 80);
+        assert_eq!(windows.separator_thickness, 1);
+        assert_eq!(
+            windows.content_bounds.y + windows.content_bounds.height + 24,
+            windows.command_space_bounds.y
         );
 
         let draw = zs_content_dialog_native_draw_plan(&windows, &spec);
@@ -7407,11 +7720,44 @@ mod tests {
                 rect,
                 fill: NativeDrawFill::RoleWithAlpha {
                     role: ColorRole::PrimaryText,
-                    alpha: 88,
+                    alpha: 77,
                 },
             }) if *rect == viewport
         ));
         assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                rect,
+                fill: NativeDrawFill::Role(ColorRole::Surface),
+                ..
+            } if *rect == windows.surface
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                ..
+            }
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::FillRect {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::Border,
+                    alpha: 96,
+                },
+            } if rect.y == windows.command_space_bounds.y && rect.height == 1
+        )));
+        assert!(!draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                stroke: Some(NativeDrawFill::Role(ColorRole::Danger)),
+                ..
+            }
+        )));
+        let macos_draw = zs_content_dialog_native_draw_plan(&macos, &spec);
+        assert!(macos_draw.commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::RoundRect {
                 stroke: Some(NativeDrawFill::Role(ColorRole::Danger)),
@@ -7438,6 +7784,20 @@ mod tests {
             Dpi::standard(),
         );
         assert!(cjk_plan.title_bounds.unwrap().height > ascii_plan.title_bounds.unwrap().height);
+
+        let close_only = crate::ZsContentDialogSpec::new("Body", "Close");
+        let close_only_plan = zs_content_dialog_render_plan(
+            viewport,
+            &close_only,
+            Close,
+            ZsContentDialogPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        assert_eq!(close_only_plan.buttons.len(), 1);
+        assert!(
+            close_only_plan.buttons[0].bounds.x
+                > close_only_plan.surface.x + close_only_plan.surface.width / 2
+        );
     }
 
     #[cfg(feature = "info-bar")]
@@ -8270,6 +8630,25 @@ mod tests {
         assert_eq!(plan.track.width, 200);
         assert_eq!(plan.track.height, expected_track_height);
         assert_eq!(plan.filled_track.expect("determinate fill").width, 125);
+        if ZsBaseControlPlatformStyle::current() == ZsBaseControlPlatformStyle::Windows {
+            assert_eq!(plan.track.height, 1);
+            assert_eq!(plan.filled_track.expect("determinate fill").height, 3);
+            assert_eq!(plan.track_radius, 1);
+            assert_eq!(plan.radius, 2);
+        }
+        assert!(matches!(
+            zs_progress_bar_native_draw_plan(&plan).commands.as_slice(),
+            [
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::Role(ColorRole::StrongStroke),
+                    ..
+                },
+                NativeDrawCommand::RoundFill {
+                    fill: NativeDrawFill::Role(ColorRole::Accent),
+                    ..
+                }
+            ]
+        ));
         assert_eq!(zs_progress_bar_native_draw_plan(&plan).command_count(), 2);
         assert_eq!(
             zs_progress_bar_native_draw_plan(&zs_progress_bar_render_plan(
@@ -8280,6 +8659,53 @@ mod tests {
             .command_count(),
             1
         );
+
+        let paused = zs_progress_bar_render_plan_for_spec(
+            bounds,
+            crate::ZsProgressBarSpec::determinate(40.0, crate::ProgressRange::new(0.0, 100.0))
+                .status(crate::ZsProgressBarStatus::Paused),
+            ZsBaseControlPlatformStyle::Windows,
+            Dpi::standard(),
+            0,
+        );
+        assert_eq!(paused.indicator_role, ColorRole::Warning);
+        let error = zs_progress_bar_render_plan_for_spec(
+            bounds,
+            crate::ZsProgressBarSpec::indeterminate().status(crate::ZsProgressBarStatus::Error),
+            ZsBaseControlPlatformStyle::Windows,
+            Dpi::standard(),
+            1_000,
+        );
+        assert!(!error.track_visible);
+        assert_eq!(
+            error.filled_track,
+            Some(Rect {
+                x: bounds.x,
+                y: bounds.y + (bounds.height - 3) / 2,
+                width: bounds.width,
+                height: 3,
+            })
+        );
+        assert_eq!(error.indicator_role, ColorRole::Danger);
+        assert_eq!(error.frame_interval_ms, None);
+
+        let indeterminate = (750..=1_500)
+            .step_by(50)
+            .map(|elapsed_ms| {
+                zs_progress_bar_render_plan_for_spec(
+                    bounds,
+                    crate::ZsProgressBarSpec::indeterminate(),
+                    ZsBaseControlPlatformStyle::Windows,
+                    Dpi::standard(),
+                    elapsed_ms,
+                )
+            })
+            .find(|plan| plan.filled_track.is_some() && plan.secondary_indicator.is_some())
+            .expect("the two WinUI indeterminate segments should overlap during each cycle");
+        assert!(!indeterminate.track_visible);
+        assert_eq!(indeterminate.frame_interval_ms, Some(16));
+        assert!(indeterminate.filled_track.is_some());
+        assert!(indeterminate.secondary_indicator.is_some());
     }
 
     #[cfg(feature = "auto-suggest")]

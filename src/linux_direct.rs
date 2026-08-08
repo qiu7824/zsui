@@ -42,6 +42,12 @@ type LinuxDisplayHandle = OwnedDisplayHandle;
 type LinuxSoftBufferContext = SoftBufferContext<LinuxDisplayHandle>;
 type LinuxSoftBufferSurface = SoftBufferSurface<LinuxDisplayHandle, Rc<WinitWindow>>;
 
+pub(crate) const LINUX_DIRECT_LITE_CAPTURE_BACKEND: &str =
+    "winit_softbuffer_zsui_rust_text_tiny_skia";
+pub(crate) const LINUX_DIRECT_LITE_TYPOGRAPHY_SOURCE: &str = "zsui_rust_text_fontdb";
+pub(crate) const LINUX_DIRECT_LITE_RASTERIZATION: &str =
+    "zsui_rust_text_swash_tiny_skia_softbuffer";
+
 #[cfg(feature = "linux-direct")]
 type LinuxDirectTextContext = pango::Context;
 #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
@@ -838,7 +844,7 @@ impl LinuxDirectWindow {
                 .map(|menu| menu.accessibility_snapshot()),
             &plan,
             runtime.current_interaction_plan(),
-            runtime.focused_widget(),
+            runtime.semantic_accessibility_focus(),
             tab_snapshots,
         );
         let draw_text_context = text_context.clone();
@@ -1155,7 +1161,7 @@ impl LinuxDirectWindow {
             menu,
             &self.plan,
             self.runtime.current_interaction_plan(),
-            self.runtime.focused_widget(),
+            self.runtime.semantic_accessibility_focus(),
             tab_snapshots,
         );
     }
@@ -1164,7 +1170,13 @@ impl LinuxDirectWindow {
     fn dispatch_accessibility_actions(&mut self, event_loop: &ActiveEventLoop) {
         use crate::linux_direct_accessibility::LinuxAccessibilityTarget;
         use crate::linux_direct_menu::{LinuxMenuAccessibilityTarget, LinuxMenuInputResult};
-        use accesskit::{Action, ActionData};
+        use accesskit::Action;
+        #[cfg(any(
+            feature = "text-input-core",
+            feature = "slider",
+            feature = "number-box"
+        ))]
+        use accesskit::ActionData;
         let text_context = self.draw_text_context.clone();
 
         for action in self.accessibility.take_actions() {
@@ -1184,6 +1196,18 @@ impl LinuxDirectWindow {
                         (Action::SetValue, Some(ActionData::Value(value))) => vec![self
                             .runtime
                             .dispatch_accessibility_set_value(target.widget, value)],
+                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        (Action::SetValue, Some(ActionData::NumericValue(value))) => vec![self
+                            .runtime
+                            .dispatch_accessibility_set_numeric_value(target.widget, *value)],
+                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        (Action::Increment, _) => vec![self
+                            .runtime
+                            .dispatch_accessibility_adjust_numeric_value(target.widget, 1)],
+                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        (Action::Decrement, _) => vec![self
+                            .runtime
+                            .dispatch_accessibility_adjust_numeric_value(target.widget, -1)],
                         #[cfg(feature = "text-input-core")]
                         (Action::ReplaceSelectedText, Some(ActionData::Value(value))) => {
                             let focus = self.runtime.dispatch_accessibility_focus(target.widget);
@@ -1195,6 +1219,14 @@ impl LinuxDirectWindow {
                     for report in reports {
                         self.apply_report(report, event_loop);
                     }
+                }
+                LinuxAccessibilityTarget::Semantic(widget) => {
+                    let report = match action.request.action {
+                        Action::Focus => self.runtime.dispatch_accessibility_focus(widget),
+                        Action::Click => self.runtime.dispatch_accessibility_invoke(widget),
+                        _ => continue,
+                    };
+                    self.apply_report(report, event_loop);
                 }
                 LinuxAccessibilityTarget::Menu(target) => {
                     let result = match (action.request.action, target) {
@@ -1330,7 +1362,7 @@ impl LinuxDirectWindow {
         #[cfg(feature = "linux-direct")]
         let backend = "winit_softbuffer_pango_cairo";
         #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
-        let backend = "winit_softbuffer_cosmic_text_tiny_skia";
+        let backend = LINUX_DIRECT_LITE_CAPTURE_BACKEND;
         #[cfg(feature = "linux-direct")]
         let typography = linux_direct_native_typography_profile(
             self.plan.typography_scale(),
@@ -2223,7 +2255,7 @@ struct LinuxDirectLiteTextShaper {
 ))]
 impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper {
     fn debug_name(&self) -> &'static str {
-        "LinuxDirectLite(CosmicText)"
+        "LinuxDirectLite(ZsuiRustText)"
     }
 
     fn typography_scale(&self) -> f32 {
@@ -2477,6 +2509,7 @@ pub(crate) fn linux_direct_save_file_dialog(
 pub(crate) fn linux_direct_show_native_dialog(
     spec: &crate::NativeDialogSpec,
 ) -> ZsuiResult<crate::DialogResponse> {
+    spec.validate()?;
     let availability = std::process::Command::new("zenity")
         .arg("--version")
         .output();
@@ -2506,11 +2539,24 @@ pub(crate) fn linux_direct_show_native_dialog(
         crate::DialogLevel::Warning => rfd::MessageLevel::Warning,
         crate::DialogLevel::Error => rfd::MessageLevel::Error,
     };
-    let buttons = match spec.buttons {
-        crate::DialogButtons::Ok => rfd::MessageButtons::Ok,
-        crate::DialogButtons::OkCancel => rfd::MessageButtons::OkCancel,
-        crate::DialogButtons::YesNo => rfd::MessageButtons::YesNo,
-        crate::DialogButtons::YesNoCancel => rfd::MessageButtons::YesNoCancel,
+    let labels = spec.resolved_button_labels();
+    let buttons = match (spec.buttons, spec.button_labels.is_some()) {
+        (crate::DialogButtons::Ok, false) => rfd::MessageButtons::Ok,
+        (crate::DialogButtons::OkCancel, false) => rfd::MessageButtons::OkCancel,
+        (crate::DialogButtons::YesNo, false) => rfd::MessageButtons::YesNo,
+        (crate::DialogButtons::YesNoCancel, false) => rfd::MessageButtons::YesNoCancel,
+        (crate::DialogButtons::Ok, true) => rfd::MessageButtons::OkCustom(labels.ok.clone()),
+        (crate::DialogButtons::OkCancel, true) => {
+            rfd::MessageButtons::OkCancelCustom(labels.ok.clone(), labels.cancel.clone())
+        }
+        (crate::DialogButtons::YesNo, true) => {
+            rfd::MessageButtons::OkCancelCustom(labels.yes.clone(), labels.no.clone())
+        }
+        (crate::DialogButtons::YesNoCancel, true) => rfd::MessageButtons::YesNoCancelCustom(
+            labels.yes.clone(),
+            labels.no.clone(),
+            labels.cancel.clone(),
+        ),
     };
     let response = rfd::MessageDialog::new()
         .set_title(&spec.title)
@@ -2523,10 +2569,14 @@ pub(crate) fn linux_direct_show_native_dialog(
         rfd::MessageDialogResult::Cancel => Ok(crate::DialogResponse::Cancel),
         rfd::MessageDialogResult::Yes => Ok(crate::DialogResponse::Yes),
         rfd::MessageDialogResult::No => Ok(crate::DialogResponse::No),
-        rfd::MessageDialogResult::Custom(label) => Err(ZsuiError::host(
-            "linux_direct_native_dialog",
-            format!("unexpected custom message-dialog response `{label}`"),
-        )),
+        rfd::MessageDialogResult::Custom(label) => labels
+            .response_for_label(spec.buttons, &label)
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "linux_direct_native_dialog",
+                    format!("unexpected custom message-dialog response `{label}`"),
+                )
+            }),
     }
 }
 

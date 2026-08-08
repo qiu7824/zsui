@@ -9,6 +9,7 @@ $examplesRoot = Join-Path $workspace "examples"
 $requiredAttribute = '#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]'
 $consoleToolMarker = 'ZSUI_WINDOWS_CONSOLE_TOOL:'
 $additionalGuiExamples = @(
+    "native_dialog_smoke.rs",
     "zsui_calculator.rs"
 )
 

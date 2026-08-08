@@ -60,17 +60,18 @@ impl PlatformExperience {
             Some(platform) => platform,
             None => return None,
         };
-        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-        {
-            #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
-            {
-                return Some(Self {
-                    backend: BackendProfile::linux_lite(),
-                    ..Self::for_platform(platform)
-                });
-            }
-        }
-        Some(Self::for_platform(platform))
+        let experience = Self::for_platform(platform);
+        #[cfg(all(
+            target_os = "linux",
+            not(target_env = "ohos"),
+            feature = "linux-direct-lite",
+            not(feature = "linux-direct")
+        ))]
+        let experience = Self {
+            backend: BackendProfile::linux_lite(),
+            ..experience
+        };
+        Some(experience)
     }
 
     pub(crate) const fn platform(self) -> NativeUiPlatform {
@@ -251,7 +252,8 @@ mod tests {
         assert!(!android.has_real_runtime());
 
         let lite = BackendProfile::linux_lite();
-        assert_eq!(lite.text(), NativeTextProfile::CosmicText);
+        assert_eq!(lite.text(), NativeTextProfile::ZsuiRustText);
+        assert_eq!(lite.text().name(), "zsui_rust_text");
         assert_eq!(lite.raster(), NativeRasterProfile::TinySkia);
         assert_eq!(lite.presenter(), NativePresenterProfile::Softbuffer);
         assert_eq!(lite.services(), NativeServicesProfile::XdgDesktop);

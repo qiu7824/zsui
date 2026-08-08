@@ -251,15 +251,20 @@ pub fn radio_button<Msg>(label: impl Into<String>, selected: bool) -> ViewNode<M
 
 #[cfg(feature = "progress")]
 pub fn progress_bar<Msg>(value: f32, range: impl Into<crate::ProgressRange>) -> ViewNode<Msg> {
-    let range = range.into();
+    progress_bar_from_spec(crate::ZsProgressBarSpec::determinate(value, range))
+}
+
+#[cfg(feature = "progress")]
+pub fn indeterminate_progress_bar<Msg>() -> ViewNode<Msg> {
+    progress_bar_from_spec(crate::ZsProgressBarSpec::indeterminate())
+}
+
+#[cfg(feature = "progress")]
+pub fn progress_bar_from_spec<Msg>(spec: crate::ZsProgressBarSpec) -> ViewNode<Msg> {
     let metrics = crate::ZsBaseControlMetrics::for_platform(
         crate::ZsBaseControlPlatformStyle::current(),
     );
-    ViewNode::new(ViewNodeKind::ProgressBar {
-        value: range.clamp(value),
-        range,
-    })
-    .height(metrics.progress_slot_height)
+    ViewNode::new(ViewNodeKind::ProgressBar { spec }).height(metrics.progress_slot_height)
 }
 
 #[cfg(feature = "progress-ring")]

@@ -367,6 +367,13 @@ impl WindowsWin32ViewInputRoute {
         {
             self.shared_slider_drag_active = shared.slider_drag_active;
         }
+        #[cfg(feature = "scroll")]
+        let scrollbar_drag_ended =
+            self.shared_scrollbar_drag_active && !shared.scrollbar_drag_active;
+        #[cfg(feature = "scroll")]
+        {
+            self.shared_scrollbar_drag_active = shared.scrollbar_drag_active;
+        }
         #[cfg(feature = "virtual-list")]
         let items_repeater_scrollbar_drag_ended = self
             .shared_items_repeater_scrollbar_drag_active
@@ -562,6 +569,11 @@ impl WindowsWin32ViewInputRoute {
             );
             report.slider_drag_count = usize::from(slider_drag_ended);
             report.slider_drag_active = shared.slider_drag_active;
+        }
+        #[cfg(feature = "scroll")]
+        {
+            report.scrollbar_drag_count = usize::from(scrollbar_drag_ended);
+            report.scrollbar_drag_active = shared.scrollbar_drag_active;
         }
         #[cfg(feature = "virtual-list")]
         {

@@ -8,7 +8,39 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_NCCREATE => {
             let create_params =
                 WindowsWindowCreateParams::from_create_struct(lparam as *const CREATESTRUCTW);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, create_params.role as isize);
+            let state = Box::into_raw(Box::new(create_params));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
+            let result = DefWindowProcW(hwnd, msg, wparam, lparam);
+            if result == 0 {
+                let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0)
+                    as *mut WindowsWindowCreateParams;
+                if !state.is_null() {
+                    drop(Box::from_raw(state));
+                }
+            }
+            result
+        }
+        WM_GETMINMAXINFO => {
+            let state = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
+                as *const WindowsWindowCreateParams;
+            let minmax = lparam as *mut MINMAXINFO;
+            if !state.is_null() && !minmax.is_null() {
+                if let Some(min_size) = (*state).min_size {
+                    let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+                    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+                    let (width, height) = windows_win32_outer_size_for_client_at_dpi(
+                        min_size.width,
+                        min_size.height,
+                        style,
+                        ex_style,
+                        !GetMenu(hwnd).is_null(),
+                        GetDpiForWindow(hwnd).max(96),
+                    );
+                    (*minmax).ptMinTrackSize.x = (*minmax).ptMinTrackSize.x.max(width);
+                    (*minmax).ptMinTrackSize.y = (*minmax).ptMinTrackSize.y.max(height);
+                    return 0;
+                }
+            }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_CLOSE => {
@@ -23,7 +55,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_NCDESTROY => {
-            let role = WindowsWindowRole::from_create_param(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+            let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0)
+                as *mut WindowsWindowCreateParams;
+            let role = if state.is_null() {
+                WindowsWindowRole::Main
+            } else {
+                Box::from_raw(state).role
+            };
             #[cfg(feature = "accessibility")]
             crate::windows_semantic_uia::disconnect(hwnd);
             clear_windows_win32_window_draw_plan(hwnd);
@@ -44,16 +82,17 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             if let Some(result) = crate::windows_menu_uia::handle_get_object(hwnd, wparam, lparam) {
                 return result;
             }
-            // A focused self-drawn editor is the active UIA root surface. Prefer
-            // its Edit/ValuePattern/TextPattern provider over the generic
-            // semantic tree so screen readers receive the native text contract.
-            #[cfg(feature = "text-input-core")]
-            if let Some(result) = crate::windows_uia::handle_get_object(hwnd, wparam, lparam) {
-                return result;
-            }
+            // Keep one fragment root for the complete retained View. Editable
+            // semantic children delegate their Value/Text patterns to the
+            // focused text provider instead of replacing every sibling in the
+            // accessibility tree.
             if let Some(result) =
                 crate::windows_semantic_uia::handle_get_object(hwnd, wparam, lparam)
             {
+                return result;
+            }
+            #[cfg(feature = "text-input-core")]
+            if let Some(result) = crate::windows_uia::handle_get_object(hwnd, wparam, lparam) {
                 return result;
             }
             #[cfg(feature = "tabs")]

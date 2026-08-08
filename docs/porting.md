@@ -39,12 +39,34 @@ surface and input traces, so local contract JSON is not enough for a
 device-smoke pass.
 Backend crates or modules should stay behind Cargo features. The current
 feature graph is mirrored by `zsui_feature_manifest()`: `desktop-winit`,
-`windows-gdi`, `windows-win32`, `macos-appkit`, `linux-direct`,
-`linux-direct-lite`, `linux-gtk` and
+`windows-gdi`, `windows-win32`, `windows-directwrite`, `rust-text`,
+`rust-text-proof`, `windows-rust-text`, `windows-text-proof`, `macos-appkit`,
+`linux-direct`, `linux-direct-lite`, `linux-gtk` and
 `android` are platform/backend gates, while `clipboard` and
 `image` own their optional dependencies. The default `window` umbrella must
 keep the one-line desktop entry working and rely
 on target-specific dependencies to compile only the active platform backend.
+
+`windows-directwrite` is an opt-in Windows text backend: it uses the operating
+system DirectWrite implementation for layout, fallback and glyph rasterization,
+then composites the result into ZSUI's existing buffered Win32 surface. It does
+not enable Direct2D, a second application runtime or a WebView.
+
+`rust-text` is the optional production platform-neutral ZSUI text engine;
+`windows-rust-text` selects it for Win32 measurement and drawing without
+changing application UI code. `rust-text-proof` adds development-only geometry,
+serialization and difference output; `windows-text-proof` keeps DirectWrite
+available as its reference oracle and generates the multi-font JSON, SVG and
+PNG evidence defined in `docs/text-rendering.md`. Neither proof feature is an
+application capability. The Rust path remains experimental until that matrix,
+rather than a single-font sample, passes.
+Production adapters consume the engine's exact retained glyph placement and
+unique visual-line indices. Quantized raster-cache coordinates are private to
+pixel generation and must not drive measurement, hit testing or caret geometry.
+Platform metric policies may reconcile table-derived shaping behavior, baseline
+phase and font synthesis, but must write the result into the retained layout
+before measure, paint, caret, selection or IME consumes it. Proof comparison is
+an observer of that production result and never a runtime correction layer.
 
 `linux-direct` uses Winit as the safe Wayland/X11 window/event adapter, but it
 is not the old blank `desktop-winit` fallback: the backend owns real
@@ -57,8 +79,11 @@ AT-SPI bus.
 
 `linux-direct-lite` is an opt-in renderer profile over the same window, input,
 IME, menu, portal and AccessKit host. It replaces Cairo/Pango with tiny-skia
-and cosmic-text/swash, draws directly into the Softbuffer frame, and keeps the
-application source unchanged. The default remains `linux-direct`; the pure-Rust
+and the feature-gated ZSUI retained text engine, draws directly into the
+Softbuffer frame, and keeps the application source unchanged. Measurement,
+paint, menu metrics and text-input geometry share one bounded engine context;
+clipped text is composited into the final frame without per-command temporary
+bitmaps. The default remains `linux-direct`; the pure-Rust
 profile has X11 final-surface proof for the shared CJK/bidirectional Notepad
 scene, but remains experimental until its target proof also covers Wayland,
 AT-SPI and real IME behavior at the same level as the default.
@@ -118,12 +143,19 @@ presents the panel as a window sheet. Linux delegates ownership and modality to
 the desktop portal.
 
 Use `NativeDesktopDialogService` for blocking system messages and confirmations.
-`NativeDialogSpec` carries only semantic level and button roles; the selected
-adapter owns modality, platform action order and native response conversion.
-Win32 uses the active window as the `MessageBoxW` owner, AppKit prefers an
-`NSAlert` sheet, GTK uses `GtkAlertDialog`, and Linux direct uses the optional
-desktop Zenity provider. Missing providers return `ZsuiError::Unsupported`
-instead of a fabricated response.
+`NativeDialogSpec` carries semantic level and button roles plus an optional
+`DialogButtonLabels` localization set. Labels are keyed by `DialogResponse`,
+validated as nonempty, NUL-free and unique across the visible actions, and
+never determine response identity or platform action order. Both structs are
+non-exhaustive; construct them through `NativeDialogSpec::message`,
+`DialogButtonLabels::new` and the builder methods so compatible framework
+extensions do not require application struct-literal rewrites. The selected
+adapter owns modality, ordering and native response conversion. Win32 uses the
+active window as the `MessageBoxW` owner and a scoped thread hook for explicit
+labels, AppKit prefers an `NSAlert` sheet, GTK uses
+`GtkAlertDialog`, and Linux direct uses the optional desktop Zenity provider.
+Missing providers return `ZsuiError::Unsupported` instead of a fabricated
+response.
 
 The unified native-window path also attaches backend-neutral `NativeDrawPlan`
 content to both platforms. AppKit uses a flipped custom `NSView`,

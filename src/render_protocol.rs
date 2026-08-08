@@ -390,6 +390,7 @@ pub enum ColorRole {
     SurfaceRaised,
     Control,
     Border,
+    StrongStroke,
     Success,
     Warning,
     Danger,

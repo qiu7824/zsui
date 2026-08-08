@@ -117,8 +117,13 @@ pub fn zs_tooltip_render_plan(
     let maximum_text_width = maximum_width.saturating_sub(horizontal_padding * 2).max(1);
     let maximum_columns = (maximum_text_width / character_width).max(1) as usize;
     let (columns, lines) = tooltip_text_shape(&spec.text, maximum_columns);
+    // Keep one shaping cell on each side. The final backend still owns glyph
+    // shaping, and real system fonts can be wider than the deterministic
+    // Unicode flow-unit estimate used to place the transient surface.
+    let shaping_reserve = character_width.saturating_mul(2);
     let width = (columns as i32)
         .saturating_mul(character_width)
+        .saturating_add(shaping_reserve)
         .saturating_add(horizontal_padding * 2)
         .min(maximum_width)
         .max(horizontal_padding * 2 + character_width);

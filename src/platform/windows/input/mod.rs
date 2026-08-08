@@ -8,6 +8,8 @@ pub struct WindowsWin32ViewInputRoute {
     shared_canvas_pointer_drag_moved: bool,
     #[cfg(feature = "slider")]
     shared_slider_drag_active: bool,
+    #[cfg(feature = "scroll")]
+    shared_scrollbar_drag_active: bool,
     #[cfg(feature = "virtual-list")]
     shared_items_repeater_scrollbar_drag_active: bool,
     #[cfg(feature = "color-picker")]
@@ -142,6 +144,8 @@ impl WindowsWin32ViewInputRoute {
             shared_canvas_pointer_drag_moved: false,
             #[cfg(feature = "slider")]
             shared_slider_drag_active: false,
+            #[cfg(feature = "scroll")]
+            shared_scrollbar_drag_active: false,
             #[cfg(feature = "virtual-list")]
             shared_items_repeater_scrollbar_drag_active: false,
             #[cfg(feature = "color-picker")]
@@ -237,6 +241,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub slider_keyboard_change_count: usize,
     pub slider_drag_count: usize,
     pub slider_drag_active: bool,
+    pub scrollbar_drag_count: usize,
+    pub scrollbar_drag_active: bool,
     pub items_repeater_viewport_change_count: usize,
     pub items_repeater_scrollbar_drag_count: usize,
     pub items_repeater_scrollbar_drag_active: bool,
@@ -362,6 +368,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.slider_keyboard_change_count += next.slider_keyboard_change_count;
         self.slider_drag_count += next.slider_drag_count;
         self.slider_drag_active = next.slider_drag_active;
+        self.scrollbar_drag_count += next.scrollbar_drag_count;
+        self.scrollbar_drag_active = next.scrollbar_drag_active;
         self.items_repeater_viewport_change_count += next.items_repeater_viewport_change_count;
         self.items_repeater_scrollbar_drag_count += next.items_repeater_scrollbar_drag_count;
         self.items_repeater_scrollbar_drag_active = next.items_repeater_scrollbar_drag_active;
@@ -594,7 +602,12 @@ pub(crate) fn windows_win32_window_semantic_accessibility_focus(
         .expect("window view input route registry should not be poisoned")
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
-        .and_then(|record| record.route.shared_runtime.focused_widget())
+        .and_then(|record| {
+            record
+                .route
+                .shared_runtime
+                .semantic_accessibility_focus()
+        })
 }
 
 #[cfg(feature = "accessibility")]
@@ -615,6 +628,21 @@ pub(crate) fn invoke_windows_win32_window_accessible_semantic_node(
 ) -> bool {
     dispatch_windows_win32_window_view_input(hwnd, |route| {
         route.dispatch_accessibility_invoke(widget)
+    })
+    .is_some_and(|report| report.handled)
+}
+
+#[cfg(all(
+    feature = "accessibility",
+    any(feature = "slider", feature = "number-box")
+))]
+pub(crate) fn set_windows_win32_window_accessible_semantic_numeric_value(
+    hwnd: HWND,
+    widget: crate::WidgetId,
+    value: f64,
+) -> bool {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_accessibility_set_numeric_value(widget, value)
     })
     .is_some_and(|report| report.handled)
 }

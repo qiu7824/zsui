@@ -41,6 +41,13 @@ trait LiveViewDriver: Send {
     ) -> Option<WidgetId>;
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)>;
+    #[cfg(feature = "number-box")]
+    fn widget_number_box_accessibility_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(Option<f64>, ZsNumberRange)>;
+    #[cfg(feature = "scroll")]
+    fn widget_scrollbar_layout(&self, widget: WidgetId) -> Option<ZsScrollbarLayout>;
     #[cfg(feature = "auto-suggest")]
     fn widget_auto_suggest_state(&self, widget: WidgetId) -> Option<crate::ZsAutoSuggestState>;
     #[cfg(feature = "tree")]
@@ -294,6 +301,19 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "slider")]
     pub fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
         self.lock().widget_slider_state(widget)
+    }
+
+    #[cfg(feature = "number-box")]
+    pub(crate) fn widget_number_box_accessibility_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(Option<f64>, ZsNumberRange)> {
+        self.lock().widget_number_box_accessibility_state(widget)
+    }
+
+    #[cfg(feature = "scroll")]
+    pub fn widget_scrollbar_layout(&self, widget: WidgetId) -> Option<ZsScrollbarLayout> {
+        self.lock().widget_scrollbar_layout(widget)
     }
 
     #[cfg(feature = "combo")]
@@ -620,7 +640,7 @@ where
         if messages.is_empty() {
             let retained_geometry_changed = match event {
                 #[cfg(feature = "scroll")]
-                ViewEvent::ScrollBy { .. } => true,
+                ViewEvent::ScrollBy { .. } | ViewEvent::ScrollToRatio { .. } => true,
                 #[cfg(feature = "virtual-list")]
                 ViewEvent::ItemsRepeaterScrollToRatio { .. } => true,
                 #[cfg(feature = "tabs")]
@@ -694,6 +714,19 @@ where
     #[cfg(feature = "slider")]
     fn widget_slider_state(&self, widget: WidgetId) -> Option<(f32, SliderRange)> {
         self.view.widget_slider_state(widget)
+    }
+
+    #[cfg(feature = "number-box")]
+    fn widget_number_box_accessibility_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(Option<f64>, ZsNumberRange)> {
+        self.view.widget_number_box_accessibility_state(widget)
+    }
+
+    #[cfg(feature = "scroll")]
+    fn widget_scrollbar_layout(&self, widget: WidgetId) -> Option<ZsScrollbarLayout> {
+        self.view.widget_scrollbar_layout(widget)
     }
 
     #[cfg(feature = "combo")]

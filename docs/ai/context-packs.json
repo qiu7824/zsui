@@ -279,6 +279,11 @@
         "src/native.rs"
       ],
       "optional": [
+        "src/platform/windows/text/directwrite.rs",
+        "src/platform/windows/text/rust_renderer.rs",
+        "src/rust_text_renderer.rs",
+        "examples/text_geometry_proof.rs",
+        "docs/text-rendering.md",
         "src/platform/windows/application.rs",
         "src/platform/windows/dpi.rs",
         "src/platform/windows/input",
@@ -287,6 +292,9 @@
       ],
       "verify": [
         "cargo test --features full --quiet",
+        "cargo test --no-default-features --features windows-rust-text --quiet",
+        "cargo test --no-default-features --features rust-text-proof --quiet",
+        "cargo check --example text_geometry_proof --no-default-features --features windows-text-proof",
         "cargo run --example native_smoke_run --features full -- windows",
         "cargo run --example native_smoke_review --features full -- windows",
         ".\\scripts\\check-windows-text-accessibility.ps1 -Locked"
@@ -352,10 +360,12 @@
         "src/platform/menu_accelerator.rs",
         "src/render_protocol.rs",
         "Cargo.toml",
-        "docs/native-host-smoke.md",
-        "docs/v0.3-native-proof-ci.md",
-        "docs/v0.2-desktop-native.md",
-        "examples/desktop_native_showcase.rs"
+      "docs/native-host-smoke.md",
+      "docs/v0.3-native-proof-ci.md",
+      "docs/v0.2-desktop-native.md",
+      ".github/workflows/native-proof.yml",
+      "examples/native_dialog_smoke.rs",
+      "examples/desktop_native_showcase.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",

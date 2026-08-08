@@ -230,6 +230,112 @@ fn virtual_list_row_bounds(
     }
 }
 
+#[cfg(feature = "scroll")]
+fn scrollbar_rect(rect: crate::UiRect) -> Rect {
+    Rect {
+        x: rect.left,
+        y: rect.top,
+        width: (rect.right - rect.left).max(0),
+        height: (rect.bottom - rect.top).max(0),
+    }
+}
+
+#[cfg(feature = "scroll")]
+fn scrollbar_hit_slop(dpi: Dpi) -> (i32, i32) {
+    (
+        Dp::new(4.0).to_px(dpi).round_i32().max(0),
+        Dp::new(2.0).to_px(dpi).round_i32().max(0),
+    )
+}
+
+#[cfg(feature = "scroll")]
+fn scroll_viewport_bounds<Msg>(node: &ViewNode<Msg>) -> Option<Rect> {
+    let bounds = node.bounds?;
+    #[cfg(feature = "tabs")]
+    if let ViewNodeKind::Tabs { tabs, selected, .. } = &node.kind {
+        let selected_index = selected
+            .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
+        let tab_bounds = tab_layout_bounds(bounds, node.style.padding, node.layout_dpi);
+        return Some(
+            crate::zs_tab_view_render_plan_for_tabs(
+                tab_bounds,
+                tabs,
+                selected_index,
+                node.resolved_platform_style(),
+                node.layout_dpi,
+            )
+            .content_bounds,
+        );
+    }
+    Some(inset_bounds(bounds, node.style.padding, node.layout_dpi))
+}
+
+#[cfg(feature = "scroll")]
+fn scrollbar_layout<Msg>(node: &ViewNode<Msg>) -> Option<ZsScrollbarLayout> {
+    if !matches!(node.kind, ViewNodeKind::Scroll { .. })
+        && node.style.overflow_y != ViewOverflow::Auto
+    {
+        return None;
+    }
+    let viewport = scroll_viewport_bounds(node)?;
+    let content_height = node
+        .resolved_scroll_content_height
+        .to_px(node.layout_dpi)
+        .round_i32()
+        .max(0);
+    let maximum_offset_px = content_height.saturating_sub(viewport.height).max(0);
+    if maximum_offset_px <= 0 || viewport.height <= 0 || viewport.width <= 0 {
+        return None;
+    }
+    let offset_y = match &node.kind {
+        ViewNodeKind::Scroll { offset_y, .. } => *offset_y,
+        _ => node.adaptive_scroll_offset_y,
+    };
+    let profile = crate::platform_component_profile::PlatformComponentProfile::for_style(
+        node.resolved_platform_style(),
+    )
+    .shell;
+    let bar_width = profile
+        .scrollbar_width
+        .to_px(node.layout_dpi)
+        .round_i32()
+        .max(1);
+    let margin = profile
+        .scrollbar_margin
+        .to_px(node.layout_dpi)
+        .round_i32()
+        .max(0);
+    let geometry = crate::shell_layout::ZsShellScrollLayout::new(
+        viewport.y,
+        viewport.y.saturating_add(viewport.height),
+        content_height,
+        viewport.height,
+        viewport.x.saturating_add(viewport.width),
+        margin,
+        bar_width,
+        node.layout_dpi,
+    );
+    let offset_px = offset_y.to_px(node.layout_dpi).round_i32().max(0);
+    let track = geometry.track_rect()?;
+    let thumb = geometry.thumb_rect(offset_px)?;
+    let (extra_left, extra_right) = scrollbar_hit_slop(node.layout_dpi);
+    let track_hit = geometry.track_hit_rect(extra_left, extra_right)?;
+    let thumb_hit = geometry.thumb_hit_rect(offset_px, extra_left)?;
+    Some(ZsScrollbarLayout {
+        track: scrollbar_rect(track),
+        track_hit: scrollbar_rect(track_hit),
+        thumb: scrollbar_rect(thumb),
+        thumb_hit: scrollbar_rect(thumb_hit),
+        maximum_offset: Dp::new(
+            maximum_offset_px as f32 / node.layout_dpi.scale_factor().max(f32::EPSILON),
+        ),
+        offset_y: Dp::new(offset_y.0.clamp(
+            0.0,
+            maximum_offset_px as f32 / node.layout_dpi.scale_factor().max(f32::EPSILON),
+        )),
+    })
+}
+
 #[cfg(feature = "virtual-list")]
 fn items_repeater_scrollbar_layout<Msg>(
     node: &ViewNode<Msg>,
@@ -283,20 +389,14 @@ fn items_repeater_scrollbar_layout<Msg>(
     let offset_px = offset_y.to_px(node.layout_dpi).round_i32().max(0);
     let track = layout.track_rect()?;
     let thumb = layout.thumb_rect(offset_px)?;
-    let thumb_hit = layout.thumb_hit_rect(
-        offset_px,
-        Dp::new(4.0).to_px(node.layout_dpi).round_i32().max(0),
-    )?;
-    let to_rect = |rect: crate::UiRect| Rect {
-        x: rect.left,
-        y: rect.top,
-        width: (rect.right - rect.left).max(0),
-        height: (rect.bottom - rect.top).max(0),
-    };
+    let (extra_left, extra_right) = scrollbar_hit_slop(node.layout_dpi);
+    let track_hit = layout.track_hit_rect(extra_left, extra_right)?;
+    let thumb_hit = layout.thumb_hit_rect(offset_px, extra_left)?;
     Some(ZsItemsRepeaterScrollbarLayout {
-        track: to_rect(track),
-        thumb: to_rect(thumb),
-        thumb_hit: to_rect(thumb_hit),
+        track: scrollbar_rect(track),
+        track_hit: scrollbar_rect(track_hit),
+        thumb: scrollbar_rect(thumb),
+        thumb_hit: scrollbar_rect(thumb_hit),
         maximum_offset,
     })
 }

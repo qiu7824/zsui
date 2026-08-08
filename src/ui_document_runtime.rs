@@ -448,6 +448,8 @@ fn compile_node<Msg: Clone + 'static>(
         "settings_card" => document_settings_card(node, properties, children)?,
         #[cfg(feature = "image-preview")]
         "image" => document_image(node, properties)?,
+        #[cfg(feature = "video")]
+        "video" => document_video(node, properties)?,
         #[cfg(feature = "workbench")]
         "workbench_shell" => document_workbench_shell(node, properties, mapper)?,
         #[cfg(feature = "badge")]
@@ -3589,6 +3591,7 @@ fn grid_gap_property(
     feature = "teaching-tip",
     feature = "shell",
     feature = "image-preview",
+    feature = "video",
     feature = "workbench"
 ))]
 fn invalid_resolved_property(
@@ -4059,6 +4062,50 @@ fn document_image<Msg: Clone>(
         .image_interpolation(interpolation))
 }
 
+#[cfg(feature = "video")]
+fn document_video<Msg: Clone>(
+    node: &UiNode,
+    properties: &BTreeMap<String, Value>,
+) -> Result<ViewNode<Msg>, UiDocumentRuntimeError> {
+    let frame = property_value(node, properties, "frame")
+        .and_then(|value| crate::ui_document::ui_image_frame_from_value(&value))
+        .ok_or_else(|| {
+            invalid_resolved_property(
+                node,
+                "frame",
+                "frame must be null or a bounded immutable video frame",
+            )
+        })?;
+    let fit = match optional_string_property(node, properties, "fit").as_deref() {
+        Some("contain") | None => crate::ZsVideoFit::Contain,
+        Some("cover") => crate::ZsVideoFit::Cover,
+        Some("stretch") => crate::ZsVideoFit::Stretch,
+        Some(value) => {
+            return Err(invalid_resolved_property(
+                node,
+                "fit",
+                format!("unsupported video fit {value:?}"),
+            ));
+        }
+    };
+    let interpolation = match optional_string_property(node, properties, "interpolation").as_deref()
+    {
+        Some("nearest") => crate::NativeImageInterpolation::Nearest,
+        Some("smooth") | None => crate::NativeImageInterpolation::Smooth,
+        Some(value) => {
+            return Err(invalid_resolved_property(
+                node,
+                "interpolation",
+                format!("unsupported video interpolation {value:?}"),
+            ));
+        }
+    };
+    let source = frame.map_or_else(crate::ZsVideoSource::new, crate::ZsVideoSource::from_frame);
+    Ok(crate::video(source)
+        .video_fit(fit)
+        .video_interpolation(interpolation))
+}
+
 fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     if let Some(value) = node.layout.width {
         view = view.width(Dp::new(value));
@@ -4132,6 +4179,7 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     feature = "teaching-tip",
     feature = "shell",
     feature = "image-preview",
+    feature = "video",
     feature = "workbench"
 ))]
 fn property_value(
@@ -5092,6 +5140,7 @@ fn nullable_number_property(
     feature = "tooltip",
     feature = "teaching-tip",
     feature = "image-preview",
+    feature = "video",
     feature = "workbench"
 ))]
 fn optional_string_property(
@@ -5300,6 +5349,7 @@ mod tests {
         feature = "list",
         feature = "virtual-list",
         feature = "image-preview",
+        feature = "video",
         feature = "workbench",
         feature = "password-box",
         all(feature = "tooltip", feature = "button"),
@@ -5735,6 +5785,70 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "video")]
+    #[test]
+    fn compiles_video_poster_into_the_live_frame_surface() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "camera-preview",
+                "component": "video",
+                "layout": { "width": 100, "height": 100 },
+                "properties": { "fit": "cover", "interpolation": "nearest" },
+                "property_bindings": { "frame": "camera_frame" }
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "camera_frame".to_owned(),
+                crate::ui_document::UiValueType::NullableImageFrame,
+            )]),
+            actions: BTreeMap::new(),
+        };
+        let frame = crate::ZsImageFrame::from_rgba8(
+            crate::ZsImageFrameId::new(23),
+            2,
+            1,
+            vec![255, 0, 0, 255, 0, 255, 0, 255],
+        )
+        .unwrap();
+        let values = BTreeMap::from([(
+            "camera_frame".to_owned(),
+            serde_json::to_value(frame).unwrap(),
+        )]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let crate::ViewNodeKind::Video { source, .. } = &view.kind else {
+            panic!("expected video surface")
+        };
+        assert_eq!(
+            source.snapshot().frame.unwrap().id(),
+            crate::ZsImageFrameId::new(23)
+        );
+        assert_eq!(view.background_poll_interval_ms(), None);
+
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = crate::ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::Image(image)
+                if image.frame.id() == crate::ZsImageFrameId::new(23)
+                    && image.source.width == 1
+                    && image.interpolation == crate::NativeImageInterpolation::Nearest
+        )));
+    }
+
     #[cfg(all(feature = "virtual-list", feature = "label"))]
     #[test]
     fn compiles_items_repeater_and_maps_global_selection_and_viewport() {
@@ -5896,6 +6010,7 @@ mod tests {
         feature = "flyout",
         feature = "menu-flyout",
         feature = "image-preview",
+        feature = "video",
         all(feature = "tooltip", feature = "button"),
         all(feature = "teaching-tip", feature = "button")
     ))]

@@ -43,8 +43,6 @@ use zsui::combo_box;
 use zsui::command_palette;
 #[cfg(all(feature = "button", feature = "label", feature = "list"))]
 use zsui::list;
-#[cfg(all(feature = "progress", feature = "label"))]
-use zsui::progress_bar;
 #[cfg(feature = "radio")]
 use zsui::radio_button;
 #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
@@ -146,6 +144,11 @@ use zsui::{date_picker, ZsDate, ZsuiThemeMode};
 use zsui::{grid, ZsGridCell, ZsGridFraction, ZsGridSpan, ZsGridTrack};
 #[cfg(all(feature = "grid-view", feature = "label"))]
 use zsui::{grid_view, ZsGridViewItem, ZsGridViewItemId};
+#[cfg(all(feature = "progress", feature = "label"))]
+use zsui::{
+    indeterminate_progress_bar, progress_bar, progress_bar_from_spec, ZsProgressBarSpec,
+    ZsProgressBarStatus,
+};
 #[cfg(all(feature = "info-bar", feature = "label"))]
 use zsui::{info_bar, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec};
 use zsui::{
@@ -154,13 +157,13 @@ use zsui::{
     NativeHostSmokeInteractionReport, NativeUiPlatform, NativeWindowBuilder,
     NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, TraySpec, ZsAccelerator,
 };
-#[cfg(feature = "number-box")]
+#[cfg(all(feature = "number-box", feature = "label"))]
 use zsui::{number_box, ZsNumberRange};
 #[cfg(feature = "password-box")]
 use zsui::{password_box, ZsPassword, ZsPasswordRevealMode};
 #[cfg(all(feature = "progress-ring", feature = "label"))]
 use zsui::{progress_ring, ZsProgressRingSpec};
-#[cfg(feature = "slider")]
+#[cfg(all(feature = "slider", feature = "label"))]
 use zsui::{slider, SliderRange};
 #[cfg(feature = "tabs")]
 use zsui::{tab_view, ZsTabId, ZsTabItem};
@@ -437,7 +440,12 @@ fn run_smoke(
         .join("window.png")
         .to_string_lossy()
         .replace('\\', "/");
-    let mut smoke_options = NativeWindowSmokeRunOptions::quick()
+    let smoke_duration_ms = std::env::var("ZSUI_NATIVE_PROOF_DURATION_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or_else(|| NativeWindowSmokeRunOptions::quick().auto_close_after_ms);
+    let mut smoke_options = NativeWindowSmokeRunOptions::new(smoke_duration_ms)
         .screenshot_file(screenshot_file)
         .require_screenshot(platform == NativeUiPlatform::Windows);
     if include_status_item {
@@ -507,7 +515,9 @@ fn run_smoke(
     }
     #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
     if include_scroll_view {
-        smoke_options = smoke_options.native_view_scroll(Point { x: 260, y: 220 }, 48);
+        smoke_options = smoke_options
+            .native_view_scroll(Point { x: 260, y: 140 }, 48)
+            .native_view_drag(Point { x: 490, y: 112 }, Point { x: 490, y: 200 });
     }
     #[cfg(all(feature = "toggle-button", feature = "label"))]
     if include_toggle_button_view {
@@ -910,28 +920,40 @@ fn attach_toggle_button_view(builder: NativeWindowBuilder) -> NativeWindowBuilde
 }
 
 #[cfg(all(feature = "slider", feature = "label"))]
+#[derive(Clone)]
+enum SliderSmokeMsg {
+    Changed(f32),
+}
+
+#[cfg(all(feature = "slider", feature = "label"))]
 fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
-    builder.ui_command_view(
-        column([
-            text::<UiCommand>("ZSUI Slider Smoke").height(zsui::Dp::new(28.0)),
-            slider(25.0, SliderRange::new(0.0, 100.0).step(5.0))
-                .id(WidgetId::new(10))
-                .height(zsui::Dp::new(40.0))
-                .on_slide(native_smoke_slider_changed),
-        ])
-        .padding(zsui::Dp::new(24.0))
-        .gap(zsui::Dp::new(12.0)),
+    builder.stateful_view(
+        25.0_f32,
+        |value| {
+            column([
+                text::<SliderSmokeMsg>("ZSUI Slider Smoke").height(zsui::Dp::new(28.0)),
+                slider(*value, SliderRange::new(0.0, 100.0).step(5.0))
+                    .id(WidgetId::new(10))
+                    .height(zsui::Dp::new(40.0))
+                    .on_slide(SliderSmokeMsg::Changed),
+            ])
+            .padding(zsui::Dp::new(24.0))
+            .gap(zsui::Dp::new(12.0))
+        },
+        |value, message, cx| match message {
+            SliderSmokeMsg::Changed(next) => {
+                *value = next;
+                cx.ui_command(UiCommand::app(CommandId(
+                    "zsui.native_smoke.slider_changed",
+                )));
+            }
+        },
     )
 }
 
 #[cfg(not(all(feature = "slider", feature = "label")))]
 fn attach_slider_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
     builder
-}
-
-#[cfg(all(feature = "slider", feature = "label"))]
-fn native_smoke_slider_changed(_: f32) -> UiCommand {
-    UiCommand::app(CommandId("zsui.native_smoke.slider_changed"))
 }
 
 #[cfg(all(feature = "number-box", feature = "label"))]
@@ -1056,13 +1078,27 @@ fn attach_radio_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
 
 #[cfg(all(feature = "progress", feature = "label"))]
 fn attach_progress_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
-    builder.view(
+    builder.ui_command_view(
         column([
-            text::<()>("ZSUI ProgressBar Smoke").height(zsui::Dp::new(28.0)),
-            progress_bar::<()>(65.0, ProgressRange::new(0.0, 100.0)).height(zsui::Dp::new(32.0)),
+            text::<zsui::UiCommand>("ZSUI WinUI 3 ProgressBar / 进度条")
+                .height(zsui::Dp::new(28.0)),
+            text::<zsui::UiCommand>("Determinate / 正常").height(zsui::Dp::new(20.0)),
+            progress_bar::<zsui::UiCommand>(65.0, ProgressRange::new(0.0, 100.0)),
+            text::<zsui::UiCommand>("Paused / 已暂停").height(zsui::Dp::new(20.0)),
+            progress_bar_from_spec::<zsui::UiCommand>(
+                ZsProgressBarSpec::determinate(45.0, ProgressRange::new(0.0, 100.0))
+                    .status(ZsProgressBarStatus::Paused),
+            ),
+            text::<zsui::UiCommand>("Error / 错误").height(zsui::Dp::new(20.0)),
+            progress_bar_from_spec::<zsui::UiCommand>(
+                ZsProgressBarSpec::determinate(30.0, ProgressRange::new(0.0, 100.0))
+                    .status(ZsProgressBarStatus::Error),
+            ),
+            text::<zsui::UiCommand>("Indeterminate / 不确定").height(zsui::Dp::new(20.0)),
+            indeterminate_progress_bar::<zsui::UiCommand>(),
         ])
         .padding(zsui::Dp::new(24.0))
-        .gap(zsui::Dp::new(12.0)),
+        .gap(zsui::Dp::new(8.0)),
     )
 }
 
@@ -2277,20 +2313,28 @@ fn native_smoke_list_selected(_: usize) -> UiCommand {
 
 #[cfg(all(feature = "button", feature = "label", feature = "scroll"))]
 fn attach_scroll_view(builder: NativeWindowBuilder) -> NativeWindowBuilder {
-    builder.ui_command_view(column([
-        text::<UiCommand>("ZSUI Scroll Smoke"),
-        scroll(
-            column([
-                text("Pinned row").id(WidgetId::new(7)),
-                text("Recent row").id(WidgetId::new(8)),
-                text("Archive row").id(WidgetId::new(9)),
-            ])
-            .content_height(zsui::Dp::new(240.0)),
-        )
-        .id(WidgetId::new(6))
-        .content_height(zsui::Dp::new(240.0))
-        .on_scroll(native_smoke_scrolled),
-    ]))
+    builder.ui_command_view(
+        column([
+            text::<UiCommand>("ZSUI Scrollbar / 滚动条").height(zsui::Dp::new(28.0)),
+            scroll(
+                column([
+                    text("Pinned row / 置顶").id(WidgetId::new(7)),
+                    text("Recent row / 最近").id(WidgetId::new(8)),
+                    text("Archive row / 归档").id(WidgetId::new(9)),
+                    text("Downloads / 下载").id(WidgetId::new(10)),
+                    text("Favorites / 收藏").id(WidgetId::new(11)),
+                    text("Settings / 设置").id(WidgetId::new(12)),
+                ])
+                .gap(zsui::Dp::new(16.0)),
+            )
+            .id(WidgetId::new(6))
+            .height(zsui::Dp::new(180.0))
+            .content_height(zsui::Dp::new(320.0))
+            .on_scroll(native_smoke_scrolled),
+        ])
+        .padding(zsui::Dp::new(24.0))
+        .gap(zsui::Dp::new(12.0)),
+    )
 }
 
 #[cfg(not(all(feature = "button", feature = "label", feature = "scroll")))]

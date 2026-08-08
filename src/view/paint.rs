@@ -1297,8 +1297,17 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         #[cfg(feature = "scroll")]
-        if let ViewEvent::ScrollBy { widget, delta_y } = event {
-            if self.style.overflow_y == ViewOverflow::Auto && self.id == Some(*widget) {
+        if self.style.overflow_y == ViewOverflow::Auto {
+            let scroll_request = match event {
+                ViewEvent::ScrollBy { widget, delta_y } if self.id == Some(*widget) => {
+                    Some((None, Some(*delta_y)))
+                }
+                ViewEvent::ScrollToRatio { widget, ratio } if self.id == Some(*widget) => {
+                    Some((Some(*ratio), None))
+                }
+                _ => None,
+            };
+            if let Some((ratio, delta_y)) = scroll_request {
                 let viewport = self.bounds.map(|bounds| {
                     #[cfg(feature = "tabs")]
                     if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
@@ -1326,10 +1335,18 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     Some(self.resolved_scroll_content_height),
                     self.layout_dpi,
                 );
-                self.adaptive_scroll_offset_y = Dp::new(
-                    (self.adaptive_scroll_offset_y.0 + delta_y.0)
-                        .clamp(0.0, max_offset.0),
+                let next = ratio.map_or_else(
+                    || self.adaptive_scroll_offset_y.0 + delta_y.unwrap_or(Dp::new(0.0)).0,
+                    |ratio| {
+                        let ratio = if ratio.is_finite() {
+                            ratio.clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        };
+                        max_offset.0 * ratio
+                    },
                 );
+                self.adaptive_scroll_offset_y = Dp::new(next.clamp(0.0, max_offset.0));
             }
         }
 
@@ -2182,6 +2199,37 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 #[cfg(feature = "number-box")]
                 (
+                    ViewNodeKind::NumberBox {
+                        value,
+                        draft,
+                        range,
+                        format,
+                        on_change,
+                        ..
+                    },
+                    ViewEvent::NumberBoxValueChanged {
+                        value: next_value,
+                        ..
+                    },
+                ) => {
+                    let requested_value = next_value
+                        .filter(|candidate| candidate.is_finite())
+                        .map(|candidate| range.clamp(candidate));
+                    let next_draft = format.format(requested_value);
+                    let next_value = requested_value
+                        .and_then(|_| format.parse(&next_draft))
+                        .map(|candidate| range.clamp(candidate));
+                    let changed = *value != next_value;
+                    *value = next_value;
+                    *draft = next_draft;
+                    if changed {
+                        if let Some(message) = on_change {
+                            cx.emit(message.map(next_value));
+                        }
+                    }
+                }
+                #[cfg(feature = "number-box")]
+                (
                     ViewNodeKind::NumberBox { draft, .. },
                     ViewEvent::TextChanged {
                         value: next_draft, ..
@@ -2374,6 +2422,34 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         self.layout_dpi,
                     );
                     let next = Dp::new((offset_y.0 + delta_y.0).clamp(0.0, max_offset.0));
+                    *offset_y = next;
+                    if let Some(message) = on_scroll {
+                        cx.emit(message.map(next));
+                    }
+                }
+                #[cfg(feature = "scroll")]
+                (
+                    ViewNodeKind::Scroll {
+                        offset_y,
+                        on_scroll,
+                        ..
+                    },
+                    ViewEvent::ScrollToRatio { widget, ratio },
+                ) if self.id == Some(*widget) => {
+                    let viewport = self
+                        .bounds
+                        .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
+                    let max_offset = scroll_max_offset_y(
+                        viewport,
+                        Some(self.resolved_scroll_content_height),
+                        self.layout_dpi,
+                    );
+                    let ratio = if ratio.is_finite() {
+                        ratio.clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    let next = Dp::new(max_offset.0 * ratio);
                     *offset_y = next;
                     if let Some(message) = on_scroll {
                         cx.emit(message.map(next));
@@ -2877,6 +2953,56 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         .max(1);
                     cx.draw(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
                         crate::ZsIcon::Image,
+                        Rect {
+                            x: content_bounds.x + (content_bounds.width - side) / 2,
+                            y: content_bounds.y + (content_bounds.height - side) / 2,
+                            width: side,
+                            height: side,
+                        },
+                        NativeIconColorMode::ThemeAware,
+                    )));
+                }
+            }
+            #[cfg(feature = "video")]
+            ViewNodeKind::Video {
+                source,
+                fit,
+                interpolation,
+            } => {
+                if self.style.background.is_none() {
+                    cx.draw(NativeDrawCommand::FillRect {
+                        rect: bounds,
+                        fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
+                    });
+                }
+                let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                let snapshot = source.snapshot();
+                if let Some(frame) = snapshot.frame {
+                    if let Some(command) = crate::zs_video_native_draw_command(
+                        frame,
+                        content_bounds,
+                        *fit,
+                        *interpolation,
+                    ) {
+                        cx.draw(NativeDrawCommand::PushClip {
+                            rect: content_bounds,
+                        });
+                        cx.draw(NativeDrawCommand::Image(command));
+                        cx.draw(NativeDrawCommand::PopClip);
+                    }
+                } else {
+                    let side = content_bounds
+                        .width
+                        .min(content_bounds.height)
+                        .min(Dp::new(32.0).to_px(cx.dpi).round_i32())
+                        .max(1);
+                    let icon = if snapshot.state == ZsVideoPlaybackState::Failed {
+                        crate::ZsIcon::Error
+                    } else {
+                        crate::ZsIcon::Image
+                    };
+                    cx.draw(NativeDrawCommand::Icon(NativeDrawIconCommand::new(
+                        icon,
                         Rect {
                             x: content_bounds.x + (content_bounds.width - side) / 2,
                             y: content_bounds.y + (content_bounds.height - side) / 2,
@@ -3402,9 +3528,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 )));
             }
             #[cfg(feature = "progress")]
-            ViewNodeKind::ProgressBar { value, range } => {
-                let plan =
-                    crate::zs_progress_bar_render_plan(bounds, range.fraction(*value), cx.dpi);
+            ViewNodeKind::ProgressBar { spec } => {
+                let plan = crate::zs_progress_bar_render_plan_for_spec(
+                    bounds,
+                    *spec,
+                    crate::ZsBaseControlPlatformStyle::current(),
+                    cx.dpi,
+                    cx.animation_elapsed_ms,
+                );
                 for command in crate::zs_progress_bar_native_draw_plan(&plan).commands {
                     cx.draw(command);
                 }
@@ -3681,6 +3812,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     child.paint(cx);
                 }
                 cx.draw(NativeDrawCommand::PopClip);
+                if let Some(scrollbar) = scrollbar_layout(self) {
+                    cx.draw(NativeDrawCommand::RoundFill {
+                        rect: scrollbar.thumb,
+                        fill: NativeDrawFill::RoleWithAlpha {
+                            role: ColorRole::SecondaryText,
+                            alpha: 176,
+                        },
+                        radius: (scrollbar.thumb.width / 2).max(1),
+                    });
+                }
                 cx.finish_node(self);
                 return;
             }
@@ -3725,6 +3866,16 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         #[cfg(feature = "scroll")]
         if self.style.overflow_y == ViewOverflow::Auto {
             cx.draw(NativeDrawCommand::PopClip);
+            if let Some(scrollbar) = scrollbar_layout(self) {
+                cx.draw(NativeDrawCommand::RoundFill {
+                    rect: scrollbar.thumb,
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::SecondaryText,
+                        alpha: 176,
+                    },
+                    radius: (scrollbar.thumb.width / 2).max(1),
+                });
+            }
         }
         cx.finish_node(self);
     }

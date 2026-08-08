@@ -16,9 +16,10 @@ use crate::native_file_dialog::{
     native_file_dialog_initial_directory, native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, DesktopEvent, DialogButtons, DialogResponse,
-    FileDialogService, FileDialogSpec, MenuService, NativeDialogService, NativeDialogSpec,
-    SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
+    ClipboardData, ClipboardService, DesktopEvent, DialogButtonLabels, DialogButtons,
+    DialogResponse, FileDialogService, FileDialogSpec, MenuService, NativeDialogService,
+    NativeDialogSpec, SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError,
+    ZsuiResult,
 };
 
 struct LinuxGtkRuntimeState {
@@ -555,14 +556,17 @@ pub fn linux_gtk_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Optio
 }
 
 pub fn linux_gtk_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+    spec.validate()?;
     ensure_gtk_main_thread("gtk_native_dialog")?;
-    let (labels, cancel_button, default_button) = gtk_native_dialog_buttons(spec.buttons);
+    let button_labels = spec.resolved_button_labels();
+    let (labels, cancel_button, default_button) =
+        gtk_native_dialog_buttons(spec.buttons, &button_labels);
     let dialog = AlertDialog::builder()
         .message(&spec.title)
         .detail(&spec.message)
         .modal(true)
         .build();
-    dialog.set_buttons(labels);
+    dialog.set_buttons(&labels);
     dialog.set_cancel_button(cancel_button);
     dialog.set_default_button(default_button);
     let owner = gio::Application::default()
@@ -579,12 +583,15 @@ pub fn linux_gtk_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<Dialo
     })
 }
 
-fn gtk_native_dialog_buttons(buttons: DialogButtons) -> (&'static [&'static str], i32, i32) {
+fn gtk_native_dialog_buttons<'a>(
+    buttons: DialogButtons,
+    labels: &'a DialogButtonLabels,
+) -> (Vec<&'a str>, i32, i32) {
     match buttons {
-        DialogButtons::Ok => (&["OK"], 0, 0),
-        DialogButtons::OkCancel => (&["Cancel", "OK"], 0, 1),
-        DialogButtons::YesNo => (&["No", "Yes"], 0, 1),
-        DialogButtons::YesNoCancel => (&["Cancel", "No", "Yes"], 0, 2),
+        DialogButtons::Ok => (vec![&labels.ok], 0, 0),
+        DialogButtons::OkCancel => (vec![&labels.cancel, &labels.ok], 0, 1),
+        DialogButtons::YesNo => (vec![&labels.no, &labels.yes], 0, 1),
+        DialogButtons::YesNoCancel => (vec![&labels.cancel, &labels.no, &labels.yes], 0, 2),
     }
 }
 
@@ -684,9 +691,10 @@ mod tests {
         fn assert_service<T: NativeDialogService>() {}
         assert_service::<LinuxGtkDialogService>();
 
+        let labels = DialogButtonLabels::new("确定", "取消", "是", "否");
         assert_eq!(
-            gtk_native_dialog_buttons(DialogButtons::YesNoCancel),
-            (&["Cancel", "No", "Yes"][..], 0, 2)
+            gtk_native_dialog_buttons(DialogButtons::YesNoCancel, &labels),
+            (vec!["取消", "否", "是"], 0, 2)
         );
         assert_eq!(
             gtk_native_dialog_response(DialogButtons::YesNoCancel, 0),

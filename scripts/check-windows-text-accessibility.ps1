@@ -115,21 +115,29 @@ try {
         $editorPoint
     )
 
-    $element = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
-    if ($null -eq $element) {
+    $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
+    if ($null -eq $root) {
         throw "UI Automation returned no provider for the native HWND"
     }
-    if ($element.Current.ControlType -ne [System.Windows.Automation.ControlType]::Edit) {
-        throw "UI Automation did not expose the focused self-drawn editor as an Edit control"
+    $condition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Edit
+    )
+    $element = $root.FindFirst(
+        [System.Windows.Automation.TreeScope]::Descendants,
+        $condition
+    )
+    if ($null -eq $element) {
+        throw "UI Automation did not expose the focused self-drawn editor inside the retained semantic tree"
     }
     if ($element.Current.FrameworkId -ne "ZSUI") {
         throw "UI Automation framework id was '$($element.Current.FrameworkId)', expected 'ZSUI'"
     }
-    if ($element.Current.ClassName -ne "ZsuiTextInput") {
-        throw "UI Automation class name was '$($element.Current.ClassName)', expected 'ZsuiTextInput'"
+    if ($element.Current.ClassName -ne "ZsuiSemantictext_box") {
+        throw "UI Automation class name was '$($element.Current.ClassName)', expected 'ZsuiSemantictext_box'"
     }
-    if ($element.Current.AutomationId -ne "zsui-widget-1") {
-        throw "UI Automation id was '$($element.Current.AutomationId)', expected 'zsui-widget-1'"
+    if ($element.Current.AutomationId -ne "zsui-semantic-1") {
+        throw "UI Automation id was '$($element.Current.AutomationId)', expected 'zsui-semantic-1'"
     }
 
     $valuePattern = $element.GetCurrentPattern(
@@ -173,7 +181,7 @@ try {
         throw "UI Automation TextPattern returned no native shaped text rectangles"
     }
 
-    Write-Output "Windows native text accessibility passed: HWND WM_GETOBJECT -> ZSUI Edit/ValuePattern/TextPattern"
+    Write-Output "Windows native text accessibility passed: semantic fragment root -> ZSUI Edit/ValuePattern/TextPattern"
 } finally {
     if (-not $process.HasExited) {
         Stop-Process -Id $process.Id -Force

@@ -50,7 +50,7 @@ pub(crate) enum NativeTextProfile {
             not(feature = "linux-direct")
         )
     ))]
-    CosmicText,
+    ZsuiRustText,
     AndroidText,
 }
 
@@ -68,7 +68,7 @@ impl NativeTextProfile {
                     not(feature = "linux-direct")
                 )
             ))]
-            Self::CosmicText => "cosmic_text",
+            Self::ZsuiRustText => "zsui_rust_text",
             Self::AndroidText => "android_text",
         }
     }
@@ -207,7 +207,7 @@ impl BackendProfile {
     ))]
     pub(crate) const fn linux_lite() -> Self {
         Self {
-            text: NativeTextProfile::CosmicText,
+            text: NativeTextProfile::ZsuiRustText,
             raster: NativeRasterProfile::TinySkia,
             ..Self::linux()
         }

@@ -222,6 +222,7 @@ impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
 const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
 #[cfg(any(
+    all(feature = "dialog", feature = "accessibility"),
     feature = "tabs",
     feature = "workbench",
     all(feature = "shell", feature = "ui-document-runtime")
@@ -233,6 +234,7 @@ impl WidgetId {
     /// Builds a deterministic identity for an interactive surface owned by a
     /// composite widget rather than by an application View node.
     #[cfg(any(
+        all(feature = "dialog", feature = "accessibility"),
         feature = "tabs",
         feature = "workbench",
         all(feature = "shell", feature = "ui-document-runtime")
@@ -586,9 +588,26 @@ impl ZsItemsRepeaterItemMetric {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ZsItemsRepeaterScrollbarLayout {
     pub track: Rect,
+    pub track_hit: Rect,
     pub thumb: Rect,
     pub thumb_hit: Rect,
     pub maximum_offset: Dp,
+}
+
+/// Deterministic visual and hit-test geometry for a retained Scroll surface.
+///
+/// The visual track and thumb intentionally stay platform-thin while the
+/// separate hit rectangles provide the forgiving pointer target used by
+/// native desktop scrollbars.
+#[cfg(feature = "scroll")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ZsScrollbarLayout {
+    pub track: Rect,
+    pub track_hit: Rect,
+    pub thumb: Rect,
+    pub thumb_hit: Rect,
+    pub maximum_offset: Dp,
+    pub offset_y: Dp,
 }
 
 /// Public ItemsRepeater name for a half-open global item range.
@@ -866,6 +885,12 @@ pub enum ViewNodeKind<Msg> {
         fit: ZsImageFit,
         interpolation: NativeImageInterpolation,
     },
+    #[cfg(feature = "video")]
+    Video {
+        source: ZsVideoSource,
+        fit: ZsVideoFit,
+        interpolation: NativeImageInterpolation,
+    },
     #[cfg(feature = "workbench")]
     Workbench {
         spec: crate::ZsWorkbenchSpec,
@@ -963,8 +988,7 @@ pub enum ViewNodeKind<Msg> {
     },
     #[cfg(feature = "progress")]
     ProgressBar {
-        value: f32,
-        range: crate::ProgressRange,
+        spec: crate::ZsProgressBarSpec,
     },
     #[cfg(feature = "progress-ring")]
     ProgressRing {
@@ -1216,6 +1240,7 @@ pub struct ViewNode<Msg> {
             feature = "button",
             feature = "icon",
             feature = "label",
+            feature = "scroll",
             feature = "virtual-list"
         )
     ))]
@@ -1252,10 +1277,11 @@ impl<Msg> ViewNode<Msg> {
                 any(
                     feature = "badge",
                     feature = "split-view",
-                    feature = "button",
-                    feature = "icon",
-                    feature = "label",
-                    feature = "virtual-list"
+                feature = "button",
+                feature = "icon",
+                feature = "label",
+                feature = "scroll",
+                feature = "virtual-list"
                 )
             ))]
             platform_style_override: None,
@@ -1432,6 +1458,10 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Slider { .. } => true,
             #[cfg(feature = "number-box")]
             ViewNodeKind::NumberBox { .. } => true,
+            #[cfg(feature = "progress")]
+            ViewNodeKind::ProgressBar { .. } => true,
+            #[cfg(feature = "progress-ring")]
+            ViewNodeKind::ProgressRing { .. } => true,
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox { .. } => true,
             #[cfg(feature = "tree")]
@@ -1482,6 +1512,7 @@ impl<Msg> ViewNode<Msg> {
             feature = "button",
             feature = "icon",
             feature = "label",
+            feature = "scroll",
             feature = "virtual-list"
         )
     ))]
@@ -1499,6 +1530,7 @@ impl<Msg> ViewNode<Msg> {
         feature = "button",
         feature = "icon",
         feature = "label",
+        feature = "scroll",
         feature = "virtual-list"
     ))]
     pub(crate) fn resolved_platform_style(&self) -> crate::ZsBaseControlPlatformStyle {
@@ -1695,6 +1727,13 @@ impl<Msg> ViewNode<Msg> {
         ) {
             return Some(16);
         }
+        #[cfg(feature = "progress")]
+        if matches!(
+            self.kind,
+            ViewNodeKind::ProgressBar { spec } if spec.is_animating()
+        ) {
+            return Some(16);
+        }
         #[cfg(feature = "virtual-list")]
         if matches!(self.kind, ViewNodeKind::VirtualList { loading: true, .. }) {
             return Some(33);
@@ -1708,6 +1747,12 @@ impl<Msg> ViewNode<Msg> {
             }
         ) {
             return Some(16);
+        }
+        #[cfg(feature = "video")]
+        if let ViewNodeKind::Video { source, .. } = &self.kind {
+            if source.needs_refresh() {
+                return Some(source.refresh_interval_ms());
+            }
         }
         self.children
             .iter()
@@ -3371,6 +3416,26 @@ impl<Msg: Clone> ViewNode<Msg> {
     #[cfg(feature = "image-preview")]
     pub fn image_interpolation(mut self, interpolation: NativeImageInterpolation) -> Self {
         if let ViewNodeKind::ImagePreview {
+            interpolation: current,
+            ..
+        } = &mut self.kind
+        {
+            *current = interpolation;
+        }
+        self
+    }
+
+    #[cfg(feature = "video")]
+    pub fn video_fit(mut self, fit: ZsVideoFit) -> Self {
+        if let ViewNodeKind::Video { fit: current, .. } = &mut self.kind {
+            *current = fit;
+        }
+        self
+    }
+
+    #[cfg(feature = "video")]
+    pub fn video_interpolation(mut self, interpolation: NativeImageInterpolation) -> Self {
+        if let ViewNodeKind::Video {
             interpolation: current,
             ..
         } = &mut self.kind

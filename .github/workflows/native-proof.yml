@@ -68,6 +68,12 @@ jobs:
             --bin zsui-viewer `
             --no-default-features `
             --features ui-viewer,accessibility
+          cargo build `
+            --release `
+            --locked `
+            --example native_dialog_smoke `
+            --no-default-features `
+            --features windows-win32,native-smoke
 
       - name: Run native Win32 RGBA clipboard proof
         shell: pwsh
@@ -89,6 +95,206 @@ jobs:
             -not $proof.original_clipboard_restored
           ) {
             throw "Win32 RGBA clipboard proof is incomplete"
+          }
+
+      - name: Run native Win32 localized dialog proof
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $report = Join-Path $root "native-system-dialog.json"
+          $screenshot = Join-Path $root "native-system-dialog.png"
+          $title = "ZSUI 原生对话框验证 / Native Dialog Proof"
+          $process = Start-Process `
+            -FilePath .\target\release\examples\native_dialog_smoke.exe `
+            -ArgumentList @(
+              "--output", $report,
+              "--screenshot", $screenshot
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class ZsuiDialogProofNative {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT {
+                  public int Left;
+                  public int Top;
+                  public int Right;
+                  public int Bottom;
+              }
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(IntPtr window, out RECT rect);
+              [DllImport("user32.dll")]
+              public static extern IntPtr GetDlgItem(IntPtr dialog, int itemId);
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              public static extern int GetWindowTextW(
+                  IntPtr window,
+                  System.Text.StringBuilder text,
+                  int capacity
+              );
+              [DllImport("user32.dll")]
+              public static extern bool SetForegroundWindow(IntPtr window);
+              [DllImport("user32.dll")]
+              public static extern IntPtr SendMessageW(
+                  IntPtr window,
+                  uint message,
+                  IntPtr wParam,
+                  IntPtr lParam
+              );
+              [DllImport("user32.dll", SetLastError = true)]
+              public static extern bool PrintWindow(IntPtr window, IntPtr target, uint flags);
+              [DllImport("dwmapi.dll")]
+              public static extern int DwmGetWindowAttribute(
+                  IntPtr window,
+                  uint attribute,
+                  out RECT value,
+                  uint size
+              );
+          }
+          '@
+
+          $window = [IntPtr]::Zero
+          for ($attempt = 0; $attempt -lt 100 -and $window -eq [IntPtr]::Zero; $attempt++) {
+            Start-Sleep -Milliseconds 100
+            if ($process.HasExited) {
+              break
+            }
+            $process.Refresh()
+            if ($process.MainWindowTitle -eq $title) {
+              $window = $process.MainWindowHandle
+            }
+          }
+          if ($window -eq [IntPtr]::Zero) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "the Win32 MessageBox did not become visible"
+          }
+
+          $rect = New-Object ZsuiDialogProofNative+RECT
+          if (-not [ZsuiDialogProofNative]::GetWindowRect($window, [ref]$rect)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "GetWindowRect failed for the Win32 MessageBox"
+          }
+          $width = $rect.Right - $rect.Left
+          $height = $rect.Bottom - $rect.Top
+          if ($width -lt 300 -or $height -lt 120) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "the Win32 MessageBox has invalid geometry ${width}x${height}"
+          }
+          $expectedLabels = @{
+            6 = "是"
+            7 = "否"
+            2 = "取消"
+          }
+          $affirmativeButton = [IntPtr]::Zero
+          foreach ($entry in $expectedLabels.GetEnumerator()) {
+            $button = [ZsuiDialogProofNative]::GetDlgItem($window, $entry.Key)
+            $text = New-Object System.Text.StringBuilder 64
+            if (
+              $button -eq [IntPtr]::Zero -or
+              [ZsuiDialogProofNative]::GetWindowTextW($button, $text, $text.Capacity) -le 0 -or
+              $text.ToString() -ne $entry.Value
+            ) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the Win32 MessageBox did not expose localized button $($entry.Key)"
+            }
+            if ($entry.Key -eq 6) {
+              $affirmativeButton = $button
+            }
+          }
+          $visible = New-Object ZsuiDialogProofNative+RECT
+          $visibleResult = [ZsuiDialogProofNative]::DwmGetWindowAttribute(
+            $window,
+            9,
+            [ref]$visible,
+            [Runtime.InteropServices.Marshal]::SizeOf($visible)
+          )
+          [void][ZsuiDialogProofNative]::SetForegroundWindow($window)
+          Start-Sleep -Milliseconds 250
+          $bitmap = New-Object System.Drawing.Bitmap($width, $height)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          try {
+            $target = $graphics.GetHdc()
+            try {
+              if (-not [ZsuiDialogProofNative]::PrintWindow($window, $target, 2)) {
+                throw "PrintWindow failed for the Win32 MessageBox"
+              }
+            } finally {
+              $graphics.ReleaseHdc($target)
+            }
+            $screenshotPath = Join-Path $env:GITHUB_WORKSPACE $screenshot
+            $saved = $false
+            if ($visibleResult -eq 0) {
+              $cropLeft = $visible.Left - $rect.Left
+              $cropTop = $visible.Top - $rect.Top
+              $visibleWidth = $visible.Right - $visible.Left
+              $visibleHeight = $visible.Bottom - $visible.Top
+              if (
+                $cropLeft -ge 0 -and
+                $cropTop -ge 0 -and
+                $visibleWidth -gt 0 -and
+                $visibleHeight -gt 0 -and
+                $cropLeft + $visibleWidth -le $width -and
+                $cropTop + $visibleHeight -le $height
+              ) {
+                $crop = New-Object System.Drawing.Rectangle(
+                  $cropLeft,
+                  $cropTop,
+                  $visibleWidth,
+                  $visibleHeight
+                )
+                $finalBitmap = $bitmap.Clone($crop, $bitmap.PixelFormat)
+                try {
+                  $finalBitmap.Save(
+                    $screenshotPath,
+                    [System.Drawing.Imaging.ImageFormat]::Png
+                  )
+                  $saved = $true
+                } finally {
+                  $finalBitmap.Dispose()
+                }
+              }
+            }
+            if (-not $saved) {
+              $bitmap.Save(
+                $screenshotPath,
+                [System.Drawing.Imaging.ImageFormat]::Png
+              )
+            }
+          } finally {
+            $graphics.Dispose()
+            $bitmap.Dispose()
+          }
+
+          [void][ZsuiDialogProofNative]::SendMessageW(
+            $affirmativeButton,
+            0x00F5,
+            [IntPtr]::Zero,
+            [IntPtr]::Zero
+          )
+          if (-not $process.WaitForExit(10000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "the Win32 MessageBox did not close after native BM_CLICK activation"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "native_dialog_smoke exited with code $($process.ExitCode)"
+          }
+
+          $proof = Get-Content $report -Raw | ConvertFrom-Json
+          if (
+            $proof.schema -ne "zsui.native-system-dialog-proof/v1" -or
+            $proof.platform -ne "windows" -or
+            $proof.native_surface -ne "win32_message_box" -or
+            $proof.owner_window_supplied -ne $false -or
+            $proof.actual_response -ne "yes" -or
+            -not $proof.response_matched -or
+            -not $proof.screenshot_captured -or
+            $proof.errors.Count -ne 0
+          ) {
+            throw "Win32 localized native-dialog proof is incomplete"
           }
 
       - name: Prepare deterministic reload sources
@@ -422,6 +628,85 @@ jobs:
             --example native_clipboard_smoke \
             --no-default-features \
             --features macos-appkit,clipboard
+          cargo build \
+            --release \
+            --locked \
+            --example native_dialog_smoke \
+            --no-default-features \
+            --features macos-appkit,native-smoke
+
+      - name: Run native AppKit localized dialog proof
+        run: |
+          set -o pipefail
+          root=target/native-proof/macos-15-arm64
+          report="$root/native-system-dialog.json"
+          screenshot="$root/native-system-dialog.png"
+          mkdir -p "$root"
+          ./target/release/examples/native_dialog_smoke \
+            --output "$report" \
+            --screenshot "$screenshot" &
+          dialog_pid=$!
+
+          visible=false
+          for attempt in $(seq 1 100); do
+            if osascript -e 'tell application "System Events" to exists process "native_dialog_smoke"' \
+              | grep -q true; then
+              visible=true
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$visible" != true ]; then
+            kill "$dialog_pid" || true
+            echo "the AppKit NSAlert did not become visible" >&2
+            exit 1
+          fi
+
+          geometry=$(osascript <<'APPLESCRIPT'
+          tell application "System Events"
+            tell process "native_dialog_smoke"
+              tell window 1
+                if not (exists button "是") then error "missing localized Yes button"
+                if not (exists button "否") then error "missing localized No button"
+                if not (exists button "取消") then error "missing localized Cancel button"
+                set origin to position
+                set dimensions to size
+                set originX to item 1 of origin
+                set originY to item 2 of origin
+                set windowWidth to item 1 of dimensions
+                set windowHeight to item 2 of dimensions
+                return (originX as text) & "," & (originY as text) & "," & (windowWidth as text) & "," & (windowHeight as text)
+              end tell
+            end tell
+          end tell
+          APPLESCRIPT
+          screencapture -x -R"$geometry" "$screenshot"
+          osascript <<'APPLESCRIPT'
+          tell application "System Events"
+            tell process "native_dialog_smoke"
+              set frontmost to true
+              click button "是" of window 1
+            end tell
+          end tell
+          APPLESCRIPT
+          wait "$dialog_pid"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/macos-15-arm64")
+          proof = json.loads((root / "native-system-dialog.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-system-dialog-proof/v1"
+          assert proof["platform"] == "macos"
+          assert proof["native_surface"] == "appkit_nsalert"
+          assert proof["owner_window_supplied"] is False
+          assert proof["actual_response"] == "yes"
+          assert proof["response_matched"] is True
+          assert proof["screenshot_captured"] is True
+          assert proof["localized_button_labels"] == ["确定", "取消", "是", "否"]
+          assert proof["errors"] == []
+          assert (root / "native-system-dialog.png").stat().st_size >= 1024
+          PY
 
       - name: Run real AppKit proof scenes
         run: |
@@ -906,6 +1191,9 @@ jobs:
             xvfb \
             xauth \
             dbus-x11 \
+            imagemagick \
+            xdotool \
+            zenity \
             fonts-ubuntu \
             fonts-noto-cjk \
             fonts-noto-color-emoji
@@ -951,6 +1239,61 @@ jobs:
             --example native_clipboard_smoke \
             --no-default-features \
             --features linux-direct-lite,clipboard
+          cargo build \
+            --release \
+            --locked \
+            --example native_dialog_smoke \
+            --no-default-features \
+            --features linux-direct,native-smoke
+
+      - name: Run native Linux localized dialog proof
+        run: |
+          dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
+            root=target/native-proof/ubuntu-24.04-x86_64
+            report="$root/native-system-dialog.json"
+            screenshot="$root/native-system-dialog.png"
+            mkdir -p "$root"
+            ./target/release/examples/native_dialog_smoke \
+              --output "$report" \
+              --screenshot "$screenshot" &
+            dialog_pid=$!
+            window=
+            for attempt in $(seq 1 100); do
+              window=$(xdotool search --onlyvisible --name "Native Dialog Proof" 2>/dev/null | head -n 1 || true)
+              if [ -n "$window" ]; then
+                break
+              fi
+              if ! kill -0 "$dialog_pid" 2>/dev/null; then
+                break
+              fi
+              sleep 0.1
+            done
+            if [ -z "$window" ]; then
+              kill "$dialog_pid" 2>/dev/null || true
+              wait "$dialog_pid" 2>/dev/null || true
+              echo "the Linux desktop dialog did not become visible" >&2
+              exit 1
+            fi
+            import -window "$window" "$screenshot"
+            xdotool key --window "$window" Return
+            wait "$dialog_pid"
+          '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/ubuntu-24.04-x86_64")
+          proof = json.loads((root / "native-system-dialog.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-system-dialog-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["native_surface"] == "linux_desktop_zenity"
+          assert proof["owner_window_supplied"] is False
+          assert proof["actual_response"] == "yes"
+          assert proof["response_matched"] is True
+          assert proof["screenshot_captured"] is True
+          assert proof["localized_button_labels"] == ["确定", "取消", "是", "否"]
+          assert proof["errors"] == []
+          assert (root / "native-system-dialog.png").stat().st_size >= 1024
+          PY
 
       - name: Verify lite renderer linkage
         run: |
@@ -1422,14 +1765,15 @@ jobs:
           assert proof["schema"] == "zsui.native-proof/v1"
           assert proof["platform"] == "linux"
           assert proof["backend"] == "linux-direct"
-          assert proof["capture_backend"] == "winit_softbuffer_cosmic_text_tiny_skia"
+          assert proof["capture_backend"] == "winit_softbuffer_zsui_rust_text_tiny_skia"
           assert proof["errors"] == []
           assert proof["unhandled_commands"] == []
-          assert proof["typography"]["source"] == "fontdb_cosmic_text"
+          assert proof["typography"]["source"] == "zsui_rust_text_fontdb"
+          assert proof["typography"]["rasterization"] == "zsui_rust_text_swash_tiny_skia_softbuffer"
           assert proof["typography"]["configured_ui_font"] == "Ubuntu Sans 11"
           assert proof["typography"]["body_metrics"]["ascent"] > 0
           assert proof["typography"] == capture["typography"]
-          assert capture["backend"] == "winit_softbuffer_cosmic_text_tiny_skia"
+          assert capture["backend"] == "winit_softbuffer_zsui_rust_text_tiny_skia"
           assert capture["display_server"] == "x11"
           assert runtime["created_window_count"] == 1
           assert runtime["screenshot_captured"] is True

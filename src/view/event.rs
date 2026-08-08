@@ -101,6 +101,11 @@ pub enum ViewEvent {
         value: f32,
     },
     #[cfg(feature = "number-box")]
+    NumberBoxValueChanged {
+        widget: WidgetId,
+        value: Option<f64>,
+    },
+    #[cfg(feature = "number-box")]
     NumberBoxStep {
         widget: WidgetId,
         steps: i32,
@@ -358,6 +363,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         delta_y: Dp,
     },
+    #[cfg(feature = "scroll")]
+    ScrollToRatio {
+        widget: WidgetId,
+        ratio: f32,
+    },
     #[cfg(feature = "virtual-list")]
     ItemsRepeaterScrollToRatio {
         widget: WidgetId,
@@ -421,6 +431,10 @@ pub enum ViewHitTargetKind {
     NavigationViewScrim,
     #[cfg(feature = "split-view")]
     SplitViewScrim,
+    #[cfg(feature = "scroll")]
+    ScrollbarTrack,
+    #[cfg(feature = "scroll")]
+    ScrollbarThumb,
     #[cfg(feature = "virtual-list")]
     ItemsRepeaterScrollbarTrack,
     #[cfg(feature = "virtual-list")]
@@ -588,7 +602,7 @@ pub enum ViewHitTargetKind {
     Scroll,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ViewInteractionPlan {
     pub hit_targets: Vec<ViewHitTarget>,
     #[cfg(feature = "accessibility")]
@@ -626,6 +640,17 @@ impl ViewInteractionPlan {
     #[cfg(feature = "accessibility")]
     pub fn accessibility_node_count(&self) -> usize {
         self.accessibility_nodes.len()
+    }
+
+    #[cfg(all(feature = "accessibility", feature = "dialog"))]
+    pub(crate) fn accessibility_action_for_widget(
+        &self,
+        widget: WidgetId,
+    ) -> Option<crate::ZsAccessibilityActionTarget> {
+        self.accessibility_nodes
+            .iter()
+            .find(|node| node.widget == widget)
+            .and_then(|node| node.action_target)
     }
 
     pub fn target_at(&self, point: Point) -> Option<WidgetId> {

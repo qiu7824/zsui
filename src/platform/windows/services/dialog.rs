@@ -110,6 +110,11 @@ impl NativeDialogService for WindowsWin32DialogService {
 pub fn windows_win32_show_native_dialog(
     spec: &NativeDialogSpec,
 ) -> ZsuiResult<DialogResponse> {
+    spec.validate()?;
+    if let Some(labels) = &spec.button_labels {
+        return windows_win32_show_custom_native_dialog(spec, labels);
+    }
+
     let owner = unsafe { GetActiveWindow() };
     let mut style = windows_native_dialog_button_style(spec.buttons)
         | windows_native_dialog_level_style(spec.level);
@@ -134,6 +139,155 @@ pub fn windows_win32_show_native_dialog(
             "windows_native_dialog",
             format!("MessageBoxW returned unexpected response {other}"),
         )),
+    }
+}
+
+fn windows_win32_show_custom_native_dialog(
+    spec: &NativeDialogSpec,
+    labels: &DialogButtonLabels,
+) -> ZsuiResult<DialogResponse> {
+    let owner = unsafe { GetActiveWindow() };
+    let title = wide_null(&spec.title);
+    let message = wide_null(&spec.message);
+    let _custom_labels = WindowsMessageBoxButtonLabels::install(spec.buttons, labels)?;
+    let mut style = windows_native_dialog_button_style(spec.buttons)
+        | windows_native_dialog_level_style(spec.level);
+    if owner.is_null() {
+        style |= MB_TASKMODAL;
+    }
+    windows_native_dialog_response(unsafe {
+        MessageBoxW(owner, message.as_ptr(), title.as_ptr(), style)
+    })
+}
+
+thread_local! {
+    static WINDOWS_MESSAGE_BOX_LABELS: RefCell<Vec<(i32, Vec<u16>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+struct WindowsMessageBoxButtonLabels {
+    hook: HHOOK,
+}
+
+impl WindowsMessageBoxButtonLabels {
+    fn install(buttons: DialogButtons, labels: &DialogButtonLabels) -> ZsuiResult<Self> {
+        let already_active =
+            WINDOWS_MESSAGE_BOX_LABELS.with(|stored| !stored.borrow().is_empty());
+        if already_active {
+            return Err(ZsuiError::host(
+                "windows_native_dialog_labels",
+                "a localized native dialog is already active on this UI thread",
+            ));
+        }
+        WINDOWS_MESSAGE_BOX_LABELS.with(|stored| {
+            *stored.borrow_mut() = windows_native_dialog_custom_button_order(buttons, labels)
+                .into_iter()
+                .map(|(response, label)| {
+                    (windows_native_dialog_response_id(response), wide_null(label))
+                })
+                .collect();
+        });
+        // A thread-scoped CBT hook keeps the label storage and every mutation
+        // on the UI thread that synchronously owns MessageBoxW.
+        let hook = unsafe {
+            SetWindowsHookExW(
+                WH_CBT,
+                Some(windows_message_box_label_hook),
+                null_mut(),
+                GetCurrentThreadId(),
+            )
+        };
+        if hook.is_null() {
+            WINDOWS_MESSAGE_BOX_LABELS.with(|stored| stored.borrow_mut().clear());
+            return Err(ZsuiError::host(
+                "windows_native_dialog_labels",
+                format!("SetWindowsHookExW failed with Win32 error {}", unsafe {
+                    GetLastError()
+                }),
+            ));
+        }
+        Ok(Self { hook })
+    }
+}
+
+impl Drop for WindowsMessageBoxButtonLabels {
+    fn drop(&mut self) {
+        if !self.hook.is_null() {
+            unsafe {
+                UnhookWindowsHookEx(self.hook);
+            }
+        }
+        WINDOWS_MESSAGE_BOX_LABELS.with(|stored| stored.borrow_mut().clear());
+    }
+}
+
+unsafe extern "system" fn windows_message_box_label_hook(
+    code: i32,
+    window: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if code == HCBT_ACTIVATE as i32 {
+        WINDOWS_MESSAGE_BOX_LABELS.with(|stored| {
+            for (id, label) in stored.borrow().iter() {
+                let button = unsafe { GetDlgItem(window as HWND, *id) };
+                if !button.is_null() {
+                    unsafe {
+                        SetWindowTextW(button, label.as_ptr());
+                    }
+                }
+            }
+        });
+    }
+    unsafe { CallNextHookEx(null_mut(), code, window, lparam) }
+}
+
+fn windows_native_dialog_response(response: i32) -> ZsuiResult<DialogResponse> {
+    match response {
+        IDOK => Ok(DialogResponse::Ok),
+        IDCANCEL => Ok(DialogResponse::Cancel),
+        IDYES => Ok(DialogResponse::Yes),
+        IDNO => Ok(DialogResponse::No),
+        0 => Err(ZsuiError::host(
+            "windows_native_dialog",
+            format!("MessageBoxW failed with Win32 error {}", unsafe {
+                GetLastError()
+            }),
+        )),
+        other => Err(ZsuiError::host(
+            "windows_native_dialog",
+            format!("MessageBoxW returned unexpected response {other}"),
+        )),
+    }
+}
+
+fn windows_native_dialog_custom_button_order<'a>(
+    buttons: DialogButtons,
+    labels: &'a DialogButtonLabels,
+) -> Vec<(DialogResponse, &'a str)> {
+    match buttons {
+        DialogButtons::Ok => vec![(DialogResponse::Ok, &labels.ok)],
+        DialogButtons::OkCancel => vec![
+            (DialogResponse::Ok, &labels.ok),
+            (DialogResponse::Cancel, &labels.cancel),
+        ],
+        DialogButtons::YesNo => vec![
+            (DialogResponse::Yes, &labels.yes),
+            (DialogResponse::No, &labels.no),
+        ],
+        DialogButtons::YesNoCancel => vec![
+            (DialogResponse::Yes, &labels.yes),
+            (DialogResponse::No, &labels.no),
+            (DialogResponse::Cancel, &labels.cancel),
+        ],
+    }
+}
+
+fn windows_native_dialog_response_id(response: DialogResponse) -> i32 {
+    match response {
+        DialogResponse::Ok => IDOK,
+        DialogResponse::Cancel => IDCANCEL,
+        DialogResponse::Yes => IDYES,
+        DialogResponse::No => IDNO,
     }
 }
 

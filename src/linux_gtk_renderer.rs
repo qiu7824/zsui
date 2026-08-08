@@ -1025,6 +1025,7 @@ fn linux_gtk_semantic_high_contrast_palette(area: &gtk::DrawingArea) -> Option<N
         surface_raised: control,
         control,
         border: primary_text,
+        strong_stroke: primary_text,
         success: primary_text,
         warning: primary_text,
         danger: primary_text,
@@ -1080,6 +1081,7 @@ fn linux_gtk_semantic_palette(area: &gtk::DrawingArea) -> Option<NativeDrawPalet
             &["headerbar_border_color", "borders", "shade_color"],
         )
         .unwrap_or(primary_text),
+        strong_stroke: crate::native_draw_support::strong_stroke_color(primary_text, surface),
         success: linux_gtk_lookup_color(&context, &["success_bg_color", "success_color"])
             .unwrap_or(Color::rgb(46, 160, 67)),
         warning: linux_gtk_lookup_color(&context, &["warning_bg_color", "warning_color"])

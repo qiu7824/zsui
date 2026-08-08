@@ -3,6 +3,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn custom_native_dialog_labels_keep_windows_action_order_and_ids() {
+        let labels = DialogButtonLabels::new("确定", "取消", "是", "否");
+        let ordered =
+            windows_native_dialog_custom_button_order(DialogButtons::YesNoCancel, &labels);
+
+        assert_eq!(
+            ordered,
+            vec![
+                (DialogResponse::Yes, "是"),
+                (DialogResponse::No, "否"),
+                (DialogResponse::Cancel, "取消"),
+            ]
+        );
+        assert_eq!(windows_native_dialog_response_id(DialogResponse::Yes), IDYES);
+        assert_eq!(
+            windows_native_dialog_response_id(DialogResponse::Cancel),
+            IDCANCEL
+        );
+    }
+
+    #[test]
     fn draw_plan_theme_mode_selects_shared_dark_palette() {
         let plan = NativeDrawPlan::default().theme_mode(crate::ZsuiThemeMode::Dark);
         let palette = windows_palette_for_draw_plan(Some(&plan));
@@ -184,6 +205,64 @@ mod tests {
             WindowsWindowCreateParams::from_create_param(WindowsWindowRole::Quick as isize),
             WindowsWindowCreateParams::new(WindowsWindowRole::Quick, None)
         );
+    }
+
+    #[test]
+    fn min_track_size_converts_the_requested_client_floor_to_outer_pixels() {
+        let style = WS_OVERLAPPED
+            | WS_CAPTION
+            | WS_SYSMENU
+            | WS_MINIMIZEBOX
+            | WS_MAXIMIZEBOX
+            | WS_THICKFRAME;
+        let (width, height) = unsafe {
+            windows_win32_outer_size_for_client_at_dpi(480, 320, style, 0, false, 96)
+        };
+
+        assert!(width >= 480);
+        assert!(height >= 320);
+        assert!(width > 480 || height > 320);
+    }
+
+    #[test]
+    fn win32_window_proc_enforces_the_declared_minimum_client_size() {
+        let host = WindowsWin32MainWindowHost::new();
+        let module = unsafe { WindowsWin32MainWindowHost::module_handle() };
+        let cursor = unsafe { WindowsWin32MainWindowHost::arrow_cursor() };
+        assert!(unsafe { host.register_window_class(WindowsWindowRole::Quick, module, cursor) });
+        let title = wide_null("ZSUI min_size regression");
+        let options = NativeWindowOptions::standard().with_min_size(Size {
+            width: 480,
+            height: 320,
+        });
+        let hwnd = unsafe {
+            host.create_window(
+                WindowsWindowRole::Quick,
+                &title,
+                640,
+                420,
+                module,
+                &options,
+            )
+        };
+        assert!(!hwnd.is_null());
+
+        let mut minmax: MINMAXINFO = unsafe { zeroed() };
+        let result = unsafe {
+            SendMessageW(
+                hwnd,
+                WM_GETMINMAXINFO,
+                0,
+                &mut minmax as *mut MINMAXINFO as LPARAM,
+            )
+        };
+        let destroyed = unsafe { DestroyWindow(hwnd) } != 0;
+
+        assert_eq!(result, 0);
+        assert!(destroyed);
+        assert!(minmax.ptMinTrackSize.x >= 480);
+        assert!(minmax.ptMinTrackSize.y >= 320);
+        assert!(minmax.ptMinTrackSize.x > 480 || minmax.ptMinTrackSize.y > 320);
     }
 
     #[test]

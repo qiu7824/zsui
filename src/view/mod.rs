@@ -26,17 +26,18 @@ use crate::{
     style::{ThemeColorToken, ZsuiThemeMode},
     Command, UiCommand,
 };
-#[cfg(feature = "image-preview")]
-use crate::{
-    NativeDrawIconCommand, NativeIconColorMode, NativeImageInterpolation, ZsImageFit,
-    ZsImagePreviewSnapshot,
-};
+#[cfg(any(feature = "image-preview", feature = "video"))]
+use crate::{NativeDrawIconCommand, NativeIconColorMode, NativeImageInterpolation};
 #[cfg(feature = "time-picker")]
 use crate::{ZsClockFormat, ZsMinuteIncrement, ZsTime, ZsTimePickerPlatformStyle};
 #[cfg(feature = "color-picker")]
 use crate::{ZsColorChannel, ZsColorPickerPlatformStyle, ZsColorPickerState};
+#[cfg(feature = "image-preview")]
+use crate::{ZsImageFit, ZsImagePreviewSnapshot};
 #[cfg(feature = "tabs")]
 use crate::{ZsTabId, ZsTabSpec};
+#[cfg(feature = "video")]
+use crate::{ZsVideoFit, ZsVideoPlaybackState, ZsVideoSource};
 use serde::{Deserialize, Serialize};
 
 include!("node.rs");

@@ -50,6 +50,84 @@ impl From<RangeInclusive<f32>> for ProgressRange {
     }
 }
 
+/// Native ProgressBar state shared by the three platform render profiles.
+#[cfg(feature = "progress")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ZsProgressBarStatus {
+    Normal,
+    Paused,
+    Error,
+}
+
+/// Determinate and indeterminate modes supported by a native ProgressBar.
+#[cfg(feature = "progress")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ZsProgressBarMode {
+    Determinate { value: f32, range: ProgressRange },
+    Indeterminate,
+}
+
+/// Complete state for a native ProgressBar.
+#[cfg(feature = "progress")]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsProgressBarSpec {
+    mode: ZsProgressBarMode,
+    status: ZsProgressBarStatus,
+}
+
+#[cfg(feature = "progress")]
+impl ZsProgressBarSpec {
+    pub fn determinate(value: f32, range: impl Into<ProgressRange>) -> Self {
+        let range = range.into();
+        Self {
+            mode: ZsProgressBarMode::Determinate {
+                value: range.clamp(value),
+                range,
+            },
+            status: ZsProgressBarStatus::Normal,
+        }
+    }
+
+    pub const fn indeterminate() -> Self {
+        Self {
+            mode: ZsProgressBarMode::Indeterminate,
+            status: ZsProgressBarStatus::Normal,
+        }
+    }
+
+    pub const fn status(mut self, status: ZsProgressBarStatus) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub const fn mode(self) -> ZsProgressBarMode {
+        self.mode
+    }
+
+    pub const fn status_value(self) -> ZsProgressBarStatus {
+        self.status
+    }
+
+    pub const fn is_animating(self) -> bool {
+        matches!(self.mode, ZsProgressBarMode::Indeterminate)
+            && matches!(self.status, ZsProgressBarStatus::Normal)
+    }
+
+    pub fn fraction(self) -> Option<f32> {
+        match self.mode {
+            ZsProgressBarMode::Determinate { value, range } => Some(range.fraction(value)),
+            ZsProgressBarMode::Indeterminate => None,
+        }
+    }
+}
+
+#[cfg(feature = "progress")]
+impl Default for ZsProgressBarSpec {
+    fn default() -> Self {
+        Self::indeterminate()
+    }
+}
+
 #[cfg(feature = "progress-ring")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ZsProgressRingMode {

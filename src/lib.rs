@@ -184,6 +184,19 @@ pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
 pub mod progress;
 pub mod render_protocol;
+#[cfg(feature = "rust-text")]
+pub mod rust_text_renderer;
+#[cfg(feature = "rust-text-proof")]
+pub use rust_text_renderer::{
+    compare_text_bgra_pixels, compare_text_geometry, text_bgra_difference_image,
+    text_geometry_overlay_svg, ZsTextGeometryDiff, ZsTextGlyphProof, ZsTextLineProof,
+    ZsTextPixelDiff, ZsTextProof,
+};
+#[cfg(feature = "rust-text")]
+pub use rust_text_renderer::{
+    ZsRustTextEngine, ZsRustTextLayout, ZsTextCacheStats, ZsTextGlyphLayout, ZsTextLineLayout,
+    ZsTextLineMetricPolicy, ZsTextPixelRect, ZsTextRasterMode, ZsTextRasterProfile,
+};
 pub mod settings;
 pub mod shell_layout;
 #[cfg(feature = "split-view")]
@@ -210,9 +223,16 @@ pub mod ui_document_runtime;
 pub mod ui_surface_protocol;
 #[cfg(feature = "ui-viewer")]
 pub mod ui_viewer;
+#[cfg(feature = "video")]
+pub mod video;
 pub mod view;
 pub mod widget_render;
 pub mod window;
+#[cfg(all(windows, feature = "windows-directwrite"))]
+#[path = "platform/windows/text/directwrite.rs"]
+mod windows_directwrite;
+#[cfg(all(windows, feature = "windows-text-proof"))]
+pub use windows_directwrite::{directwrite_text_bgra, directwrite_text_proof};
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub mod windows_gdi_renderer;
 #[cfg(all(
@@ -222,6 +242,9 @@ pub mod windows_gdi_renderer;
     feature = "windows-win32"
 ))]
 mod windows_menu_uia;
+#[cfg(all(windows, feature = "windows-rust-text"))]
+#[path = "platform/windows/text/rust_renderer.rs"]
+mod windows_rust_text;
 #[cfg(all(windows, feature = "accessibility", feature = "windows-win32"))]
 mod windows_semantic_uia;
 #[cfg(all(
@@ -248,7 +271,8 @@ pub mod windows_win32_text_editor;
 pub mod workbench;
 
 pub use accessibility::{
-    ParseZsAccessibilityRoleError, ZsAccessibilityLiveRegion, ZsAccessibilityNode,
+    ParseZsAccessibilityRoleError, ZsAccessibilityActionTarget, ZsAccessibilityLiveRegion,
+    ZsAccessibilityNode, ZsAccessibilityRangeInteraction, ZsAccessibilityRangeValue,
     ZsAccessibilityRole, ZsAccessibilitySpec,
 };
 pub use agent_context::{
@@ -326,8 +350,9 @@ pub use control_protocol::{
     REQUIRED_SETTINGS_CONTROL_HOST_OPERATIONS,
 };
 pub use core::{
-    AppEvent, Command, DialogButtons, DialogLevel, DialogResponse, FileDialogFilter,
-    FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError, ZsuiResult,
+    AppEvent, Command, DialogButtonLabels, DialogButtons, DialogLevel, DialogResponse,
+    FileDialogFilter, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError,
+    ZsuiResult,
 };
 #[cfg(feature = "date-picker")]
 pub use date::{days_in_month, is_leap_year, ZsDate};
@@ -594,6 +619,8 @@ pub use progress::{
     ZsProgressRingMetrics, ZsProgressRingMode, ZsProgressRingPlatformStyle,
     ZsProgressRingRenderPlan, ZsProgressRingSize, ZsProgressRingSpec,
 };
+#[cfg(feature = "progress")]
+pub use progress::{ZsProgressBarMode, ZsProgressBarSpec, ZsProgressBarStatus};
 #[cfg(feature = "password-box")]
 pub use render_protocol::NativeDrawSecureTextCommand;
 pub use render_protocol::{
@@ -662,6 +689,11 @@ pub use tray::TraySpec;
 #[cfg(feature = "tree")]
 pub use tree::{ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId, ZsTreeRowState, ZsTreeViewState};
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
+#[cfg(feature = "video")]
+pub use video::{
+    zs_video_native_draw_command, zs_video_render_geometry, ZsVideoFit, ZsVideoPlaybackState,
+    ZsVideoRenderGeometry, ZsVideoSnapshot, ZsVideoSource, ZsVideoSurfaceConfig,
+};
 #[cfg(feature = "auto-suggest")]
 pub use view::auto_suggest_box;
 #[cfg(feature = "badge")]
@@ -702,14 +734,10 @@ pub use view::menu_flyout;
 pub use view::number_box;
 #[cfg(feature = "password-box")]
 pub use view::password_box;
-#[cfg(feature = "progress")]
-pub use view::progress_bar;
 #[cfg(feature = "progress-ring")]
 pub use view::progress_ring;
 #[cfg(feature = "radio")]
 pub use view::radio_button;
-#[cfg(feature = "scroll")]
-pub use view::scroll;
 #[cfg(feature = "shell")]
 pub use view::settings_card;
 #[cfg(feature = "split-view")]
@@ -730,6 +758,8 @@ pub use view::toggle;
 pub use view::toggle_button;
 #[cfg(feature = "tree")]
 pub use view::tree_view;
+#[cfg(feature = "video")]
+pub use view::video;
 #[cfg(any(
     feature = "textbox",
     feature = "checkbox",
@@ -766,6 +796,8 @@ pub use view::{command_bar, ZsCommandBarSpec};
 pub use view::{composer, inspector_panel, message_timeline, workbench, workbench_shell};
 #[cfg(feature = "image-preview")]
 pub use view::{image, image_preview};
+#[cfg(feature = "progress")]
+pub use view::{indeterminate_progress_bar, progress_bar, progress_bar_from_spec};
 #[cfg(feature = "virtual-list")]
 pub use view::{
     items_repeater, items_repeater_viewport, items_repeater_viewport_with_metrics, virtual_list,
@@ -773,6 +805,8 @@ pub use view::{
 };
 #[cfg(feature = "label")]
 pub use view::{navigation_view, section, ZsNavigationViewSpec};
+#[cfg(feature = "scroll")]
+pub use view::{scroll, ZsScrollbarLayout};
 #[cfg(feature = "slider")]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "label")]
@@ -868,7 +902,8 @@ pub use widget_render::{
 #[cfg(feature = "progress")]
 pub use widget_render::{
     zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan,
-    zs_progress_bar_render_plan_for_platform, ZsProgressBarRenderPlan,
+    zs_progress_bar_render_plan_for_platform, zs_progress_bar_render_plan_for_spec,
+    ZsProgressBarRenderPlan,
 };
 #[cfg(feature = "radio")]
 pub use widget_render::{
@@ -922,7 +957,10 @@ pub use widget_render::{
     zs_tree_view_native_draw_plan, zs_tree_view_render_plan, ZsTreePlatformStyle,
     ZsTreeRowRenderPlan, ZsTreeViewMetrics, ZsTreeViewRenderPlan,
 };
-pub use widget_render::{ZsBaseControlMetrics, ZsBaseControlPlatformStyle};
+pub use widget_render::{
+    ZsBaseControlMetrics, ZsBaseControlPlatformStyle, ZsProgressBarIndeterminateMetrics,
+    ZsProgressBarSegmentMetrics,
+};
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
 pub use windows_gdi_renderer::{

@@ -129,7 +129,8 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "slider")]
             (Some(id), ViewEvent::SliderChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "number-box")]
-            (Some(id), ViewEvent::NumberBoxStep { widget, .. })
+            (Some(id), ViewEvent::NumberBoxValueChanged { widget, .. })
+            | (Some(id), ViewEvent::NumberBoxStep { widget, .. })
             | (Some(id), ViewEvent::NumberBoxCommit { widget })
             | (Some(id), ViewEvent::NumberBoxReset { widget }) => id == *widget,
             #[cfg(feature = "radio")]
@@ -197,7 +198,8 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "tabs")]
             (Some(id), ViewEvent::TabSelected { widget, .. }) => id == *widget,
             #[cfg(feature = "scroll")]
-            (Some(id), ViewEvent::ScrollBy { widget, .. }) => id == *widget,
+            (Some(id), ViewEvent::ScrollBy { widget, .. })
+            | (Some(id), ViewEvent::ScrollToRatio { widget, .. }) => id == *widget,
             #[cfg(feature = "virtual-list")]
             (Some(id), ViewEvent::ItemsRepeaterScrollToRatio { widget, .. }) => id == *widget,
             #[cfg(any(
@@ -482,6 +484,21 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_number_box_state(widget))
+    }
+
+    #[cfg(feature = "number-box")]
+    pub(crate) fn widget_number_box_accessibility_state(
+        &self,
+        widget: WidgetId,
+    ) -> Option<(Option<f64>, ZsNumberRange)> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::NumberBox { value, range, .. } = &self.kind {
+                return Some((*value, *range));
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_number_box_accessibility_state(widget))
     }
 
     #[cfg(feature = "combo")]
@@ -1077,6 +1094,18 @@ impl<Msg> ViewNode<Msg> {
     }
 
     #[cfg(feature = "scroll")]
+    pub fn widget_scrollbar_layout(&self, widget: WidgetId) -> Option<ZsScrollbarLayout> {
+        if self.id == Some(widget) {
+            if let Some(layout) = scrollbar_layout(self) {
+                return Some(layout);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_scrollbar_layout(widget))
+    }
+
+    #[cfg(feature = "scroll")]
     fn first_widget_id_any(&self) -> Option<WidgetId> {
         self.id
             .or_else(|| self.children.iter().find_map(ViewNode::first_widget_id_any))
@@ -1107,10 +1136,85 @@ impl<Msg> ViewNode<Msg> {
                     .label(label.clone())
                     .enabled(*enabled),
             ),
+            #[cfg(feature = "canvas")]
+            ViewNodeKind::Canvas { .. } => Some(crate::ZsAccessibilitySpec::new(
+                crate::ZsAccessibilityRole::Canvas,
+            )),
+            #[cfg(feature = "toggle-button")]
+            ViewNodeKind::ToggleButton { label, checked, .. } => Some(
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Button)
+                    .label(label.clone())
+                    .checked(*checked),
+            ),
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox { .. } => Some(crate::ZsAccessibilitySpec::new(
                 crate::ZsAccessibilityRole::TextBox,
             )),
+            #[cfg(feature = "slider")]
+            ViewNodeKind::Slider { value, range, .. } => {
+                let step = f64::from(range.step_size());
+                let span = f64::from(range.max() - range.min());
+                Some(
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Slider)
+                        .range_value(
+                            crate::ZsAccessibilityRangeValue::new(
+                                f64::from(*value),
+                                f64::from(range.min()),
+                                f64::from(range.max()),
+                            )
+                            .adjustable(step, (step * 10.0).min(span)),
+                        ),
+                )
+            }
+            #[cfg(feature = "number-box")]
+            ViewNodeKind::NumberBox { value, range, .. } => {
+                let mut accessibility = crate::ZsAccessibilitySpec::new(
+                    crate::ZsAccessibilityRole::SpinButton,
+                );
+                if let Some(value) = value {
+                    accessibility = accessibility.range_value(
+                        crate::ZsAccessibilityRangeValue::new(
+                            *value,
+                            range.min(),
+                            range.max(),
+                        )
+                        .adjustable(range.step_size(), range.large_step_size()),
+                    );
+                }
+                Some(accessibility)
+            }
+            #[cfg(feature = "progress")]
+            ViewNodeKind::ProgressBar { spec } => {
+                let mut accessibility = crate::ZsAccessibilitySpec::new(
+                    crate::ZsAccessibilityRole::ProgressBar,
+                );
+                if let crate::ZsProgressBarMode::Determinate { value, range } = spec.mode() {
+                    accessibility = accessibility.range_value(
+                        crate::ZsAccessibilityRangeValue::new(
+                            f64::from(value),
+                            f64::from(range.min()),
+                            f64::from(range.max()),
+                        ),
+                    );
+                }
+                Some(accessibility)
+            }
+            #[cfg(feature = "progress-ring")]
+            ViewNodeKind::ProgressRing { spec } if spec.is_active() => {
+                let mut accessibility = crate::ZsAccessibilitySpec::new(
+                    crate::ZsAccessibilityRole::ProgressBar,
+                );
+                if let crate::ZsProgressRingMode::Determinate { value, range } = spec.mode() {
+                    accessibility = accessibility.range_value(
+                        crate::ZsAccessibilityRangeValue::new(
+                            f64::from(value),
+                            f64::from(range.min()),
+                            f64::from(range.max()),
+                        ),
+                    );
+                }
+                Some(accessibility)
+            }
             #[cfg(feature = "tabs")]
             ViewNodeKind::Tabs { .. } => Some(
                 crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TabList)
@@ -1165,14 +1269,86 @@ impl<Msg> ViewNode<Msg> {
         parent: Option<WidgetId>,
         clip: Option<Rect>,
     ) {
+        #[cfg(feature = "dialog")]
+        if let (
+            Some(widget),
+            Some(viewport),
+            ViewNodeKind::ContentDialog {
+                spec,
+                open: true,
+                focused_button,
+                ..
+            },
+        ) = (self.id, self.bounds, &self.kind)
+        {
+            let plan = crate::zs_content_dialog_render_plan(
+                viewport,
+                spec,
+                *focused_button,
+                crate::ZsContentDialogPlatformStyle::current(),
+                self.layout_dpi,
+            );
+            let mut accessibility =
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Dialog);
+            if let Some(title) = spec.dialog_title() {
+                accessibility = accessibility
+                    .label(title)
+                    .description(spec.content());
+            } else {
+                accessibility = accessibility.label(spec.content());
+            }
+            if let Some(bounds) = clipped_rect(plan.surface, clip) {
+                nodes.push(crate::ZsAccessibilityNode::from_spec(
+                    widget,
+                    parent,
+                    bounds,
+                    &accessibility,
+                ));
+            }
+            for button in plan.buttons {
+                let Some(bounds) = clipped_rect(button.bounds, clip) else {
+                    continue;
+                };
+                let mut node = crate::ZsAccessibilityNode::from_spec(
+                    crate::content_dialog::zs_content_dialog_button_accessibility_id(
+                        widget,
+                        button.button,
+                    ),
+                    Some(widget),
+                    bounds,
+                    &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Button)
+                        .label(button.label),
+                );
+                node.action_target = Some(
+                    crate::content_dialog::zs_content_dialog_button_accessibility_action(
+                        widget,
+                        button.button,
+                    ),
+                );
+                nodes.push(node);
+            }
+            // A modal ContentDialog replaces the background page in the
+            // assistive-technology tree while it is open.
+            return;
+        }
+
         let mut semantic_parent = parent;
         let implicit_accessibility = self.implicit_accessibility_spec();
+        let resolved_accessibility = self.accessibility.clone().or(implicit_accessibility);
+        #[cfg(feature = "tooltip")]
+        let mut resolved_accessibility = resolved_accessibility;
+        #[cfg(feature = "tooltip")]
+        if let (Some(accessibility), Some(tooltip)) =
+            (resolved_accessibility.as_mut(), self.tooltip.as_ref())
+        {
+            if accessibility.description.is_none() && !tooltip.is_empty() {
+                accessibility.description = Some(tooltip.text.trim().to_owned());
+            }
+        }
         if let (Some(widget), Some(bounds), Some(spec)) = (
             self.id,
             self.bounds,
-            self.accessibility
-                .as_ref()
-                .or(implicit_accessibility.as_ref()),
+            resolved_accessibility.as_ref(),
         )
         {
             if let Some(bounds) = clipped_rect(bounds, clip) {
@@ -2082,11 +2258,29 @@ impl<Msg> ViewNode<Msg> {
             child.collect_hit_targets(hit_targets, child_clip);
         }
 
+        #[cfg(feature = "scroll")]
+        if let (Some(widget), Some(scrollbar)) = (self.id, scrollbar_layout(self)) {
+            if let Some(bounds) = clipped_rect(scrollbar.track_hit, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::ScrollbarTrack,
+                ));
+            }
+            if let Some(bounds) = clipped_rect(scrollbar.thumb_hit, clip) {
+                hit_targets.push(ViewHitTarget::with_kind(
+                    widget,
+                    bounds,
+                    ViewHitTargetKind::ScrollbarThumb,
+                ));
+            }
+        }
+
         #[cfg(feature = "virtual-list")]
         if let (Some(widget), Some(scrollbar)) =
             (self.id, items_repeater_scrollbar_layout(self))
         {
-            if let Some(bounds) = clipped_rect(scrollbar.track, clip) {
+            if let Some(bounds) = clipped_rect(scrollbar.track_hit, clip) {
                 hit_targets.push(ViewHitTarget::with_kind(
                     widget,
                     bounds,

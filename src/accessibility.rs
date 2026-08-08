@@ -14,6 +14,7 @@ pub enum ZsAccessibilityRole {
     Application,
     Article,
     Button,
+    Canvas,
     ColorWell,
     ComboBox,
     Complementary,
@@ -48,6 +49,7 @@ impl ZsAccessibilityRole {
         "application",
         "article",
         "button",
+        "canvas",
         "color_well",
         "combo_box",
         "complementary",
@@ -82,6 +84,7 @@ impl ZsAccessibilityRole {
             Self::Application => "application",
             Self::Article => "article",
             Self::Button => "button",
+            Self::Canvas => "canvas",
             Self::ColorWell => "color_well",
             Self::ComboBox => "combo_box",
             Self::Complementary => "complementary",
@@ -145,6 +148,7 @@ impl FromStr for ZsAccessibilityRole {
             "application" => Self::Application,
             "article" => Self::Article,
             "button" => Self::Button,
+            "canvas" => Self::Canvas,
             "color_well" | "colorwell" => Self::ColorWell,
             "combo_box" | "combobox" => Self::ComboBox,
             "complementary" => Self::Complementary,
@@ -189,8 +193,122 @@ pub enum ZsAccessibilityLiveRegion {
     Assertive,
 }
 
+/// Interaction policy for a semantic numeric range.
+///
+/// Progress indicators remain read-only, while controls such as Slider expose
+/// finite small and large changes to the native accessibility backend.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ZsAccessibilityRangeInteraction {
+    #[default]
+    ReadOnly,
+    Adjustable {
+        small_change: f64,
+        large_change: f64,
+    },
+}
+
+impl ZsAccessibilityRangeInteraction {
+    pub const fn is_read_only(&self) -> bool {
+        matches!(self, Self::ReadOnly)
+    }
+
+    pub const fn small_change(self) -> Option<f64> {
+        match self {
+            Self::ReadOnly => None,
+            Self::Adjustable { small_change, .. } => Some(small_change),
+        }
+    }
+
+    pub const fn large_change(self) -> Option<f64> {
+        match self {
+            Self::ReadOnly => None,
+            Self::Adjustable { large_change, .. } => Some(large_change),
+        }
+    }
+}
+
+/// Numeric range exposed by progress indicators and adjustable controls.
+///
+/// Construction normalizes non-finite and reversed inputs so every backend
+/// receives the same finite `minimum <= value <= maximum` contract.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsAccessibilityRangeValue {
+    pub value: f64,
+    pub minimum: f64,
+    pub maximum: f64,
+    #[serde(
+        default,
+        skip_serializing_if = "ZsAccessibilityRangeInteraction::is_read_only"
+    )]
+    pub interaction: ZsAccessibilityRangeInteraction,
+}
+
+/// Framework-owned action route for a semantic child of a composite control.
+///
+/// Applications describe the composite control once; ZSUI emits these routes
+/// only for the platform accessibility backends that need to address an
+/// internal interactive surface independently from its owner widget.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZsAccessibilityActionTarget {
+    ContentDialogPrimary { dialog: WidgetId },
+    ContentDialogSecondary { dialog: WidgetId },
+    ContentDialogClose { dialog: WidgetId },
+}
+
+impl ZsAccessibilityRangeValue {
+    pub fn new(value: f64, minimum: f64, maximum: f64) -> Self {
+        let minimum = if minimum.is_finite() { minimum } else { 0.0 };
+        let maximum = if maximum.is_finite() { maximum } else { 100.0 };
+        let (minimum, mut maximum) = if minimum <= maximum {
+            (minimum, maximum)
+        } else {
+            (maximum, minimum)
+        };
+        if (maximum - minimum).abs() <= f64::EPSILON {
+            maximum = minimum + 1.0;
+        }
+        let value = if value.is_finite() {
+            value.clamp(minimum, maximum)
+        } else {
+            minimum
+        };
+        Self {
+            value,
+            minimum,
+            maximum,
+            interaction: ZsAccessibilityRangeInteraction::ReadOnly,
+        }
+    }
+
+    /// Marks this range as adjustable and normalizes both changes into the
+    /// finite positive range span shared by every platform backend.
+    pub fn adjustable(mut self, small_change: f64, large_change: f64) -> Self {
+        let span = self.maximum - self.minimum;
+        let fallback_small = (span / 100.0).max(f64::EPSILON);
+        let small_change = normalize_range_change(small_change, fallback_small, span);
+        let fallback_large = (small_change * 10.0).min(span);
+        let large_change = normalize_range_change(large_change, fallback_large, span);
+        self.interaction = ZsAccessibilityRangeInteraction::Adjustable {
+            small_change,
+            large_change,
+        };
+        self
+    }
+}
+
+fn normalize_range_change(value: f64, fallback: f64, span: f64) -> f64 {
+    if value.is_finite() && value > 0.0 {
+        value.min(span)
+    } else {
+        fallback.min(span)
+    }
+}
+
 /// Semantic metadata attached to one retained View node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ZsAccessibilitySpec {
     pub role: ZsAccessibilityRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -203,6 +321,12 @@ pub struct ZsAccessibilitySpec {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected: Option<bool>,
+    /// Persistent on/off state for button-like controls that implement a
+    /// native toggle protocol. This is distinct from collection selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_value: Option<ZsAccessibilityRangeValue>,
 }
 
 impl ZsAccessibilitySpec {
@@ -214,6 +338,8 @@ impl ZsAccessibilitySpec {
             live_region: None,
             enabled: true,
             selected: None,
+            checked: None,
+            range_value: None,
         }
     }
 
@@ -241,10 +367,23 @@ impl ZsAccessibilitySpec {
         self.selected = Some(selected);
         self
     }
+
+    /// Exposes a persistent binary state without changing the semantic role.
+    /// Native providers lower this to UIA Toggle, AppKit button value and
+    /// AccessKit toggled state respectively.
+    pub const fn checked(mut self, checked: bool) -> Self {
+        self.checked = Some(checked);
+        self
+    }
+
+    pub const fn range_value(mut self, range_value: ZsAccessibilityRangeValue) -> Self {
+        self.range_value = Some(range_value);
+        self
+    }
 }
 
 /// Laid-out semantic node consumed by UIA, AppKit Accessibility and AccessKit.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ZsAccessibilityNode {
     pub widget: WidgetId,
     pub parent: Option<WidgetId>,
@@ -259,6 +398,13 @@ pub struct ZsAccessibilityNode {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range_value: Option<ZsAccessibilityRangeValue>,
+    #[doc(hidden)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_target: Option<ZsAccessibilityActionTarget>,
 }
 
 impl ZsAccessibilityNode {
@@ -279,6 +425,9 @@ impl ZsAccessibilityNode {
             live_region: spec.live_region,
             enabled: spec.enabled,
             selected: spec.selected,
+            checked: spec.checked,
+            range_value: spec.range_value,
+            action_target: None,
         }
     }
 }
@@ -321,5 +470,45 @@ mod tests {
             .description("  Preview image  ");
         assert_eq!(spec.label, None);
         assert_eq!(spec.description.as_deref(), Some("Preview image"));
+    }
+
+    #[test]
+    fn range_values_are_finite_ordered_and_clamped() {
+        assert_eq!(
+            ZsAccessibilityRangeValue::new(125.0, 100.0, 0.0),
+            ZsAccessibilityRangeValue {
+                value: 100.0,
+                minimum: 0.0,
+                maximum: 100.0,
+                interaction: ZsAccessibilityRangeInteraction::ReadOnly,
+            }
+        );
+        assert_eq!(
+            ZsAccessibilityRangeValue::new(f64::NAN, f64::NAN, f64::INFINITY),
+            ZsAccessibilityRangeValue {
+                value: 0.0,
+                minimum: 0.0,
+                maximum: 100.0,
+                interaction: ZsAccessibilityRangeInteraction::ReadOnly,
+            }
+        );
+    }
+
+    #[test]
+    fn adjustable_range_changes_are_finite_positive_and_bounded() {
+        let range = ZsAccessibilityRangeValue::new(25.0, 0.0, 100.0).adjustable(5.0, f64::INFINITY);
+        assert!(!range.interaction.is_read_only());
+        assert_eq!(range.interaction.small_change(), Some(5.0));
+        assert_eq!(range.interaction.large_change(), Some(50.0));
+    }
+
+    #[test]
+    fn checked_state_is_independent_from_collection_selection() {
+        let spec = ZsAccessibilitySpec::new(ZsAccessibilityRole::Button).checked(true);
+        assert_eq!(spec.checked, Some(true));
+        assert_eq!(spec.selected, None);
+        assert!(serde_json::to_string(&spec)
+            .unwrap()
+            .contains("\"checked\":true"));
     }
 }

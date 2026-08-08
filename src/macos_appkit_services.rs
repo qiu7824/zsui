@@ -27,9 +27,10 @@ use crate::native_file_dialog::{
     native_save_dialog_suggested_name,
 };
 use crate::{
-    ClipboardData, ClipboardService, DesktopEvent, DialogButtons, DialogLevel, DialogResponse,
-    FileDialogService, FileDialogSpec, MenuService, NativeDialogService, NativeDialogSpec,
-    SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError, ZsuiResult,
+    ClipboardData, ClipboardService, DesktopEvent, DialogButtonLabels, DialogButtons, DialogLevel,
+    DialogResponse, FileDialogService, FileDialogSpec, MenuService, NativeDialogService,
+    NativeDialogSpec, SaveFileDialogSpec, WindowId, WindowService, WindowSpec, ZsuiError,
+    ZsuiResult,
 };
 
 struct ZsuiAppKitRuntimeDelegateIvars {
@@ -726,6 +727,7 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
 }
 
 pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
+    spec.validate()?;
     let mtm = appkit_main_thread_marker("NSAlert")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let alert = NSAlert::new(mtm);
@@ -736,7 +738,8 @@ pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<Di
         DialogLevel::Warning => NSAlertStyle::Warning,
         DialogLevel::Error => NSAlertStyle::Critical,
     });
-    for label in appkit_native_dialog_button_labels(spec.buttons) {
+    let labels = spec.resolved_button_labels();
+    for label in appkit_native_dialog_button_labels(spec.buttons, &labels) {
         alert.addButtonWithTitle(&NSString::from_str(label));
     }
 
@@ -749,12 +752,15 @@ pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<Di
     })
 }
 
-fn appkit_native_dialog_button_labels(buttons: DialogButtons) -> &'static [&'static str] {
+fn appkit_native_dialog_button_labels<'a>(
+    buttons: DialogButtons,
+    labels: &'a DialogButtonLabels,
+) -> Vec<&'a str> {
     match buttons {
-        DialogButtons::Ok => &["OK"],
-        DialogButtons::OkCancel => &["OK", "Cancel"],
-        DialogButtons::YesNo => &["Yes", "No"],
-        DialogButtons::YesNoCancel => &["Yes", "No", "Cancel"],
+        DialogButtons::Ok => vec![&labels.ok],
+        DialogButtons::OkCancel => vec![&labels.ok, &labels.cancel],
+        DialogButtons::YesNo => vec![&labels.yes, &labels.no],
+        DialogButtons::YesNoCancel => vec![&labels.yes, &labels.no, &labels.cancel],
     }
 }
 
@@ -888,9 +894,10 @@ mod tests {
         fn assert_service<T: NativeDialogService>() {}
         assert_service::<MacosAppKitDialogService>();
 
+        let labels = DialogButtonLabels::new("确定", "取消", "是", "否");
         assert_eq!(
-            appkit_native_dialog_button_labels(DialogButtons::YesNoCancel),
-            &["Yes", "No", "Cancel"]
+            appkit_native_dialog_button_labels(DialogButtons::YesNoCancel, &labels),
+            vec!["是", "否", "取消"]
         );
         assert_eq!(
             appkit_native_dialog_response(DialogButtons::YesNoCancel, NSAlertFirstButtonReturn,),

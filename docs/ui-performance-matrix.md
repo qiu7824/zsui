@@ -30,6 +30,42 @@ CPU 各采样 3 秒。除 Tauri 外均为单进程；Tauri 为 1 个应用进程
 是其余 4 次的中位数。CPU 为整机百分比。峰值 RSS 取空窗口、完整页面、隐藏后和
 持续重绘四阶段的最大值。
 
+### Windows 文字后端 A/B/C
+
+下表保留的是生产/证明代码拆分和按字节 LRU 缓存落地前的候选基线，不作为当前
+提交优化后的结果；必须用同一脚本重新构建、测量后才更新数字。正式应用只启用
+`windows-rust-text`，不得把 `rust-text-proof`/`windows-text-proof` 的代码体积或
+内存计入生产后端。
+
+拆分后的同一 Minimal release 构建已复核为 2,263.5 KiB，比表内旧构建增加
+5.0 KiB；RSS/Private RSS 尚未按完整交替运行方法重测，因此仍保留旧内存行。这个
+结果说明旧 release 的 Thin LTO 已经移除了大部分未调用 proof 符号：feature 拆分
+首先保证生产 API、依赖边界和运行时分配正确，并不会虚构二进制下降。新增的紧凑
+字形/行几何、布局 LRU 和缓存统计抵消了这部分链接裁剪。后续二进制优化应处理
+Harfrust/Swash 的字体解析代码代际重复，不能通过删掉正确的塑形或回退能力实现。
+
+`windows-directwrite` 使用系统 DirectWrite 做塑形、字体回退和字形栅格化；
+`windows-rust-text` 使用 ZSUI 自有 Harfrust/Swash 候选管线。两者都把结果合成到
+既有 Win32 缓冲 DIB，GDI 仍是可裁剪基线。以下为同一台机器、同一份 1000×700
+Minimal release 应用交替运行 5 次的实测，暖态结果排除每种后端的首次运行，预热
+3 秒并采样 6 次。
+
+| 文字后端 | 二进制 | 暖态 RSS | Private RSS | Private Bytes | 峰值 RSS |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GDI | 658.0 KiB | 14.20 MiB | 1.47 MiB | 2.18 MiB | 16.87 MiB |
+| DirectWrite | 670.5 KiB | 15.17 MiB | 1.62 MiB | 2.24 MiB | 17.85 MiB |
+| ZSUI Rust text | 2,258.5 KiB | 15.12 MiB | 1.78 MiB | 2.42 MiB | 17.79 MiB |
+| DirectWrite 相对 GDI | +12.5 KiB | +0.97 MiB | +0.15 MiB | +0.06 MiB | +0.98 MiB |
+| Rust text 相对 GDI | +1,600.5 KiB | +0.92 MiB | +0.31 MiB | +0.24 MiB | +0.92 MiB |
+
+两个高级文字后端的暖态 RSS 增量都约为 1 MiB，不能全部视为应用独占内存。
+Rust text 的应用独占增量更高，但本次 Minimal 实测仍为 0.31 MiB Private RSS 和
+0.24 MiB Private Bytes；主要成本是 release 二进制增加约 1.56 MiB。模块检查确认
+只有 DirectWrite 版本加载 `dwrite.dll`；三个版本均未加载 `d2d1.dll` 或 WebView。
+未启用对应特性时不会构建其字体系统、布局、字形缓存或复用位图表面。Rust text
+仍需通过 `docs/text-rendering.md` 的完整多字体矩阵，不能仅凭内存结果替代正确性
+验收。
+
 ### Minimal
 
 | 框架 | 二进制 | 首次帧 | 暖启动首帧 | 空窗口 RSS | 页面 RSS | 隐藏 RSS | 峰值 RSS | Private RSS | 空闲 CPU | 重绘 CPU |

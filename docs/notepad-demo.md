@@ -176,8 +176,9 @@ status, native menus, shared editing commands, runtime word-wrap coverage and
 visual-row/page navigation, two-axis editor caret reveal, edge-drag scrolling,
 extended-grapheme acceptance and native close-request interception.
 
-The fixed Ubuntu 24.04 X11 comparison renders the same 900 x 620 bilingual
-first-frame-idle Notepad scenario five times. Run `29677560838` recorded:
+The fixed Ubuntu 24.04 X11 comparison rendered the same 900 x 620 bilingual
+first-frame-idle Notepad scenario five times. Run `29677560838`, before Linux
+Lite adopted the shared bounded ZSUI text context, recorded:
 
 | Renderer | Median RSS MiB | Private MiB | PSS MiB | Binary MiB |
 | --- | ---: | ---: | ---: | ---: |
@@ -186,10 +187,11 @@ first-frame-idle Notepad scenario five times. Run `29677560838` recorded:
 | Slint software | 22.89 | 17.32 | 18.77 | 14.96 |
 | Iced tiny-skia | 16.71 | 11.51 | 12.90 | 6.13 |
 
-The pure-Rust renderer therefore reduced median RSS by 9.55 MiB (37.7%)
+That historical pure-Rust renderer reduced median RSS by 9.55 MiB (37.7%)
 against the established ZSUI Linux renderer in that fixed workload. These are
-target observations, not constants for every distribution, font set or display
-server. Native UI Proof run `29677560805` separately launched its real X11
+not current-commit measurements and must be rerun after the text-context
+unification; they are not constants for every distribution, font set or display
+server. Native UI Proof run `29677560805` separately launched its former real X11
 window, captured the final Softbuffer surface and reported Ubuntu Sans 11,
 zero runtime errors and zero unhandled commands.
 

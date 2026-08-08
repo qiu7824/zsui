@@ -16,8 +16,8 @@ framework readiness.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: 100% first-pass runtime coverage (48 runtime surfaces out
-  of 48 catalogued component families); readiness gaps remain per component.
+- Component library: 100% first-pass runtime coverage (49 runtime surfaces out
+  of 49 catalogued component families); readiness gaps remain per component.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
@@ -27,7 +27,10 @@ framework readiness.
   compatibility, preserve native focus/text selection/editor viewport for
   compatible controls, and clear incompatible focus/text/drag/IME state. Text,
   toggle and slider value actions use owned typed control callbacks and update
-  explicit bound Viewer state across rebuilds. `zsui-uic handoff` now emits a
+  explicit bound Viewer state across rebuilds. Slider also projects its shared
+  range and step into writable UIA, AppKit Accessibility and AccessKit numeric
+  semantics without creating a second backend-local control state.
+  `zsui-uic handoff` now emits a
   deterministic canonical package with document, binding/value snapshots,
   optional final native PNG metadata, stable node indexes, feature requirements
   and component contracts. `zsui-uic embed` and the feature-pruned
@@ -40,7 +43,7 @@ framework readiness.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. All 48 catalog components are document-ready,
+  runtime memory evidence. All 49 catalog components are document-ready,
   including Toast, InfoBar, ContentDialog, Image, ItemsRepeater, SettingsCard
   and the typed Workbench composition; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
@@ -88,7 +91,7 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: all 48 families
+Use `zsui_component_catalog_summary()` for component coverage: all 49 families
 have a first-pass runtime surface; none are contract-only or not started. A
 composite workbench does not make its underlying contract-only controls
 complete. WebView is intentionally outside the v0.2 product boundary.
@@ -259,11 +262,14 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 48 component families, all with a first-pass
+`src/component_catalog.rs` tracks 49 component families, all with a first-pass
 runtime surface. The optional
 Canvas surface retains backend-neutral primitives in local `Dp` coordinates,
 uses semantic color and text roles, emits a balanced clipped native draw plan
-and maps pointer or keyboard activation into a typed application message. The
+and maps pointer or keyboard activation into a typed application message. It
+also emits one stable Canvas semantic node: Windows lowers it to a custom UIA
+control, AppKit to an accessibility group and Linux AccessKit to `Canvas`.
+The
 optional Grid surface uses typed fixed/fractional tracks, nonzero spans,
 independent row/column gaps, explicit typed cell placement and one DPI-aware
 layout result for paint and hit testing on Win32/AppKit/GTK4. Windows has a
@@ -285,13 +291,20 @@ The independent `number-box` feature adds finite `ZsNumberRange` bounds,
 small/large steps, empty values, a draft/commit edit model, internal
 WinUI/AppKit/GTK metric profiles, pointer steppers and keyboard stepping.
 Windows has a real edit/step/commit screenshot artifact; locale-aware number
-formatting, expressions, accessibility, autorepeat/wheel behavior and
-non-Windows target runs remain open.
+formatting, expressions, autorepeat/wheel behavior and non-Windows target runs
+remain open. Populated values expose one shared SpinButton range with finite
+small/large changes through UIA, AppKit and AccessKit; the Windows proof sets
+`-7.5` through UIA and verifies both numeric and editable text state after the
+retained rebuild. Empty-value assistive range representation remains open.
 The independent `toggle-button` feature adds an explicit Boolean-state button,
 typed pointer/Space activation, transient hover/pressed decoration and internal
 WinUI/AppKit/GTK metric profiles. Windows has a real checked-state screenshot
-and interaction artifact; indeterminate mode, accessibility and non-Windows
-target runs remain open.
+and interaction artifact. Its shared semantic Button carries checked state;
+Windows exposes Button plus TogglePattern, AppKit exposes a Boolean button
+value and press action, and Linux Direct exposes AccessKit toggled state and
+click. The Windows UIA proof changes On to Off through the provider and verifies
+the retained rebuild. Indeterminate mode and non-Windows target runs remain
+open.
 The independent `password-box` feature keeps owned values in redacted,
 zeroizing `ZsPassword` state and uses secure draw commands that omit secrets
 from serialization. Unicode editing, masked IME reports, platform reveal
@@ -303,9 +316,21 @@ The independent `tooltip` feature attaches concise help text to any stable-ID
 internal WinUI/AppKit/GTK metric profiles, shared placement and clamping,
 delayed pointer hover, immediate keyboard-focus display and timed dismissal.
 Win32 reads the system mouse-hover and message-duration settings and has a real
-buffered screenshot plus deterministic hover-route coverage. Accessibility
-relationships, top-level overflow beyond the current viewport and AppKit/GTK
-target-machine evidence remain open.
+buffered screenshot plus deterministic hover-route coverage. When its owner has
+semantic metadata and no explicit description, tooltip text becomes the native
+accessible description/HelpText without creating a duplicate semantic node.
+Top-level overflow beyond the current viewport and AppKit/GTK target-machine
+evidence remain open.
+The independent `dialog` feature keeps one modal ContentDialog on the shared
+self-drawn tree while platform profiles own action order and geometry. While
+open, its exact surface replaces the background page in the semantic tree and
+each visible action becomes a stable child Button. UIA, AppKit Accessibility and
+AccessKit route focus and activation through the same typed Rust dialog response;
+no backend searches labels or creates a child native control. The repeatable
+`scripts/check-windows-content-dialog-accessibility.ps1` proof verifies the real
+HWND Dialog, Save/Discard/Cancel children, fragment-root focus and InvokePattern.
+Explicit title/body relationships, arbitrary View content and AppKit/Linux
+target assistive-technology runs remain open.
 The independent `flyout` feature wraps one ordinary page and one arbitrary
 application View subtree while keeping open state, stable presenter/target IDs
 and content state in application code. Shared placement flips and clamps the
@@ -316,14 +341,28 @@ AppKit, X11 and real Weston Wayland surfaces after the same Flyout action and
 verifies the typed message and focused widget. Nested overlays, accessibility
 announcements/Flyout-specific AT-SPI actions and complete target Escape,
 light-dismiss and resize matrices remain open.
+The independent `progress` feature exposes `ZsProgressBarSpec` with validated
+determinate ranges, indeterminate animation and Normal/Paused/Error state.
+Platform component profiles own the geometry, status colors and animation
+timing; the retained View remains feedback-only and never creates a parallel
+native child-control tree. Determinate bars automatically enter the shared
+semantic tree with their original finite minimum, maximum and current value.
+Windows projects that contract as a read-only UIA `RangeValuePattern`, AppKit
+returns `NSNumber` value/min/max attributes, and Linux Direct projects the same
+numbers to AccessKit/AT-SPI. Indeterminate bars expose only the progress role
+and never invent a percentage. `scripts/check-windows-progress-accessibility.ps1`
+is the repeatable real-HWND UIA and buffered-screenshot proof; AppKit and Linux
+target assistive-technology runs remain release evidence gates.
 The independent `progress-ring` feature adds active/inactive and validated
 determinate/indeterminate state without enabling ProgressBar. Its shared
 `StrokeArc` draw command maps to antialiased GDI+, NSBezierPath and Cairo;
 Win32, AppKit and GTK4 event-loop timers advance the same self-drawn animation
 without application messages or hit targets. Windows has a real buffered
 indeterminate/determinate screenshot and repeated background-refresh evidence.
-Reduced-motion policy, accessibility and AppKit/GTK target animation artifacts
-remain open.
+Active rings reuse the same native progress role and read-only determinate range
+contract as ProgressBar; inactive rings remain absent from paint, hit testing
+and the semantic tree. Reduced-motion policy plus AppKit/Linux target animation
+and assistive-technology artifacts remain open.
 `src/document_shell.rs` is the reusable boundary used by the Windows notepad
 benchmark. It provides a document tab, command bar, editor frame, status
 layout, semantic draw plan and hit regions plus `ZsTextDocument` UTF-8/UTF-16
@@ -381,8 +420,9 @@ caret offsets consumed by paint, selection, hit testing, wrap, horizontal reveal
 and candidate-window anchoring.
 The optional `accessibility` feature adds a native focused-text semantic bridge
 without embedding a platform editor or browser surface. Win32 answers UI
-Automation root requests from `WM_GETOBJECT` with an Edit provider and a
-read/write ValuePattern plus TextPattern for ordinary text. The text provider
+Automation root requests from `WM_GETOBJECT` with one complete retained
+fragment tree; its focused Edit child delegates a read/write ValuePattern plus
+TextPattern without hiding semantic siblings. The text provider
 exposes document, selection and visible ranges; range cloning/comparison,
 movement, search, point hit testing, native shaped bounding rectangles and
 typed selection/ScrollIntoView routing stay on the existing self-drawn input

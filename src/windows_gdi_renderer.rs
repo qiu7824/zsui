@@ -604,6 +604,10 @@ struct WindowsGdiResourceCacheEntries {
     brushes: HashMap<u32, WindowsGdiOwnedObject>,
     pens: HashMap<u32, WindowsGdiOwnedObject>,
     fonts: HashMap<WindowsGdiFontKey, WindowsGdiOwnedObject>,
+    #[cfg(feature = "windows-rust-text")]
+    rust_text: crate::windows_rust_text::WindowsRustTextState,
+    #[cfg(feature = "windows-directwrite")]
+    directwrite: crate::windows_directwrite::WindowsDirectWriteState,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -659,6 +663,45 @@ impl WindowsGdiResourceCache {
                 .insert(key.clone(), WindowsGdiOwnedObject::font_from_key(&key)?);
         }
         entries.fonts.get(&key).map(WindowsGdiOwnedObject::object)
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn draw_rust_text(&self, dc: HDC, run: &TextRun, style: &TextStyle, dpi_scale: f32) -> bool {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .rust_text
+            .draw_text(dc, run, style, dpi_scale)
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn measure_rust_text(
+        &self,
+        text: &str,
+        style: &TextStyle,
+        max_width: i32,
+        dpi_scale: f32,
+    ) -> Option<Size> {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .rust_text
+            .measure(text, style, max_width, dpi_scale)
+    }
+
+    #[cfg(feature = "windows-directwrite")]
+    fn draw_directwrite_text(
+        &self,
+        dc: HDC,
+        run: &TextRun,
+        style: &TextStyle,
+        dpi_scale: f32,
+    ) -> bool {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .directwrite
+            .draw_text(dc, run, style, dpi_scale)
     }
 
     #[cfg(test)]
@@ -749,6 +792,16 @@ impl WindowsGdiRenderer {
         self.dc
     }
 
+    /// Creates a text-layout facade backed by this renderer's retained font
+    /// context, so measurement and painting share layout and glyph caches.
+    pub fn text_layout(&self) -> WindowsGdiTextLayout {
+        WindowsGdiTextLayout::with_dpi_scale_and_resources(
+            self.dc,
+            self.dpi_scale,
+            self.resources.clone(),
+        )
+    }
+
     fn has_dc(&self) -> bool {
         !self.dc.is_null()
     }
@@ -837,6 +890,20 @@ impl Renderer for WindowsGdiRenderer {
         if !self.has_dc() || run.text.is_empty() {
             return;
         }
+        #[cfg(feature = "windows-rust-text")]
+        if self
+            .resources
+            .draw_rust_text(self.dc, run, style, self.dpi_scale)
+        {
+            return;
+        }
+        #[cfg(feature = "windows-directwrite")]
+        if self
+            .resources
+            .draw_directwrite_text(self.dc, run, style, self.dpi_scale)
+        {
+            return;
+        }
         let font = self.cached_font(style);
         let _selected_font = font.and_then(|font| WindowsGdiSelectedObject::select(self.dc, font));
         let mut rect = to_win_rect(run.bounds);
@@ -883,6 +950,8 @@ impl Renderer for WindowsGdiRenderer {
 pub struct WindowsGdiTextLayout {
     dc: HDC,
     dpi_scale: f32,
+    #[cfg(feature = "windows-rust-text")]
+    resources: WindowsGdiResourceCache,
 }
 
 impl WindowsGdiTextLayout {
@@ -895,16 +964,47 @@ impl WindowsGdiTextLayout {
     }
 
     fn with_dpi_scale(dc: HDC, dpi_scale: f32) -> Self {
+        Self::with_dpi_scale_and_resources(dc, dpi_scale, WindowsGdiResourceCache::default())
+    }
+
+    fn with_dpi_scale_and_resources(
+        dc: HDC,
+        dpi_scale: f32,
+        resources: WindowsGdiResourceCache,
+    ) -> Self {
+        #[cfg(not(feature = "windows-rust-text"))]
+        let _ = &resources;
         Self {
             dc,
             dpi_scale: dpi_scale.max(0.5),
+            #[cfg(feature = "windows-rust-text")]
+            resources,
         }
     }
 }
 
 impl TextLayout for WindowsGdiTextLayout {
     fn measure(&self, text: &str, style: &TextStyle, max_width: i32) -> Size {
-        if self.dc.is_null() || text.is_empty() {
+        if text.is_empty() {
+            return Size {
+                width: 0,
+                height: 0,
+            };
+        }
+        #[cfg(feature = "windows-rust-text")]
+        if let Some(measured) =
+            self.resources
+                .measure_rust_text(text, style, max_width, self.dpi_scale)
+        {
+            return measured;
+        }
+        #[cfg(feature = "windows-directwrite")]
+        if let Some(measured) =
+            crate::windows_directwrite::measure_text(text, style, max_width, self.dpi_scale)
+        {
+            return measured;
+        }
+        if self.dc.is_null() {
             return Size {
                 width: 0,
                 height: 0,
@@ -1145,6 +1245,7 @@ pub struct WindowsGdiPalette {
     pub surface_raised: Color,
     pub control: Color,
     pub border: Color,
+    pub strong_stroke: Color,
     pub success: Color,
     pub warning: Color,
     pub danger: Color,
@@ -1162,6 +1263,7 @@ impl WindowsGdiPalette {
             ColorRole::SurfaceRaised => self.surface_raised,
             ColorRole::Control => self.control,
             ColorRole::Border => self.border,
+            ColorRole::StrongStroke => self.strong_stroke,
             ColorRole::Success => self.success,
             ColorRole::Warning => self.warning,
             ColorRole::Danger => self.danger,
@@ -1258,11 +1360,22 @@ impl WindowsGdiPalette {
             surface_raised: theme.colors.surface_raised,
             control: theme.colors.control,
             border: theme.colors.border,
+            strong_stroke: windows_strong_stroke_color(
+                theme.colors.text_primary,
+                theme.colors.surface,
+            ),
             success: theme.colors.success,
             warning: theme.colors.warning,
             danger: theme.colors.danger,
         }
     }
+}
+
+const fn windows_strong_stroke_color(foreground: Color, background: Color) -> Color {
+    let luminance =
+        background.r as u32 * 299 + background.g as u32 * 587 + background.b as u32 * 114;
+    let alpha = if luminance < 128_000 { 139 } else { 114 };
+    blend_color(foreground, background, alpha)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2402,7 +2515,10 @@ mod tests {
             renderer.fill_rect(run.bounds, color);
             renderer.fill_rect(run.bounds, color);
 
+            #[cfg(not(any(feature = "windows-directwrite", feature = "windows-rust-text")))]
             assert_eq!(resources.counts(), (1, 1, 0));
+            #[cfg(any(feature = "windows-directwrite", feature = "windows-rust-text"))]
+            assert_eq!(resources.counts(), (0, 1, 0));
         }
         {
             let mut renderer =
@@ -2429,7 +2545,10 @@ mod tests {
                 Color::rgb(12, 34, 56),
             );
         }
+        #[cfg(not(any(feature = "windows-directwrite", feature = "windows-rust-text")))]
         assert_eq!(resources.counts(), (1, 1, 0));
+        #[cfg(any(feature = "windows-directwrite", feature = "windows-rust-text"))]
+        assert_eq!(resources.counts(), (0, 1, 0));
         unsafe {
             DeleteDC(dc);
         }

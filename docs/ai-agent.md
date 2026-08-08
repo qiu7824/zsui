@@ -38,7 +38,7 @@ and is not part of normal task context.
   explicit features or optional dependencies.
 - Windows is the strongest real runtime today. macOS/Linux are first-pass
   desktop paths. Android still requires a real runtime and device proof.
-- The component catalog currently tracks 48 families: all 48 have first-pass
+- The component catalog currently tracks 49 families: all 49 have first-pass
   runtime surfaces, with none contract-only or not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
 

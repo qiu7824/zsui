@@ -14,11 +14,13 @@ exclude = ["/tools/**", "/videos/**"]
 [dependencies]
 arboard = { version = "3.4", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"], optional = true }
-cosmic-text = { version = "0.15.0", default-features = false, features = ["std", "swash", "fontconfig", "shape-run-cache"], optional = true }
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash", "fontconfig", "shape-run-cache"], optional = true }
 fluent-bundle = { version = "0.16", optional = true }
 png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"], optional = true }
+ttf-parser = { version = "0.25.1", default-features = false, optional = true }
 rust_decimal = { version = "1.42.1", default-features = false, features = ["maths", "std"], optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 tiny-skia = { version = "0.11.4", optional = true }
@@ -113,13 +115,14 @@ settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
 ui-document = []
 ui-document-runtime = ["ui-document"]
-ui-viewer = ["ui-document-runtime", "window", "button", "badge", "split-view", "breadcrumb", "canvas", "image-preview", "icon", "label", "checkbox", "toggle", "toggle-button", "textbox", "password-box", "radio", "slider", "number-box", "combo", "auto-suggest", "command-palette", "tree", "grid-view", "table", "date-picker", "time-picker", "color-picker", "list", "virtual-list", "tabs", "grid", "progress", "progress-ring", "dialog", "toast", "info-bar", "tooltip", "teaching-tip", "flyout", "menu-flyout", "scroll", "shell", "workbench", "document-shell", "native-smoke"]
+ui-viewer = ["ui-document-runtime", "window", "button", "badge", "split-view", "breadcrumb", "canvas", "image-preview", "video", "icon", "label", "checkbox", "toggle", "toggle-button", "textbox", "password-box", "radio", "slider", "number-box", "combo", "auto-suggest", "command-palette", "tree", "grid-view", "table", "date-picker", "time-picker", "color-picker", "list", "virtual-list", "tabs", "grid", "progress", "progress-ring", "dialog", "toast", "info-bar", "tooltip", "teaching-tip", "flyout", "menu-flyout", "scroll", "shell", "workbench", "document-shell", "native-smoke"]
 android = []
 mobile = ["android"]
 clipboard = ["dep:arboard"]
 image = ["dep:png"]
 icon = ["widgets-base"]
 image-preview = ["image", "widgets-base"]
+video = ["widgets-base"]
 native-smoke = ["image"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
@@ -129,14 +132,19 @@ component-gallery-demo = ["window", "all-widgets", "native-smoke", "style", "dar
 desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-gdi"]
+windows-directwrite = ["windows-gdi", "dep:windows", "dep:windows-core", "windows/Win32_Graphics_DirectWrite", "windows/Win32_Graphics_Gdi"]
+rust-text = ["dep:cosmic-text", "dep:swash", "dep:ttf-parser"]
+rust-text-proof = ["rust-text"]
+windows-rust-text = ["windows-gdi", "rust-text"]
+windows-text-proof = ["windows-directwrite", "rust-text-proof"]
 macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
 linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
 linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocairo"]
-linux-direct-lite = ["linux-direct-host", "dep:cosmic-text", "dep:tiny-skia"]
+linux-direct-lite = ["linux-direct-host", "rust-text", "dep:tiny-skia"]
 linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
-all-widgets = ["button", "badge", "split-view", "breadcrumb", "canvas", "flyout", "menu-flyout", "toggle-button", "icon", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "shell", "workbench", "document-shell"]
+all-widgets = ["button", "badge", "split-view", "breadcrumb", "canvas", "flyout", "menu-flyout", "toggle-button", "icon", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "video", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "shell", "workbench", "document-shell"]
 full = [
     "accessibility",
     "all-widgets",
@@ -177,6 +185,11 @@ name = "basic"
 path = "examples/basic.rs"
 
 [[example]]
+name = "text_geometry_proof"
+path = "examples/text_geometry_proof.rs"
+required-features = ["windows-text-proof"]
+
+[[example]]
 name = "ui_performance_minimal"
 path = "examples/ui_performance_minimal.rs"
 required-features = ["window", "button", "label"]
@@ -185,6 +198,11 @@ required-features = ["window", "button", "label"]
 name = "native_clipboard_smoke"
 path = "examples/native_clipboard_smoke.rs"
 required-features = ["clipboard"]
+
+[[example]]
+name = "native_dialog_smoke"
+path = "examples/native_dialog_smoke.rs"
+required-features = ["native-smoke"]
 
 [[example]]
 name = "declaration_audit"

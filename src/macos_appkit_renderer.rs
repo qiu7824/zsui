@@ -42,7 +42,7 @@ use objc2_app_kit::{
     NSStringDrawingOptions, NSStringNSExtendedStringDrawing, NSTabCharacter, NSTextAlignment,
     NSTextInputClient, NSTrackingArea, NSTrackingAreaOptions, NSUpArrowFunctionKey, NSView,
 };
-#[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
+#[cfg(feature = "accessibility")]
 use objc2_foundation::NSNumber;
 use objc2_foundation::{
     NSArray, NSAttributedString, NSAttributedStringKey, NSDictionary, NSMutableDictionary,
@@ -861,7 +861,7 @@ define_class!(
                 .view
                 .load()
                 .is_some_and(|view| {
-                    view.ivars().runtime.borrow().focused_widget()
+                    view.ivars().runtime.borrow().semantic_accessibility_focus()
                         == Some(self.ivars().node.widget)
                 })
         }
@@ -905,38 +905,115 @@ define_class!(
             view.apply_input_report(report);
         }
 
-        #[cfg(feature = "text-input-core")]
         #[unsafe(method_id(accessibilityValue))]
-        fn accessibility_value(&self) -> Option<Retained<NSString>> {
-            (self.ivars().node.role == crate::ZsAccessibilityRole::TextBox)
-                .then(|| {
+        fn accessibility_value(&self) -> Option<Retained<AnyObject>> {
+            let value = self
+                .ivars()
+                .node
+                .checked
+                .map(appkit_accessibility_bool)
+                .or_else(|| {
                     self.ivars()
-                        .view
-                        .load()?
-                        .ivars()
-                        .runtime
-                        .borrow()
-                        .widget_text_value(self.ivars().node.widget)
-                })
-                .flatten()
-                .map(|value| NSString::from_str(&value))
+                        .node
+                        .range_value
+                        .map(|range| appkit_accessibility_number(range.value))
+                });
+            #[cfg(feature = "text-input-core")]
+            let value = value.or_else(|| {
+                (self.ivars().node.role == crate::ZsAccessibilityRole::TextBox)
+                    .then(|| {
+                        self.ivars()
+                            .view
+                            .load()?
+                            .ivars()
+                            .runtime
+                            .borrow()
+                            .widget_text_value(self.ivars().node.widget)
+                    })
+                    .flatten()
+                    .map(|value| appkit_accessibility_string(&value))
+            });
+            value
         }
 
-        #[cfg(feature = "text-input-core")]
+        #[unsafe(method_id(accessibilityMinValue))]
+        fn accessibility_min_value(&self) -> Option<Retained<AnyObject>> {
+            self.ivars()
+                .node
+                .range_value
+                .map(|range| appkit_accessibility_number(range.minimum))
+        }
+
+        #[unsafe(method_id(accessibilityMaxValue))]
+        fn accessibility_max_value(&self) -> Option<Retained<AnyObject>> {
+            self.ivars()
+                .node
+                .range_value
+                .map(|range| appkit_accessibility_number(range.maximum))
+        }
+
         #[unsafe(method(setAccessibilityValue:))]
-        fn set_accessibility_value(&self, value: &NSString) {
-            if self.ivars().node.role != crate::ZsAccessibilityRole::TextBox {
-                return;
-            }
+        fn set_accessibility_value(&self, value: &AnyObject) {
+            #[cfg(any(
+                feature = "slider",
+                feature = "number-box",
+                feature = "text-input-core"
+            ))]
             let Some(view) = self.ivars().view.load() else {
                 return;
             };
-            let report = view
+            #[cfg(not(any(
+                feature = "slider",
+                feature = "number-box",
+                feature = "text-input-core"
+            )))]
+            let _ = value;
+            #[cfg(any(feature = "slider", feature = "number-box"))]
+            if self
                 .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_accessibility_set_value(self.ivars().node.widget, &value.to_string());
-            view.apply_input_report(report);
+                .node
+                .range_value
+                .is_some_and(|range| !range.interaction.is_read_only())
+            {
+                let Some(value) = value.downcast_ref::<NSNumber>() else {
+                    return;
+                };
+                let report = view
+                    .ivars()
+                    .runtime
+                    .borrow_mut()
+                    .dispatch_accessibility_set_numeric_value(
+                        self.ivars().node.widget,
+                        value.as_f64(),
+                    );
+                view.apply_input_report(report);
+                return;
+            }
+            #[cfg(feature = "text-input-core")]
+            if self.ivars().node.role == crate::ZsAccessibilityRole::TextBox {
+                let Some(value) = value.downcast_ref::<NSString>() else {
+                    return;
+                };
+                let report = view
+                    .ivars()
+                    .runtime
+                    .borrow_mut()
+                    .dispatch_accessibility_set_value(
+                        self.ivars().node.widget,
+                        &value.to_string(),
+                    );
+                view.apply_input_report(report);
+            }
+        }
+
+        #[unsafe(method(accessibilityPerformIncrement))]
+        fn accessibility_perform_increment(&self) -> bool {
+            self.adjust_accessibility_range(1)
+        }
+
+        #[unsafe(method(accessibilityPerformDecrement))]
+        fn accessibility_perform_decrement(&self) -> bool {
+            self.adjust_accessibility_range(-1)
         }
 
         #[cfg(feature = "text-input-core")]
@@ -1005,7 +1082,54 @@ define_class!(
 );
 
 #[cfg(feature = "accessibility")]
+fn appkit_accessibility_number(value: f64) -> Retained<AnyObject> {
+    Retained::into_super(Retained::into_super(Retained::into_super(
+        NSNumber::new_f64(value),
+    )))
+}
+
+#[cfg(feature = "accessibility")]
+fn appkit_accessibility_bool(value: bool) -> Retained<AnyObject> {
+    Retained::into_super(Retained::into_super(Retained::into_super(
+        NSNumber::new_bool(value),
+    )))
+}
+
+#[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+fn appkit_accessibility_string(value: &str) -> Retained<AnyObject> {
+    Retained::into_super(Retained::into_super(NSString::from_str(value)))
+}
+
+#[cfg(feature = "accessibility")]
 impl ZsuiAppKitSemanticAccessibilityElement {
+    fn adjust_accessibility_range(&self, steps: i32) -> bool {
+        #[cfg(any(feature = "slider", feature = "number-box"))]
+        {
+            if self
+                .ivars()
+                .node
+                .range_value
+                .is_none_or(|range| range.interaction.is_read_only())
+            {
+                return false;
+            }
+            let Some(view) = self.ivars().view.load() else {
+                return false;
+            };
+            let report = view
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .dispatch_accessibility_adjust_numeric_value(self.ivars().node.widget, steps);
+            return view.apply_input_report(report).handled;
+        }
+        #[cfg(not(any(feature = "slider", feature = "number-box")))]
+        {
+            let _ = steps;
+            false
+        }
+    }
+
     fn new(
         view: &ZsuiAppKitDrawView,
         parent: &AnyObject,
@@ -1049,6 +1173,7 @@ fn appkit_semantic_accessibility_role(role: crate::ZsAccessibilityRole) -> Retai
         match role {
             crate::ZsAccessibilityRole::Application => NSAccessibilityApplicationRole,
             crate::ZsAccessibilityRole::Button => NSAccessibilityButtonRole,
+            crate::ZsAccessibilityRole::Canvas => NSAccessibilityGroupRole,
             crate::ZsAccessibilityRole::ColorWell => NSAccessibilityColorWellRole,
             crate::ZsAccessibilityRole::ComboBox => NSAccessibilityComboBoxRole,
             crate::ZsAccessibilityRole::DatePicker | crate::ZsAccessibilityRole::TimePicker => {
@@ -2865,6 +2990,7 @@ fn appkit_semantic_high_contrast_palette() -> Option<NativeDrawPalette> {
         surface_raised: appkit_native_color(&NSColor::controlBackgroundColor())?,
         control: appkit_native_color(&NSColor::controlBackgroundColor())?,
         border: appkit_native_color(&NSColor::separatorColor())?,
+        strong_stroke: primary_text,
         success: appkit_native_color(&NSColor::systemGreenColor())?,
         warning: appkit_native_color(&NSColor::systemOrangeColor())?,
         danger: appkit_native_color(&NSColor::systemRedColor())?,
@@ -2873,16 +2999,19 @@ fn appkit_semantic_high_contrast_palette() -> Option<NativeDrawPalette> {
 }
 
 fn appkit_semantic_palette() -> Option<NativeDrawPalette> {
+    let primary_text = appkit_native_color(&NSColor::labelColor())?;
+    let surface = appkit_native_color(&NSColor::windowBackgroundColor())?;
     Some(NativeDrawPalette {
-        primary_text: appkit_native_color(&NSColor::labelColor())?,
+        primary_text,
         secondary_text: appkit_native_color(&NSColor::secondaryLabelColor())?,
         disabled_text: appkit_native_color(&NSColor::disabledControlTextColor())?,
         accent: appkit_native_color(&NSColor::selectedContentBackgroundColor())?,
         accent_text: appkit_native_color(&NSColor::selectedControlTextColor())?,
-        surface: appkit_native_color(&NSColor::windowBackgroundColor())?,
+        surface,
         surface_raised: appkit_native_color(&NSColor::textBackgroundColor())?,
         control: appkit_native_color(&NSColor::controlBackgroundColor())?,
         border: appkit_native_color(&NSColor::separatorColor())?,
+        strong_stroke: crate::native_draw_support::strong_stroke_color(primary_text, surface),
         success: appkit_native_color(&NSColor::systemGreenColor())?,
         warning: appkit_native_color(&NSColor::systemOrangeColor())?,
         danger: appkit_native_color(&NSColor::systemRedColor())?,

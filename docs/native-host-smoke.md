@@ -134,6 +134,12 @@ The dedicated typed scroll smoke path is:
 cargo run --features "scroll,label" --example native_smoke_run -- windows --scroll-view
 ```
 
+This path scrolls one retained `Scroll`, then drags its thin platform-profile
+thumb through the wider semantic hit target. Track and thumb are separate hit
+kinds, track clicks map by thumb center, and thumb drags retain the pointer's
+original offset instead of jumping the thumb center under the cursor. The same
+geometry is used for paint, hit testing and range clamping.
+
 The dedicated typed slider smoke path is:
 
 ```powershell
@@ -151,6 +157,21 @@ changes, keyboard changes and completed drags as
 `native_view_slider_drag_count`. AppKit and GTK4 use their native mouse/gesture
 and keyboard callbacks with the shared runtime, but still require target-machine
 interaction artifacts before their slider path is considered proven.
+
+The Windows native accessibility proof is:
+
+```powershell
+.\scripts\check-windows-slider-accessibility.ps1 -Locked
+```
+
+It locates the retained Slider through real UI Automation, requires a writable
+`RangeValuePattern` with the declared 0-100 range and 5/50 small/large changes,
+then calls `SetValue(42)`. The framework snaps that request to 40, emits the
+same typed `SliderChanged` route and exposes the rebuilt value through UIA.
+AppKit projects the same range through `NSNumber`, set-value and native
+increment/decrement selectors; Linux Direct advertises AccessKit numeric
+set/increment/decrement actions. Their target compiles are required here, while
+target-machine interaction evidence remains a separate completion gate.
 
 The dedicated ToggleButton smoke path is:
 
@@ -171,6 +192,19 @@ activation, pointer visual changes, successful `UiCommand` execution and a
 captured `window.png`. AppKit and GTK4 use the shared state/input path and
 platform metrics but still require target-machine interaction evidence.
 
+The native Windows accessibility proof is:
+
+```powershell
+.\scripts\check-windows-toggle-button-accessibility.ps1 -Locked
+```
+
+It finds the real retained `Pin panel` element as UIA `Button`, rejects an
+incorrect stateless `InvokePattern`, requires `TogglePattern`, then changes the
+state from On to Off. The rebuilt semantic tree must preserve the new state and
+the buffered Win32 host must still capture `window.png`. The same shared
+checked field becomes an AppKit button value with press action and an AccessKit
+`toggled` value with click action; their target compiles are required here.
+
 The dedicated editable NumberBox smoke path is:
 
 ```powershell
@@ -190,6 +224,22 @@ The Windows artifact must capture
 execute each emitted `UiCommand` without failure or an unhandled command, and
 finish with a nonzero live-view revision. AppKit and GTK4 share the typed
 draft/commit path but still require target-machine interaction evidence.
+
+The Windows NumberBox accessibility proof is:
+
+```powershell
+.\scripts\check-windows-number-box-accessibility.ps1 -Locked
+```
+
+It resolves the retained field as one UIA Spinner, requires writable
+RangeValue with the declared -100 through 100 bounds and 0.5/10 changes, and
+sets the value to -7.5 through the provider. The rebuilt node must expose the
+same value through both RangeValuePattern and the delegated editable
+ValuePattern. AppKit projects populated values as an Incrementor with numeric
+set/increment/decrement selectors, while Linux Direct advertises the matching
+AccessKit SpinButton actions. An empty nullable value keeps the SpinButton role
+without inventing a numeric reading; a portable empty-range representation is
+still tracked separately.
 
 The dedicated secure PasswordBox smoke path is:
 
@@ -227,13 +277,29 @@ follows the official [Windows ToolTips](https://learn.microsoft.com/en-us/window
 and [GTK `query-tooltip`](https://docs.gtk.org/gtk4/signal.Widget.query-tooltip.html)
 contracts. Win32 reads `SPI_GETMOUSEHOVERTIME` and
 `SPI_GETMESSAGEDURATION`; AppKit and GTK schedule owned one-shot callbacks.
-Top-level overflow outside the current window, accessibility relationships and
-target-machine AppKit/GTK artifacts remain explicit gaps.
+With `accessibility` enabled, nonempty tooltip text becomes the owner's native
+accessible-description fallback without adding a duplicate focus or hit-test
+node. The real Windows provider probe is:
+
+```powershell
+.\scripts\check-windows-tooltip-accessibility.ps1 -Locked
+```
+
+It requires one UIA Button named `Save document`, the matching
+`Save the current document` HelpText and a final buffered screenshot. Top-level
+overflow outside the current window and target-machine AppKit/GTK artifacts
+remain explicit gaps.
 
 The dedicated self-drawn ContentDialog smoke path is:
 
 ```powershell
 cargo run --locked --no-default-features --features "window,label,dialog,native-smoke" --example native_smoke_run -- windows target/native-host-smoke-dialog --content-dialog
+```
+
+The real HWND accessibility probe is:
+
+```powershell
+.\scripts\check-windows-content-dialog-accessibility.ps1 -Locked
 ```
 
 It opens a modal dialog over an ordinary page, clicks the scrim to prove that
@@ -248,9 +314,38 @@ current [Windows dialog guidance](https://learn.microsoft.com/en-us/windows/apps
 [Apple alert guidance](https://developer.apple.com/design/human-interface-guidelines/alerts),
 and [GTK AlertDialog contract](https://docs.gtk.org/gtk4/class.AlertDialog.html)
 for modal blocking, safe cancellation, default action and platform action order,
-while keeping all three styles in the shared draw tree. Accessibility semantics,
-custom ViewNode dialog content, response deferrals, prior-focus restoration and
-target-machine AppKit/GTK interaction artifacts remain explicit gaps.
+while keeping all three styles in the shared draw tree. Opening the dialog also
+replaces the background page in the unified accessibility tree with one semantic
+Dialog node whose bounds match the visible surface, whose name is the title and
+whose description is the body; Windows exposes UIA `IsDialog=true`. Each visible
+action is a stable semantic child Button with its own bounds, label, focus route
+and activation route. UIA exposes InvokePattern, AppKit exposes press/focus and
+Linux Direct exposes AccessKit Focus/Click without adding child HWND, NSView or
+GtkWidget controls. The Windows probe must find Save, Discard and Cancel as direct
+children, focus Discard through the fragment root and invoke Save through the
+typed Rust update path. The native input runtime restores the previous valid
+focus target after close. Explicit title/body labelled-by relationships, custom
+ViewNode content, response deferrals and target-machine AppKit/Linux
+assistive-technology artifacts remain explicit gaps.
+
+System-owned dialogs use a separate proof executable:
+
+```powershell
+cargo run --release --locked --example native_dialog_smoke --no-default-features --features windows-win32,native-smoke -- --output target/native-system-dialog.json --screenshot target/native-system-dialog.png
+```
+
+The process opens the target adapter selected by `NativeDesktopDialogService`.
+An external verifier must first find and capture the real system window, inspect
+the visible semantic button labels where the platform exposes them, and only
+then activate the default affirmative action. The executable succeeds only
+when the returned `DialogResponse`, screenshot and
+`zsui.native-system-dialog-proof/v1` report agree. Windows uses `MessageBoxW`, AppKit
+uses `NSAlert`, and Linux direct uses the desktop-provided Zenity surface. The
+proof does not accept a shared draw plan or a framework-rendered substitute.
+This standalone scene records `owner_window_supplied=false`; owner/sheet
+modality remains a separate host-integrated interaction gate. It proves the
+optional operating-system message service only; it is not a visual baseline
+for the self-drawn WinUI/AppKit/GTK `ContentDialog` component above.
 
 The dedicated self-drawn in-app Toast smoke path is:
 
@@ -361,17 +456,31 @@ focus-only navigation does not emit a selection message and is reported
 separately by `native_view_radio_keyboard_focus_only_count` when exercised;
 AppKit and GTK4 target-machine interaction evidence remains pending.
 
-The dedicated determinate ProgressBar smoke path is:
+The dedicated WinUI 3 ProgressBar smoke path is:
 
 ```powershell
 cargo run --no-default-features --features "window,label,progress,windows-win32" --example native_smoke_run -- windows --progress-view
 ```
 
-It attaches a 65% progress value through `ProgressRange`, paints the shared
-semantic track/fill plan through the buffered Win32 renderer, captures the
-window and keeps the feedback-only control out of the hit-test plan. AppKit and
-GTK4 consume the same draw commands; target screenshots for those hosts remain
-pending.
+The corresponding real UI Automation range proof is:
+
+```powershell
+.\scripts\check-windows-progress-accessibility.ps1 -Locked
+```
+
+It captures determinate, paused, error and indeterminate states through the
+buffered Win32 renderer and keeps every feedback-only bar out of the hit-test
+plan. The Windows profile follows the current WinUI template resources: a 3 DP
+indicator, 1 DP strong-stroke track, 1.5/0.5 DP corner radii, Accent/Caution/
+Critical semantic colors, and the two 40%/60% indeterminate segments on the
+official 2-second timing. It does not create a classic Win32 progress HWND,
+XAML Island or parallel native widget tree. AppKit and GTK retain their own
+profile dimensions rather than inheriting the Windows geometry. The UIA probe
+finds four real `ProgressBar` elements below the self-drawn HWND, requires
+read-only 0..100 `RangeValuePattern` values of 65, 45 and 30 for the three
+determinate bars, requires the indeterminate bar to omit a numeric range, and
+writes `target/windows-progress-accessibility-proof/proof.json` alongside the
+buffered Win32 screenshot.
 
 The independently selectable ProgressRing smoke path is:
 

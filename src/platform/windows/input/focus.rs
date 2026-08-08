@@ -17,6 +17,21 @@ impl WindowsWin32ViewInputRoute {
         self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
     }
 
+    #[cfg(all(
+        feature = "accessibility",
+        any(feature = "slider", feature = "number-box")
+    ))]
+    fn dispatch_accessibility_set_numeric_value(
+        &mut self,
+        widget: crate::WidgetId,
+        value: f64,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_set_numeric_value(widget, value);
+        self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
+    }
+
     fn dispatch_blur(&mut self) -> WindowsWin32ViewInputDispatchReport {
         let report = self.shared_runtime.blur_focus();
         self.adapt_shared_report(report, WindowsSharedInputKind::Blur)

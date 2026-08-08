@@ -11,6 +11,54 @@ pub enum ZsContentDialogButton {
     Close,
 }
 
+#[cfg(feature = "accessibility")]
+pub(crate) const fn zs_content_dialog_button_accessibility_id(
+    dialog: crate::WidgetId,
+    button: ZsContentDialogButton,
+) -> crate::WidgetId {
+    let local = match button {
+        ZsContentDialogButton::Primary => 0x6469_616c_6f67_0001,
+        ZsContentDialogButton::Secondary => 0x6469_616c_6f67_0002,
+        ZsContentDialogButton::Close => 0x6469_616c_6f67_0003,
+    };
+    crate::WidgetId::synthetic_child(dialog, local)
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) const fn zs_content_dialog_button_accessibility_action(
+    dialog: crate::WidgetId,
+    button: ZsContentDialogButton,
+) -> crate::ZsAccessibilityActionTarget {
+    match button {
+        ZsContentDialogButton::Primary => {
+            crate::ZsAccessibilityActionTarget::ContentDialogPrimary { dialog }
+        }
+        ZsContentDialogButton::Secondary => {
+            crate::ZsAccessibilityActionTarget::ContentDialogSecondary { dialog }
+        }
+        ZsContentDialogButton::Close => {
+            crate::ZsAccessibilityActionTarget::ContentDialogClose { dialog }
+        }
+    }
+}
+
+#[cfg(feature = "accessibility")]
+pub(crate) const fn zs_content_dialog_accessibility_action_button(
+    target: crate::ZsAccessibilityActionTarget,
+) -> (crate::WidgetId, ZsContentDialogButton) {
+    match target {
+        crate::ZsAccessibilityActionTarget::ContentDialogPrimary { dialog } => {
+            (dialog, ZsContentDialogButton::Primary)
+        }
+        crate::ZsAccessibilityActionTarget::ContentDialogSecondary { dialog } => {
+            (dialog, ZsContentDialogButton::Secondary)
+        }
+        crate::ZsAccessibilityActionTarget::ContentDialogClose { dialog } => {
+            (dialog, ZsContentDialogButton::Close)
+        }
+    }
+}
+
 /// Strongly typed result emitted after a dialog response is activated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsContentDialogResult {

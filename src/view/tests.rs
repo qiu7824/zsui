@@ -2215,10 +2215,71 @@ mod tests {
         assert_eq!(range.fraction(25.0), 0.25);
         assert_eq!(paint.plan().command_count(), 2);
         assert_eq!(view.interaction_plan().hit_target_count(), 0);
-        assert!(matches!(
-            view.kind,
-            ViewNodeKind::ProgressBar { value: 100.0, .. }
+        assert!(matches!(view.kind, ViewNodeKind::ProgressBar { .. }));
+        let ViewNodeKind::ProgressBar { spec } = view.kind else {
+            unreachable!();
+        };
+        assert_eq!(spec.fraction(), Some(1.0));
+    }
+
+    #[test]
+    #[cfg(all(feature = "canvas", feature = "accessibility"))]
+    fn canvas_exposes_one_named_canvas_semantic_node_on_the_shared_widget_id() {
+        let canvas_id = WidgetId::new(81);
+        let mut view = canvas::<()>(crate::ZsCanvasScene::new())
+            .id(canvas_id)
+            .width(Dp::new(180.0))
+            .height(Dp::new(48.0))
+            .accessibility_label("Drawing surface")
+            .accessibility_description("Custom chart with three data series");
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 20,
+                y: 30,
+                width: 180,
+                height: 48,
+            },
+            Dpi::standard(),
         ));
+
+        let semantics = view.interaction_plan().accessibility_nodes;
+        assert_eq!(semantics.len(), 1);
+        assert_eq!(semantics[0].widget, canvas_id);
+        assert_eq!(semantics[0].role, crate::ZsAccessibilityRole::Canvas);
+        assert_eq!(semantics[0].label.as_deref(), Some("Drawing surface"));
+        assert_eq!(
+            semantics[0].description.as_deref(),
+            Some("Custom chart with three data series")
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "progress")]
+    fn indeterminate_progress_bar_animates_without_becoming_interactive() {
+        let mut view = indeterminate_progress_bar::<()>().id(WidgetId::new(82));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 16,
+            },
+            Dpi::standard(),
+        ));
+        let mut first = ViewPaintCx::with_animation_elapsed(
+            Dpi::standard(),
+            std::time::Duration::from_millis(500),
+        );
+        let mut second = ViewPaintCx::with_animation_elapsed(
+            Dpi::standard(),
+            std::time::Duration::from_millis(1_250),
+        );
+        view.paint(&mut first);
+        view.paint(&mut second);
+
+        assert_eq!(view.background_poll_interval_ms(), Some(16));
+        assert_eq!(view.interaction_plan().hit_target_count(), 0);
+        assert_ne!(first.plan(), second.plan());
     }
 
     #[test]
@@ -2653,6 +2714,59 @@ mod tests {
                 .count(),
             3
         );
+        #[cfg(feature = "accessibility")]
+        {
+            assert_eq!(interaction.accessibility_nodes.len(), 4);
+            let semantic_dialog = &interaction.accessibility_nodes[0];
+            assert_eq!(semantic_dialog.widget, dialog);
+            assert_eq!(semantic_dialog.role, crate::ZsAccessibilityRole::Dialog);
+            assert_eq!(semantic_dialog.label.as_deref(), Some("Discard changes?"));
+            assert_eq!(
+                semantic_dialog.description.as_deref(),
+                Some("The unsaved changes will be discarded.")
+            );
+            assert_eq!(
+                semantic_dialog.bounds,
+                crate::zs_content_dialog_render_plan(
+                    viewport,
+                    &crate::ZsContentDialogSpec::new(
+                        "The unsaved changes will be discarded.",
+                        "Cancel",
+                    )
+                    .title("Discard changes?")
+                    .primary_button("Discard")
+                    .secondary_button("Save")
+                    .default_button(crate::ZsContentDialogButton::Secondary)
+                    .destructive_button(crate::ZsContentDialogButton::Primary),
+                    crate::ZsContentDialogButton::Secondary,
+                    crate::ZsContentDialogPlatformStyle::current(),
+                    Dpi::standard(),
+                )
+                .surface
+            );
+            let semantic_buttons = &interaction.accessibility_nodes[1..];
+            assert_eq!(
+                semantic_buttons
+                    .iter()
+                    .map(|node| node.label.as_deref().unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                vec!["Discard", "Save", "Cancel"]
+            );
+            for node in semantic_buttons {
+                assert_eq!(node.parent, Some(dialog));
+                assert_eq!(node.role, crate::ZsAccessibilityRole::Button);
+                assert!(node.action_target.is_some());
+                assert_ne!(node.widget, dialog);
+            }
+            assert_eq!(
+                semantic_buttons
+                    .iter()
+                    .map(|node| node.widget)
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
+                3
+            );
+        }
 
         let mut paint = ViewPaintCx::new(Dpi::standard());
         view.paint(&mut paint);
@@ -4017,6 +4131,54 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "scroll", feature = "label"))]
+    fn scrollbars_keep_thin_visuals_but_use_forgiving_semantic_hit_targets() {
+        let scroll_id = WidgetId::new(230);
+        let mut view: ViewNode<Msg> = scroll(text("Scrollable content"))
+            .id(scroll_id)
+            .content_height(Dp::new(320.0))
+            .scroll_y(Dp::new(80.0))
+            .on_scroll(Msg::ScrollChanged);
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 240,
+            height: 80,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+
+        let scrollbar = view
+            .widget_scrollbar_layout(scroll_id)
+            .expect("overflowing Scroll should expose shared scrollbar geometry");
+        assert!(scrollbar.track_hit.width > scrollbar.track.width);
+        assert!(scrollbar.thumb_hit.width > scrollbar.thumb.width);
+        assert_eq!(scrollbar.maximum_offset, Dp::new(240.0));
+
+        let interaction = view.interaction_plan();
+        let thumb_point = Point {
+            x: scrollbar.thumb_hit.x,
+            y: scrollbar.thumb.y + scrollbar.thumb.height / 2,
+        };
+        assert_eq!(
+            interaction.hit_target_at(thumb_point).map(|target| target.kind),
+            Some(ViewHitTargetKind::ScrollbarThumb)
+        );
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ScrollToRatio {
+                widget: scroll_id,
+                ratio: 1.5,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::ScrollChanged(Dp::new(240.0))]
+        );
+    }
+
+    #[test]
     #[cfg(all(feature = "grid", feature = "label"))]
     fn grid_propagates_nested_intrinsic_height_to_its_following_sibling() {
         let grid_id = WidgetId::new(82);
@@ -4905,6 +5067,44 @@ mod tests {
         assert_eq!(loading.background_poll_interval_ms(), Some(16));
     }
 
+    #[test]
+    #[cfg(feature = "video")]
+    fn video_surface_paints_the_latest_frame_and_polls_only_while_active() {
+        let source = crate::ZsVideoSource::new();
+        source.present(
+            crate::ZsImageFrame::from_rgba8(
+                crate::ZsImageFrameId::new(21),
+                2,
+                1,
+                vec![255, 0, 0, 255, 0, 255, 0, 255],
+            )
+            .unwrap(),
+            std::time::Duration::from_millis(33),
+        );
+        let mut view: ViewNode<()> = video(source.clone()).video_fit(crate::ZsVideoFit::Cover);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.into_plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Image(image)
+                if image.frame.id() == crate::ZsImageFrameId::new(21)
+                    && image.source.width == 1
+        )));
+        assert_eq!(view.background_poll_interval_ms(), Some(16));
+
+        source.pause();
+        assert_eq!(view.background_poll_interval_ms(), None);
+    }
+
 #[cfg(all(feature = "tabs", feature = "accessibility"))]
 #[test]
 fn tab_view_semantics_remain_in_the_unified_native_accessibility_tree() {
@@ -4972,5 +5172,238 @@ fn accessibility_modifiers_preserve_implicit_button_role_and_label() {
         semantics[0].description.as_deref(),
         Some("Writes the document")
     );
+}
+
+#[cfg(all(
+    feature = "button",
+    feature = "tooltip",
+    feature = "accessibility"
+))]
+#[test]
+fn tooltip_is_the_accessible_description_fallback_without_overriding_app_metadata() {
+    let bounds = Rect {
+        x: 0,
+        y: 0,
+        width: 160,
+        height: 40,
+    };
+    let mut fallback = button::<()>("Save").tooltip("Writes the document");
+    fallback.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+    let fallback_semantics = fallback.interaction_plan().accessibility_nodes;
+    assert_eq!(fallback_semantics.len(), 1);
+    assert_eq!(fallback_semantics[0].role, crate::ZsAccessibilityRole::Button);
+    assert_eq!(fallback_semantics[0].label.as_deref(), Some("Save"));
+    assert_eq!(
+        fallback_semantics[0].description.as_deref(),
+        Some("Writes the document")
+    );
+
+    let mut explicit = button::<()>("Save")
+        .tooltip("Short visual hint")
+        .accessibility_description("Long assistive description");
+    explicit.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+    let explicit_semantics = explicit.interaction_plan().accessibility_nodes;
+    assert_eq!(
+        explicit_semantics[0].description.as_deref(),
+        Some("Long assistive description")
+    );
+}
+
+#[cfg(all(feature = "slider", feature = "accessibility"))]
+#[test]
+fn slider_exposes_one_adjustable_native_range_on_its_existing_hit_target() {
+    let slider_id = WidgetId::new(901);
+    let mut view = slider::<()>(25.0, SliderRange::new(0.0, 100.0).step(5.0))
+        .id(slider_id)
+        .accessibility_label("Volume");
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+
+    let interaction = view.interaction_plan();
+    assert_eq!(interaction.hit_targets.len(), 1);
+    assert_eq!(interaction.hit_targets[0].widget, slider_id);
+    assert_eq!(interaction.accessibility_nodes.len(), 1);
+    let semantic = &interaction.accessibility_nodes[0];
+    assert_eq!(semantic.widget, slider_id);
+    assert_eq!(semantic.role, crate::ZsAccessibilityRole::Slider);
+    assert_eq!(semantic.label.as_deref(), Some("Volume"));
+    let range = semantic.range_value.expect("slider range semantics");
+    assert_eq!(range.value, 25.0);
+    assert_eq!(range.minimum, 0.0);
+    assert_eq!(range.maximum, 100.0);
+    assert_eq!(range.interaction.small_change(), Some(5.0));
+    assert_eq!(range.interaction.large_change(), Some(50.0));
+}
+
+#[cfg(all(feature = "toggle-button", feature = "accessibility"))]
+#[test]
+fn toggle_button_exposes_button_role_with_persistent_checked_state() {
+    let toggle_id = WidgetId::new(903);
+    let mut view = toggle_button::<()>("Pin panel", true)
+        .id(toggle_id)
+        .accessibility_description("Keeps the panel visible");
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 160,
+            height: 36,
+        },
+        Dpi::standard(),
+    ));
+
+    let interaction = view.interaction_plan();
+    assert_eq!(interaction.hit_targets.len(), 1);
+    assert_eq!(interaction.hit_targets[0].widget, toggle_id);
+    assert_eq!(interaction.accessibility_nodes.len(), 1);
+    let semantic = &interaction.accessibility_nodes[0];
+    assert_eq!(semantic.widget, toggle_id);
+    assert_eq!(semantic.role, crate::ZsAccessibilityRole::Button);
+    assert_eq!(semantic.label.as_deref(), Some("Pin panel"));
+    assert_eq!(semantic.checked, Some(true));
+    assert_eq!(
+        semantic.description.as_deref(),
+        Some("Keeps the panel visible")
+    );
+}
+
+#[cfg(all(feature = "number-box", feature = "accessibility"))]
+#[test]
+fn number_box_exposes_spin_button_range_without_inventing_an_empty_value() {
+    let number_id = WidgetId::new(902);
+    let range = ZsNumberRange::new(-100.0, 100.0)
+        .step(0.5)
+        .large_step(10.0);
+    let mut populated = number_box::<()>(Some(12.5), range)
+        .id(number_id)
+        .accessibility_label("Amount");
+    populated.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+
+    let interaction = populated.interaction_plan();
+    assert_eq!(interaction.accessibility_nodes.len(), 1);
+    let semantic = &interaction.accessibility_nodes[0];
+    assert_eq!(semantic.widget, number_id);
+    assert_eq!(semantic.role, crate::ZsAccessibilityRole::SpinButton);
+    assert_eq!(semantic.label.as_deref(), Some("Amount"));
+    let native_range = semantic.range_value.expect("number box range semantics");
+    assert_eq!(native_range.value, 12.5);
+    assert_eq!(native_range.minimum, -100.0);
+    assert_eq!(native_range.maximum, 100.0);
+    assert_eq!(native_range.interaction.small_change(), Some(0.5));
+    assert_eq!(native_range.interaction.large_change(), Some(10.0));
+
+    let mut empty = number_box::<()>(None, range).id(number_id);
+    empty.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+    let empty_interaction = empty.interaction_plan();
+    let empty_semantic = &empty_interaction.accessibility_nodes[0];
+    assert_eq!(empty_semantic.role, crate::ZsAccessibilityRole::SpinButton);
+    assert_eq!(empty_semantic.range_value, None);
+}
+
+#[cfg(all(feature = "progress", feature = "accessibility"))]
+#[test]
+fn determinate_progress_exposes_a_read_only_native_range_without_a_hit_target() {
+    let mut view = progress_bar::<()>(42.0, crate::ProgressRange::new(0.0, 100.0))
+        .accessibility_label("Download");
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 20,
+        },
+        Dpi::standard(),
+    ));
+
+    let interaction = view.interaction_plan();
+    assert!(interaction.hit_targets.is_empty());
+    assert_eq!(interaction.accessibility_nodes.len(), 1);
+    let progress = &interaction.accessibility_nodes[0];
+    assert_eq!(progress.role, crate::ZsAccessibilityRole::ProgressBar);
+    assert_eq!(progress.label.as_deref(), Some("Download"));
+    assert_eq!(
+        progress.range_value,
+        Some(crate::ZsAccessibilityRangeValue::new(42.0, 0.0, 100.0))
+    );
+}
+
+#[cfg(all(feature = "progress", feature = "accessibility"))]
+#[test]
+fn indeterminate_progress_exposes_role_without_inventing_a_numeric_value() {
+    let mut view = indeterminate_progress_bar::<()>();
+    view.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 320,
+            height: 20,
+        },
+        Dpi::standard(),
+    ));
+
+    let semantics = view.interaction_plan().accessibility_nodes;
+    assert_eq!(semantics.len(), 1);
+    assert_eq!(semantics[0].role, crate::ZsAccessibilityRole::ProgressBar);
+    assert_eq!(semantics[0].range_value, None);
+}
+
+#[cfg(all(feature = "progress-ring", feature = "accessibility"))]
+#[test]
+fn active_progress_ring_reuses_native_progress_semantics_and_inactive_ring_is_hidden() {
+    let mut determinate = progress_ring::<()>(crate::ZsProgressRingSpec::determinate(
+        3.0,
+        crate::ProgressRange::new(0.0, 4.0),
+    ));
+    determinate.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+    let semantics = determinate.interaction_plan().accessibility_nodes;
+    assert_eq!(semantics.len(), 1);
+    assert_eq!(semantics[0].role, crate::ZsAccessibilityRole::ProgressBar);
+    assert_eq!(
+        semantics[0].range_value,
+        Some(crate::ZsAccessibilityRangeValue::new(3.0, 0.0, 4.0))
+    );
+
+    let mut inactive = progress_ring::<()>(crate::ZsProgressRingSpec::indeterminate().active(false));
+    inactive.layout(&mut ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 40,
+        },
+        Dpi::standard(),
+    ));
+    assert!(inactive.interaction_plan().accessibility_nodes.is_empty());
 }
 }

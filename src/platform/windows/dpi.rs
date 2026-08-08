@@ -83,6 +83,7 @@ fn windows_high_contrast_palette() -> WindowsGdiPalette {
         surface_raised: surface,
         control: surface,
         border: primary_text,
+        strong_stroke: primary_text,
         success: primary_text,
         warning: primary_text,
         danger: primary_text,

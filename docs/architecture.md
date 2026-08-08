@@ -106,7 +106,10 @@ flow through the same command-backed view tree; Win32 Up/Down keys can move
 focused selection between list rows. Feature-gated scroll containers can
 consume typed `ScrollBy` events, and Win32 `WM_MOUSEWHEEL` can route to the
 nearest scroll container; `native_smoke_run --scroll-view` exercises that
-command-backed route. Broader pointer dispatch, touch/inertial scroll,
+command-backed route. Scroll and adaptive-overflow surfaces also expose
+platform-thin visuals with wider semantic track/thumb hit regions; track
+clicks and offset-preserving thumb drags route through typed `ScrollToRatio`
+events. Touch/inertial scroll,
 IME/composition input and non-Windows input routing are still separate runtime
 gates.
 The standalone `toggle(...)` View widget and Shell toggle accessories both use
@@ -145,6 +148,14 @@ the scrim, platform-specific action order and metrics, one trapped focus scope,
 pointer feedback, Escape/Tab/arrow/Enter/Space routing and overlay paint order.
 The same draw and interaction plans feed buffered Win32, AppKit and Linux hosts,
 so no HWND, Objective-C object or GtkWidget enters the public view API.
+The Windows profile follows Microsoft's current `ContentDialog` template rather
+than classic `MessageBoxW`: 320/548 epx minimum/maximum width, 184/756 epx
+minimum/maximum height, 24 epx content and command padding, 12 epx title gap,
+32 epx action height, 8 epx action spacing, an 8 epx overlay radius, a layered
+content/command surface and a 1 epx separator. Primary, Secondary and Close
+remain left/middle/right semantic slots, while the declared default receives
+the Accent treatment. The optional system-message service remains a distinct
+backend facility and is not component-style evidence.
 
 The optional `toast` feature adds `toast_presenter(id, toast, page)` for
 nonmodal foreground feedback. The application owns `Option<ZsToastSpec>` and a
@@ -394,12 +405,28 @@ zsui = { version = "0.1", default-features = false, features = [
 Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
+`windows-directwrite` optionally replaces GDI text measurement and drawing with
+the system DirectWrite factory while retaining the same buffered Win32 DIB,
+`rust-text` enables the platform-neutral ZSUI-owned HarfRust/Swash text engine,
+`windows-rust-text` connects that engine to the buffered Win32 DIB, and
+`rust-text-proof` adds development-only geometry/serialization/difference code.
+`windows-text-proof` builds the multi-font DirectWrite JSON/SVG/PNG oracle in
+`docs/text-rendering.md`; neither proof feature belongs in application builds.
+The production text layout retains exact shaped geometry with unique visual-line
+indices; private subpixel raster-cache bins may be quantized independently and
+must not leak back into measure, hit testing, caret or selection geometry.
+Its Windows policy reads GPOS values from the resolved OpenType face, retains
+wrap-separating spaces for logical geometry, keeps wrapped lines on one
+paragraph baseline phase and includes synthetic-bold strength in glyph advances
+and raster-cache identity. These are retained-layout rules, not proof-only
+postprocessing or font-name overrides.
 `macos-appkit` enables optional `objc2` AppKit bindings, `linux-direct` enables
 the lightweight Wayland/X11, Cairo/Pango, built-in symbolic-vector and portal
 stack, while `linux-direct-lite` selects the same host with the optional
-pure-Rust cosmic-text/swash and tiny-skia renderer. The two renderer features
-are additive in Cargo, so `linux-direct` remains authoritative when both are
-enabled; a lite-only build must omit `linux-direct`. `linux-system-icons`
+pure-Rust ZSUI retained text engine and tiny-skia renderer. `linux-direct-lite`
+enables `rust-text` instead of owning a second Cosmic/Swash context. The two
+renderer features are additive in Cargo, so `linux-direct` remains authoritative
+when both are enabled; a lite-only build must omit `linux-direct`. `linux-system-icons`
 optionally adds freedesktop theme lookup plus
 GdkPixbuf decoding, and `linux-gtk` enables optional GTK4 compatibility
 bindings. Platform-native window, clipboard, file-dialog
@@ -631,8 +658,8 @@ return to application authoring or smoke setup.
 
 The shared text-input geometry owns only the `NativeTextShaper` contract, its
 bounded shaped-line cache and the platform-neutral logical-cell fallback.
-Win32 GDI/Uniscribe, AppKit/Core Text, Linux Direct Pango, Linux Direct Lite
-Cosmic Text and GTK Pango construct backend-owned shapers and inject them into
+Win32 GDI/Uniscribe, AppKit/Core Text, Linux Direct Pango, Linux Direct Lite's
+shared ZSUI text context and GTK Pango construct backend-owned shapers and inject them into
 the per-window input runtime. Their contexts, scale queries and shaping calls
 do not appear as variants in the shared input core, so another platform adds a
 shaper implementation without extending a cross-platform enum or matching on
@@ -653,6 +680,48 @@ corrections therefore belong in reusable framework text/style contracts rather
 than in Gallery or Notepad. Cargo features remain orthogonal: one API shape does
 not imply one always-enabled binary surface.
 
+## Retained UI and scene pipeline
+
+The declarative `view(state)` result is temporary description, not the
+long-lived runtime tree and not the rendering cache. ZSUI reconciles description
+nodes by type plus stable key/`WidgetId`, then keeps state, focus, accessibility
+identity and backend resources on retained elements. A changed description may
+replace configuration without discarding compatible retained state.
+
+```text
+temporary View description
+        |
+        v  reconcile(Type + Key/WidgetId)
+retained Element tree
+        |
+        v  DirtyFlags: style / layout / paint / semantics / composition
+retained RenderObject tree
+        |
+        v  layout only dirty subtrees
+cached DisplayList at repaint boundaries
+        |
+        v  incremental layer/scene patches
+retained LayerTree / SceneTree
+        |
+        +--> software dirty rectangles
+        +--> GPU renderer
+        `--> platform compositor
+```
+
+`Element` and `RenderObject` are different ownership domains: an element owns
+declarative identity and state reconciliation, while a render object owns
+measured geometry, hit-test geometry and paint invalidation. Repaint boundaries
+cache display lists, not arbitrary widgets. Layer promotion is sparse and
+explicit for clipping, opacity, transforms, scrolling, popup surfaces and other
+composition needs; it is not one GPU layer per control.
+
+This is the required migration direction for the current retained View/runtime
+and draw-plan implementation. Documentation must not claim the full
+Element/RenderObject/LayerTree split is complete until those concrete types,
+incremental invalidation tests and target evidence exist. CI screenshots, SVG,
+JSON and pixel comparison validate the framework; they are not nodes in the
+production pipeline and are never enabled by ordinary application features.
+
 ## Host Boundary
 
 Applications call `ZsuiHost` operations:
@@ -667,11 +736,14 @@ Applications call `ZsuiHost` operations:
 
 `NativeDesktopDialogService` and `NativeWindowHost` both delegate
 `NativeDialogSpec` through the private selected desktop-runtime adapter.
-Win32 owns `MessageBoxW` modality and localized system buttons, AppKit presents
+The platform-neutral spec may carry one validated `DialogButtonLabels` set,
+but button identity remains `DialogResponse` and target adapters retain their
+native action order. Win32 owns `MessageBoxW` modality and localized system
+buttons, applying explicit labels through one scoped thread hook. AppKit presents
 `NSAlert` as an active-window sheet when possible, GTK uses `GtkAlertDialog`,
-and the lightweight Linux host reports `Unsupported` when its desktop-provided
-Zenity surface is absent. Application code receives only `DialogResponse` and
-never chooses an action order or imports a native dialog type.
+and Linux direct projects labels through its desktop-provided Zenity surface or
+reports `Unsupported` when that provider is absent. Application code never
+imports a native dialog type.
 
 Unsupported features return `ZsuiError::Unsupported` or appear in
 `HostCapabilities` degradation reports. A host may accept a window declaration
