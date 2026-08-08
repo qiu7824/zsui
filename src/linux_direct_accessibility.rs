@@ -291,6 +291,10 @@ fn build_tree_update(
     let mut target_bounds = HashMap::new();
 
     for (node_id, target) in targets {
+        #[cfg(feature = "scroll")]
+        if target.kind == ViewHitTargetKind::ScrollbarThumb {
+            continue;
+        }
         #[cfg(feature = "virtual-list")]
         if target.kind == ViewHitTargetKind::ItemsRepeaterScrollbarThumb {
             continue;
@@ -959,6 +963,10 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::Tab { .. } => Role::Tab,
         #[cfg(feature = "scroll")]
         ViewHitTargetKind::Scroll => Role::ScrollView,
+        #[cfg(feature = "scroll")]
+        ViewHitTargetKind::ScrollbarTrack => Role::ScrollBar,
+        #[cfg(feature = "scroll")]
+        ViewHitTargetKind::ScrollbarThumb => Role::GenericContainer,
         ViewHitTargetKind::Unknown => Role::Unknown,
     }
 }
@@ -1019,6 +1027,19 @@ mod tests {
         );
         assert_eq!(
             accesskit_role(ViewHitTargetKind::ItemsRepeaterScrollbarThumb),
+            Role::GenericContainer
+        );
+    }
+
+    #[cfg(feature = "scroll")]
+    #[test]
+    fn scroll_targets_expose_one_scrollbar_semantic_surface() {
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::ScrollbarTrack),
+            Role::ScrollBar
+        );
+        assert_eq!(
+            accesskit_role(ViewHitTargetKind::ScrollbarThumb),
             Role::GenericContainer
         );
     }

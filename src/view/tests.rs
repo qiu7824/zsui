@@ -2675,7 +2675,7 @@ mod tests {
         let mut view = content_dialog(
             dialog,
             true,
-            spec,
+            spec.clone(),
             spacer::<Msg>().id(background).bg(ThemeColorToken::Surface),
         )
         .on_dialog_result(Msg::DialogResult);
@@ -2686,6 +2686,14 @@ mod tests {
             height: 400,
         };
         view.layout(&mut ViewLayoutCx::new(viewport, Dpi::standard()));
+        #[cfg(feature = "accessibility")]
+        let expected_dialog_plan = crate::zs_content_dialog_render_plan(
+            viewport,
+            &spec,
+            crate::ZsContentDialogButton::Secondary,
+            crate::ZsContentDialogPlatformStyle::current(),
+            Dpi::standard(),
+        );
 
         let interaction = view.interaction_plan();
         assert_eq!(
@@ -2725,32 +2733,18 @@ mod tests {
                 semantic_dialog.description.as_deref(),
                 Some("The unsaved changes will be discarded.")
             );
-            assert_eq!(
-                semantic_dialog.bounds,
-                crate::zs_content_dialog_render_plan(
-                    viewport,
-                    &crate::ZsContentDialogSpec::new(
-                        "The unsaved changes will be discarded.",
-                        "Cancel",
-                    )
-                    .title("Discard changes?")
-                    .primary_button("Discard")
-                    .secondary_button("Save")
-                    .default_button(crate::ZsContentDialogButton::Secondary)
-                    .destructive_button(crate::ZsContentDialogButton::Primary),
-                    crate::ZsContentDialogButton::Secondary,
-                    crate::ZsContentDialogPlatformStyle::current(),
-                    Dpi::standard(),
-                )
-                .surface
-            );
+            assert_eq!(semantic_dialog.bounds, expected_dialog_plan.surface);
             let semantic_buttons = &interaction.accessibility_nodes[1..];
             assert_eq!(
                 semantic_buttons
                     .iter()
                     .map(|node| node.label.as_deref().unwrap_or_default())
                     .collect::<Vec<_>>(),
-                vec!["Discard", "Save", "Cancel"]
+                expected_dialog_plan
+                    .buttons
+                    .iter()
+                    .map(|button| button.label.as_str())
+                    .collect::<Vec<_>>()
             );
             for node in semantic_buttons {
                 assert_eq!(node.parent, Some(dialog));
