@@ -4,9 +4,13 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
 };
+#[cfg(feature = "native-smoke")]
+use std::{ffi::c_void, ptr::NonNull};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
+#[cfg(feature = "native-smoke")]
+use objc2::runtime::AnyObject;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
@@ -16,10 +20,14 @@ use objc2_app_kit::{
     NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow, NSWindowDelegate,
     NSWindowStyleMask,
 };
+#[cfg(feature = "native-smoke")]
+use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRepPropertyKey, NSModalPanelRunLoopMode};
 use objc2_foundation::{
     NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
     NSSize, NSString, NSURL,
 };
+#[cfg(feature = "native-smoke")]
+use objc2_foundation::{NSDictionary, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -752,6 +760,119 @@ pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<Di
     })
 }
 
+/// Runs the production NSAlert path while capturing the alert's final AppKit
+/// view and activating its first native button from the modal run loop.
+///
+/// This is intentionally available only to native proof binaries. Applications
+/// should use [`MacosAppKitDialogService`] or [`crate::NativeDesktopDialogService`].
+#[cfg(feature = "native-smoke")]
+#[doc(hidden)]
+pub fn macos_appkit_show_native_dialog_proof(
+    spec: &NativeDialogSpec,
+    screenshot: &Path,
+) -> ZsuiResult<DialogResponse> {
+    spec.validate()?;
+    let mtm = appkit_main_thread_marker("NSAlert proof")?;
+    let owner = appkit_active_file_dialog_owner(mtm);
+    if owner.is_some() {
+        return Err(ZsuiError::host(
+            "macos_native_dialog_proof",
+            "the standalone NSAlert proof requires no existing owner window",
+        ));
+    }
+
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(&spec.title));
+    alert.setInformativeText(&NSString::from_str(&spec.message));
+    alert.setAlertStyle(match spec.level {
+        DialogLevel::Info | DialogLevel::Question => NSAlertStyle::Informational,
+        DialogLevel::Warning => NSAlertStyle::Warning,
+        DialogLevel::Error => NSAlertStyle::Critical,
+    });
+    let labels = spec.resolved_button_labels();
+    for label in appkit_native_dialog_button_labels(spec.buttons, &labels) {
+        alert.addButtonWithTitle(&NSString::from_str(label));
+    }
+
+    let capture_result = Rc::new(RefCell::new(None));
+    let completed_capture = Rc::clone(&capture_result);
+    let proof_alert = alert.clone();
+    let screenshot = screenshot.to_path_buf();
+    let capture_and_activate = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        let result = appkit_capture_alert_png(&proof_alert, &screenshot);
+        *completed_capture.borrow_mut() = Some(result);
+        if let Some(button) = proof_alert.buttons().firstObject() {
+            // SAFETY: AppKit owns the NSButton target/action pair and the timer
+            // executes on the main modal run loop.
+            unsafe { button.performClick(None) };
+        }
+    });
+    // Use the modal panel run-loop mode so the proof callback fires while
+    // NSAlert::runModal owns the main thread.
+    let capture_timer =
+        unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.25, false, &capture_and_activate) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSModalPanelRunLoopMode) };
+
+    let response = alert.runModal();
+    capture_result
+        .borrow_mut()
+        .take()
+        .ok_or_else(|| {
+            ZsuiError::host(
+                "macos_native_dialog_proof",
+                "the AppKit modal capture callback did not run",
+            )
+        })?
+        .map_err(|error| ZsuiError::host("macos_native_dialog_proof", error))?;
+    appkit_native_dialog_response(spec.buttons, response).ok_or_else(|| {
+        ZsuiError::host(
+            "macos_native_dialog_proof",
+            format!("NSAlert returned unexpected response {response}"),
+        )
+    })
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_capture_alert_png(alert: &NSAlert, path: &Path) -> Result<(), String> {
+    alert.layout();
+    let window = alert.window();
+    window.displayIfNeeded();
+    let view = window
+        .contentView()
+        .ok_or_else(|| "the AppKit NSAlert has no content view".to_string())?;
+    let bounds = view.bounds();
+    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+        return Err("the AppKit NSAlert content view has empty bounds".to_string());
+    }
+    view.layoutSubtreeIfNeeded();
+    view.setNeedsDisplay(true);
+    view.displayIfNeeded();
+    let bitmap = view
+        .bitmapImageRepForCachingDisplayInRect(bounds)
+        .ok_or_else(|| "AppKit could not allocate an NSBitmapImageRep for NSAlert".to_string())?;
+    view.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+    let properties = NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
+    let data = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
+    }
+    .ok_or_else(|| "NSBitmapImageRep could not encode the NSAlert PNG".to_string())?;
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("could not create NSAlert proof directory: {error}"))?;
+    }
+    let byte_count = data.length();
+    let mut bytes = vec![0_u8; byte_count];
+    if let Some(buffer) = NonNull::new(bytes.as_mut_ptr().cast::<c_void>()) {
+        unsafe { data.getBytes_length(buffer, byte_count) };
+    }
+    std::fs::write(path, bytes)
+        .map_err(|error| format!("could not write NSAlert PNG capture: {error}"))
+}
+
 fn appkit_native_dialog_button_labels<'a>(
     buttons: DialogButtons,
     labels: &'a DialogButtonLabels,
@@ -826,6 +947,9 @@ fn appkit_active_file_dialog_owner(mtm: MainThreadMarker) -> Option<Retained<NSW
     // owner; established GUI applications already use this policy and are
     // unaffected.
     application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+    if !application.isRunning() {
+        application.finishLaunching();
+    }
     #[allow(deprecated)]
     application.activateIgnoringOtherApps(true);
     application.keyWindow().or_else(|| application.mainWindow())

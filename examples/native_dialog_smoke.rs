@@ -8,9 +8,11 @@ use std::{
 
 use serde::Serialize;
 use zsui::{
-    DialogButtonLabels, DialogButtons, DialogLevel, DialogResponse, NativeDesktopDialogService,
-    NativeDialogService, NativeDialogSpec, ZsuiError, ZsuiResult,
+    DialogButtonLabels, DialogButtons, DialogLevel, DialogResponse, NativeDialogSpec, ZsuiError,
+    ZsuiResult,
 };
+#[cfg(not(target_os = "macos"))]
+use zsui::{NativeDesktopDialogService, NativeDialogService};
 
 const DIALOG_TITLE: &str = "ZSUI 原生对话框验证 / Native Dialog Proof";
 
@@ -117,6 +119,10 @@ fn main() -> ZsuiResult<()> {
     .button_labels(labels);
 
     let started = Instant::now();
+    #[cfg(target_os = "macos")]
+    let response =
+        zsui::macos_appkit_services::macos_appkit_show_native_dialog_proof(&spec, &args.screenshot);
+    #[cfg(not(target_os = "macos"))]
     let response = NativeDesktopDialogService::new().show_native_dialog(&spec);
     let (actual_response, response_matched, mut errors) = match response {
         Ok(actual) => {
