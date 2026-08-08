@@ -1441,7 +1441,9 @@ history remain authoritative for implementation status.
   incorrect byte lengths before backend entry. Win32, AppKit, Linux Direct and
   GTK compatibility paths share the same image boundary; the native-proof
   workflow runs a 2x2 write/read/restore round trip on Windows, macOS and Linux.
-  Clipboard file lists remain explicitly unsupported.
+  The Linux implementation retains one thread-owned `arboard` connection so
+  X11 selection ownership survives across separate service calls. Clipboard
+  file lists remain explicitly unsupported.
 - A control counts only after layout, state, events, themed paint and tests are
   connected. Platform completion additionally needs target evidence.
 - For each vertical slice, run focused checks, the required full gates, real

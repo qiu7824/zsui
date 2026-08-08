@@ -1,5 +1,54 @@
 use crate::{ClipboardData, ZsuiError, ZsuiResult};
 
+#[cfg(all(feature = "clipboard", target_os = "linux", not(target_env = "ohos")))]
+thread_local! {
+    /// X11 clipboard contents are owned by the connection that published them.
+    /// Keep that connection alive for the UI thread instead of dropping it at
+    /// the end of every service call.
+    static LINUX_ARBOARD_CLIPBOARD: std::cell::RefCell<Option<arboard::Clipboard>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(feature = "clipboard", target_os = "linux", not(target_env = "ohos")))]
+fn with_arboard_clipboard<T>(
+    operation: &'static str,
+    action: impl FnOnce(&mut arboard::Clipboard) -> ZsuiResult<T>,
+) -> ZsuiResult<T> {
+    LINUX_ARBOARD_CLIPBOARD
+        .try_with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(
+                    arboard::Clipboard::new()
+                        .map_err(|error| ZsuiError::host(operation, error.to_string()))?,
+                );
+            }
+            let clipboard = slot.as_mut().ok_or_else(|| {
+                ZsuiError::host(operation, "the Linux clipboard owner failed to initialize")
+            })?;
+            action(clipboard)
+        })
+        .map_err(|_| {
+            ZsuiError::host(
+                operation,
+                "the Linux clipboard owner is unavailable during thread shutdown",
+            )
+        })?
+}
+
+#[cfg(all(
+    feature = "clipboard",
+    not(all(target_os = "linux", not(target_env = "ohos")))
+))]
+fn with_arboard_clipboard<T>(
+    operation: &'static str,
+    action: impl FnOnce(&mut arboard::Clipboard) -> ZsuiResult<T>,
+) -> ZsuiResult<T> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
+    action(&mut clipboard)
+}
+
 #[cfg(any(
     test,
     all(target_os = "macos", feature = "macos-appkit"),
@@ -60,13 +109,11 @@ fn arboard_read_image(
 
 #[cfg(feature = "clipboard")]
 pub(crate) fn arboard_read_clipboard(operation: &'static str) -> ZsuiResult<Option<ClipboardData>> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
-    match clipboard.get_text() {
+    with_arboard_clipboard(operation, |clipboard| match clipboard.get_text() {
         Ok(text) => Ok(Some(ClipboardData::Text(text))),
-        Err(arboard::Error::ContentNotAvailable) => arboard_read_image(operation, &mut clipboard),
+        Err(arboard::Error::ContentNotAvailable) => arboard_read_image(operation, clipboard),
         Err(error) => Err(ZsuiError::host(operation, error.to_string())),
-    }
+    })
 }
 
 #[cfg(all(
@@ -79,9 +126,9 @@ pub(crate) fn arboard_read_clipboard(operation: &'static str) -> ZsuiResult<Opti
 pub(crate) fn arboard_read_clipboard_image(
     operation: &'static str,
 ) -> ZsuiResult<Option<ClipboardData>> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
-    arboard_read_image(operation, &mut clipboard)
+    with_arboard_clipboard(operation, |clipboard| {
+        arboard_read_image(operation, clipboard)
+    })
 }
 
 #[cfg(all(
@@ -105,9 +152,7 @@ pub(crate) fn arboard_write_clipboard(
     operation: &'static str,
     data: &ClipboardData,
 ) -> ZsuiResult<()> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|error| ZsuiError::host(operation, error.to_string()))?;
-    match data {
+    with_arboard_clipboard(operation, |clipboard| match data {
         ClipboardData::Empty => clipboard
             .clear()
             .map_err(|error| ZsuiError::host(operation, error.to_string())),
@@ -132,7 +177,7 @@ pub(crate) fn arboard_write_clipboard(
             "clipboard_files",
             "the native file clipboard service is not connected",
         )),
-    }
+    })
 }
 
 #[cfg(all(

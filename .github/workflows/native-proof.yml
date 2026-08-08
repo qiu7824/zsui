@@ -647,20 +647,37 @@ jobs:
             --screenshot "$screenshot" &
           dialog_pid=$!
 
-          visible=false
+          appkit_dialog_ready() {
+            osascript <<'APPLESCRIPT'
+          tell application "System Events"
+            tell process "native_dialog_smoke"
+              if not (exists window 1) then return false
+              tell window 1
+                return (exists button "是") and (exists button "否") and (exists button "取消")
+              end tell
+            end tell
+          end tell
+          APPLESCRIPT
+          }
+
+          ready=false
           for attempt in $(seq 1 100); do
-            if osascript -e 'tell application "System Events" to exists process "native_dialog_smoke"' \
-              | grep -q true; then
-              visible=true
+            if appkit_dialog_ready | grep -q true; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$dialog_pid" 2>/dev/null; then
               break
             fi
             sleep 0.1
           done
-          if [ "$visible" != true ]; then
-            kill "$dialog_pid" || true
-            echo "the AppKit NSAlert did not become visible" >&2
+          if [ "$ready" != true ]; then
+            kill "$dialog_pid" 2>/dev/null || true
+            wait "$dialog_pid" 2>/dev/null || true
+            echo "the AppKit NSAlert did not expose all localized buttons" >&2
             exit 1
           fi
+          sleep 0.2
 
           geometry=$(osascript <<'APPLESCRIPT'
           tell application "System Events"
