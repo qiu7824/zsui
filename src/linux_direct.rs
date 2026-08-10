@@ -23,7 +23,7 @@ use winit::window::{
     WindowLevel,
 };
 
-#[cfg(feature = "linux-direct")]
+#[cfg(any(feature = "linux-direct", feature = "linux-direct-lite"))]
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
 #[cfg(feature = "linux-system-icons")]
 use crate::NativeIconColorMode;
