@@ -268,16 +268,39 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_IME_COMPOSITION => {
+            let mut routed = false;
             if (lparam as u32 & GCS_RESULTSTR) != 0 {
                 if let Some(text) = windows_ime_composition_text(hwnd, GCS_RESULTSTR) {
-                    if dispatch_windows_win32_window_view_text_input(hwnd, &text).is_some() {
-                        return 0;
-                    }
+                    routed |= dispatch_windows_win32_window_view_ime_commit(hwnd, &text).is_some();
                 }
             }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
+            if (lparam as u32 & GCS_COMPSTR) != 0 {
+                if let Some(text) = windows_ime_composition_text(hwnd, GCS_COMPSTR) {
+                    let selection = windows_ime_composition_selection(hwnd, &text);
+                    routed |= dispatch_windows_win32_window_view_ime_preedit(
+                        hwnd,
+                        &text,
+                        selection,
+                    )
+                    .is_some();
+                    position_windows_ime_candidate(hwnd);
+                }
+            }
+            if routed {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
         }
-        WM_IME_ENDCOMPOSITION => DefWindowProcW(hwnd, msg, wparam, lparam),
+        WM_IME_ENDCOMPOSITION => {
+            if dispatch_windows_win32_window_view_ime_cancel(hwnd)
+                .is_some_and(|report| report.handled)
+            {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_KILLFOCUS => match dispatch_windows_win32_window_view_blur(hwnd) {
             Some(report) if !report.events.is_empty() => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),

@@ -867,6 +867,82 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_preserves_ime_preedit_until_commit_or_cancel() {
+        let _guard = view_input_route_test_lock();
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.ime_changed"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 79isize as HWND;
+        let widget = crate::WidgetId::new(11);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 40,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::textbox("").id(widget).on_change(text_changed),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+            .expect("registered route should focus textbox");
+        let preedit = dispatch_windows_win32_window_view_ime_preedit(
+            hwnd,
+            "临时🙂",
+            Some((2, 2)),
+        )
+        .expect("focused textbox should accept provisional IME text");
+        let cancelled = dispatch_windows_win32_window_view_ime_cancel(hwnd)
+            .expect("active provisional IME text should cancel");
+        let preedit_again = dispatch_windows_win32_window_view_ime_preedit(
+            hwnd,
+            "输入🙂",
+            Some((2, 2)),
+        )
+        .expect("focused textbox should accept a second provisional string");
+        let committed = dispatch_windows_win32_window_view_ime_commit(hwnd, "输入🙂")
+            .expect("focused textbox should commit IME text");
+        let aggregate = windows_win32_window_view_input_report(hwnd)
+            .expect("registered route should retain IME evidence");
+
+        assert_eq!(preedit.ime_preedit_update_count, 1);
+        assert!(preedit.ime_preedit_active);
+        assert_eq!(preedit.message_count, 0);
+        assert_eq!(cancelled.ime_cancel_count, 1);
+        assert!(!cancelled.ime_preedit_active);
+        assert_eq!(preedit_again.ime_preedit_update_count, 1);
+        assert_eq!(committed.ime_commit_count, 1);
+        assert_eq!(committed.message_count, 1);
+        assert_eq!(committed.ui_command_ids, vec!["zsui.test.win32.ime_changed"]);
+        assert_eq!(aggregate.ime_preedit_update_count, 2);
+        assert_eq!(aggregate.ime_cancel_count, 1);
+        assert_eq!(aggregate.ime_commit_count, 1);
+        assert!(aggregate.ime_caret_rect_observation_count >= 4);
+        assert!(!aggregate.ime_preedit_active);
+        assert!(aggregate.ime_caret_rect.is_some());
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    fn windows_ime_cursor_converts_utf16_units_to_scalar_indices() {
+        let text = "中🙂文";
+
+        assert_eq!(windows_utf16_offset_to_char_index(text, 0), 0);
+        assert_eq!(windows_utf16_offset_to_char_index(text, 1), 1);
+        assert_eq!(windows_utf16_offset_to_char_index(text, 2), 1);
+        assert_eq!(windows_utf16_offset_to_char_index(text, 3), 2);
+        assert_eq!(windows_utf16_offset_to_char_index(text, 4), 3);
+    }
+
+    #[test]
     #[cfg(all(feature = "tooltip", feature = "button"))]
     fn window_view_input_route_ticks_delayed_tooltip_into_buffered_draw_plan() {
         let widget = crate::WidgetId::new(1009);

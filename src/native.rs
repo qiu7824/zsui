@@ -768,6 +768,16 @@ pub enum NativeViewSmokeInput {
         modifiers: ZsPointerModifiers,
     },
     Text(String),
+    /// Sends provisional IME composition text through the platform text-input path.
+    ImePreedit {
+        text: String,
+        /// Scalar-index range selected inside the provisional string.
+        selection: Option<(usize, usize)>,
+    },
+    /// Commits text through the platform IME path.
+    ImeCommit(String),
+    /// Cancels the active provisional IME composition.
+    ImeCancel,
     KeyDown(NativeViewKey),
     Scroll {
         point: Point,
@@ -1012,6 +1022,31 @@ impl NativeWindowSmokeRunOptions {
         self
     }
 
+    pub fn native_view_ime_preedit(
+        mut self,
+        text: impl Into<String>,
+        selection: Option<(usize, usize)>,
+    ) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::ImePreedit {
+                text: text.into(),
+                selection,
+            });
+        self
+    }
+
+    pub fn native_view_ime_commit(mut self, text: impl Into<String>) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::ImeCommit(text.into()));
+        self
+    }
+
+    pub fn native_view_ime_cancel(mut self) -> Self {
+        self.native_view_inputs
+            .push(NativeViewSmokeInput::ImeCancel);
+        self
+    }
+
     pub fn native_view_key_down(mut self, key: NativeViewKey) -> Self {
         self.native_view_key_downs.push(key);
         self.native_view_inputs
@@ -1138,6 +1173,15 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_focused_widget: Option<u64>,
     pub native_view_text_input_count: usize,
     pub native_view_text_input_script_evidence: Vec<NativeTextInputScriptEvidence>,
+    pub native_view_ime_preedit_update_count: usize,
+    pub native_view_ime_commit_count: usize,
+    pub native_view_ime_cancel_count: usize,
+    pub native_view_ime_caret_rect_observation_count: usize,
+    pub native_view_ime_preedit_active: bool,
+    pub native_view_ime_selection: Option<(usize, usize)>,
+    pub native_view_ime_caret_rect: Option<Rect>,
+    pub native_view_ime_preedit_script_evidence: Vec<NativeTextInputScriptEvidence>,
+    pub native_view_ime_commit_script_evidence: Vec<NativeTextInputScriptEvidence>,
     pub native_view_text_navigation_count: usize,
     pub native_view_text_navigation_evidence: Vec<NativeTextNavigationEvidence>,
     pub native_view_text_selection_change_count: usize,
@@ -1301,6 +1345,15 @@ impl NativeWindowSmokeRunReport {
             native_view_focused_widget: None,
             native_view_text_input_count: 0,
             native_view_text_input_script_evidence: Vec::new(),
+            native_view_ime_preedit_update_count: 0,
+            native_view_ime_commit_count: 0,
+            native_view_ime_cancel_count: 0,
+            native_view_ime_caret_rect_observation_count: 0,
+            native_view_ime_preedit_active: false,
+            native_view_ime_selection: None,
+            native_view_ime_caret_rect: None,
+            native_view_ime_preedit_script_evidence: Vec::new(),
+            native_view_ime_commit_script_evidence: Vec::new(),
             native_view_text_navigation_count: 0,
             native_view_text_navigation_evidence: Vec::new(),
             native_view_text_selection_change_count: 0,
@@ -1740,6 +1793,9 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub ime_preedit_text: Option<String>,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<Rect>,
+    pub ime_preedit_updated: bool,
+    pub ime_committed: bool,
+    pub ime_cancelled: bool,
     pub redraw_plan: Option<NativeDrawPlan>,
     pub quit_requested: bool,
     pub errors: Vec<String>,
@@ -6192,6 +6248,7 @@ impl NativeViewInputRuntime {
         report.handled = true;
         report.ime_preedit_text = Some(report_text);
         report.ime_selection = selection;
+        report.ime_preedit_updated = true;
         report.redraw_plan = self.current_composed_draw_plan();
         report
     }
@@ -6226,6 +6283,7 @@ impl NativeViewInputRuntime {
         report.ime_preedit_text = None;
         report.ime_selection = None;
         report.ime_caret_rect = self.text_input_caret_rect();
+        report.ime_committed = report.handled;
         report
     }
 
@@ -6242,6 +6300,7 @@ impl NativeViewInputRuntime {
             ..NativeViewInputDispatchReport::default()
         };
         self.populate_text_report(&mut report);
+        report.ime_cancelled = had_preedit;
         report
     }
 
@@ -8569,14 +8628,20 @@ pub(crate) fn record_native_view_text_input_script_evidence(
     report: &mut NativeWindowSmokeRunReport,
     inputs: &[NativeViewSmokeInput],
 ) {
-    report
-        .native_view_text_input_script_evidence
-        .extend(inputs.iter().filter_map(|input| match input {
-            NativeViewSmokeInput::Text(text) => {
-                Some(NativeTextInputScriptEvidence::from_text(text))
-            }
-            _ => None,
-        }));
+    for input in inputs {
+        match input {
+            NativeViewSmokeInput::Text(text) => report
+                .native_view_text_input_script_evidence
+                .push(NativeTextInputScriptEvidence::from_text(text)),
+            NativeViewSmokeInput::ImePreedit { text, .. } => report
+                .native_view_ime_preedit_script_evidence
+                .push(NativeTextInputScriptEvidence::from_text(text)),
+            NativeViewSmokeInput::ImeCommit(text) => report
+                .native_view_ime_commit_script_evidence
+                .push(NativeTextInputScriptEvidence::from_text(text)),
+            _ => {}
+        }
+    }
 }
 
 pub(crate) fn native_view_smoke_input_dispatch_count(inputs: &[NativeViewSmokeInput]) -> usize {
@@ -8695,6 +8760,24 @@ pub(crate) fn record_native_view_input_reports(
             NativeViewSmokeInput::Text(_) => {
                 report.native_view_text_input_count += usize::from(handled);
             }
+            NativeViewSmokeInput::ImePreedit { .. } => {
+                report.native_view_ime_preedit_update_count += input_dispatches
+                    .iter()
+                    .filter(|dispatch| dispatch.ime_preedit_updated)
+                    .count();
+            }
+            NativeViewSmokeInput::ImeCommit(_) => {
+                report.native_view_ime_commit_count += input_dispatches
+                    .iter()
+                    .filter(|dispatch| dispatch.ime_committed)
+                    .count();
+            }
+            NativeViewSmokeInput::ImeCancel => {
+                report.native_view_ime_cancel_count += input_dispatches
+                    .iter()
+                    .filter(|dispatch| dispatch.ime_cancelled)
+                    .count();
+            }
             NativeViewSmokeInput::KeyDown(key) => {
                 report.native_view_key_down_count += 1;
                 if native_view_key_is_text_navigation(*key) {
@@ -8740,6 +8823,9 @@ pub(crate) fn record_native_view_input_reports(
                 NativeViewSmokeInput::Drag { .. } | NativeViewSmokeInput::DragWidget(_) => "drag",
                 NativeViewSmokeInput::PointerDrag { .. } => "pointer_drag",
                 NativeViewSmokeInput::Text(_) => "text",
+                NativeViewSmokeInput::ImePreedit { .. } => "ime_preedit",
+                NativeViewSmokeInput::ImeCommit(_) => "ime_commit",
+                NativeViewSmokeInput::ImeCancel => "ime_cancel",
                 NativeViewSmokeInput::KeyDown(_) => "key_down",
                 NativeViewSmokeInput::Scroll { .. } => "scroll",
                 NativeViewSmokeInput::WindowCloseRequest => "window_close_request",
@@ -8770,6 +8856,15 @@ pub(crate) fn record_native_view_input_reports(
             .text_selection
             .or(report.native_view_text_selection);
         report.native_view_text_caret = dispatch.text_caret.or(report.native_view_text_caret);
+        if dispatch.ime_preedit_updated || dispatch.ime_committed || dispatch.ime_cancelled {
+            report.native_view_ime_caret_rect_observation_count +=
+                usize::from(dispatch.ime_caret_rect.is_some());
+            report.native_view_ime_preedit_active = dispatch.ime_preedit_text.is_some();
+            report.native_view_ime_selection = dispatch.ime_selection;
+            report.native_view_ime_caret_rect = dispatch
+                .ime_caret_rect
+                .or(report.native_view_ime_caret_rect);
+        }
         report.native_view_text_drag_scroll_count += dispatch.text_drag_scroll_count;
         report.native_view_quit_requested |= dispatch.quit_requested;
         report
@@ -14543,6 +14638,79 @@ mod tests {
             .all(|evidence| evidence.backend == "test_shaper" && evidence.handled));
         let json = serde_json::to_string(&report).expect("proof report should serialize");
         assert!(!json.contains(secret_probe));
+    }
+
+    #[test]
+    fn native_proof_records_ime_protocol_without_serializing_composition_text() {
+        let preedit = "临时🙂";
+        let committed = "输入🙂";
+        let inputs = [
+            NativeViewSmokeInput::ImePreedit {
+                text: preedit.to_string(),
+                selection: Some((2, 2)),
+            },
+            NativeViewSmokeInput::ImeCancel,
+            NativeViewSmokeInput::ImePreedit {
+                text: committed.to_string(),
+                selection: Some((2, 2)),
+            },
+            NativeViewSmokeInput::ImeCommit(committed.to_string()),
+        ];
+        let caret = Rect {
+            x: 12,
+            y: 18,
+            width: 1,
+            height: 20,
+        };
+        let dispatches = [
+            NativeViewInputDispatchReport {
+                handled: true,
+                ime_preedit_text: Some(preedit.to_string()),
+                ime_selection: Some((2, 2)),
+                ime_caret_rect: Some(caret),
+                ime_preedit_updated: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                ime_caret_rect: Some(caret),
+                ime_cancelled: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                ime_preedit_text: Some(committed.to_string()),
+                ime_selection: Some((2, 2)),
+                ime_caret_rect: Some(caret),
+                ime_preedit_updated: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+            NativeViewInputDispatchReport {
+                handled: true,
+                ime_caret_rect: Some(caret),
+                ime_committed: true,
+                ..NativeViewInputDispatchReport::default()
+            },
+        ];
+        let mut report = NativeWindowSmokeRunReport::empty(NativeWindowSmokeRunOptions::quick());
+
+        record_native_view_input_reports(&mut report, &inputs, &dispatches, "test_ime");
+
+        assert_eq!(report.native_view_ime_preedit_update_count, 2);
+        assert_eq!(report.native_view_ime_cancel_count, 1);
+        assert_eq!(report.native_view_ime_commit_count, 1);
+        assert_eq!(report.native_view_ime_caret_rect_observation_count, 4);
+        assert!(!report.native_view_ime_preedit_active);
+        assert_eq!(report.native_view_ime_caret_rect, Some(caret));
+        assert_eq!(report.native_view_ime_preedit_script_evidence.len(), 2);
+        assert_eq!(report.native_view_ime_commit_script_evidence.len(), 1);
+        assert!(report
+            .native_view_ime_preedit_script_evidence
+            .iter()
+            .all(|evidence| evidence.contains_cjk));
+        let json = serde_json::to_string(&report).expect("IME proof report should serialize");
+        assert!(!json.contains(preedit));
+        assert!(!json.contains(committed));
     }
 
     #[test]

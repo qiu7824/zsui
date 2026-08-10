@@ -74,6 +74,12 @@ jobs:
             --example native_dialog_smoke `
             --no-default-features `
             --features windows-win32,native-smoke
+          cargo build `
+            --release `
+            --locked `
+            --example zsui_notepad `
+            --no-default-features `
+            --features notepad-demo,accessibility
 
       - name: Run native Win32 RGBA clipboard proof
         shell: pwsh
@@ -433,6 +439,17 @@ jobs:
             "--smoke-workbench-composer", "workbench"
           )
 
+      - name: Run Win32 Notepad IME proof
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64"
+          .\target\release\examples\zsui_notepad.exe `
+            --native-proof `
+            --output $root
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
       - name: Summarize Win32 Viewer proof failure
         if: failure() && steps.win32-viewer.outcome == 'failure'
         shell: pwsh
@@ -560,6 +577,23 @@ jobs:
           $contrast = Get-Content (Join-Path $componentRoot "ui-viewer-workbench-high-contrast/proof.json") -Raw | ConvertFrom-Json
           Assert-True ($contrast.theme -eq "HighContrast") "Workbench high-contrast proof did not retain its explicit theme"
           Assert-True ($contrast.runtime.high_contrast_draw_plan_window_count -eq 1) "Workbench high-contrast draw plan was not active"
+
+          $notepadPng = Join-Path $componentRoot "notepad-interaction.png"
+          $notepadBytes = [IO.File]::ReadAllBytes($notepadPng)
+          Assert-True (-not (Compare-Object $signature $notepadBytes[0..7])) "Notepad screenshot is not a PNG"
+          $notepad = Get-Content (Join-Path $componentRoot "notepad-interaction.json") -Raw | ConvertFrom-Json
+          $notepadRuntime = $notepad.runtime
+          Assert-True ($notepad.platform -eq "windows") "Notepad did not run on Win32"
+          Assert-True ($notepad.capture_backend -eq "win32_wm_printclient_dib_png") "Notepad bypassed the Win32 final surface"
+          Assert-True ($notepadRuntime.native_view_ime_preedit_update_count -eq 2) "Win32 IME preedit updates were not routed"
+          Assert-True ($notepadRuntime.native_view_ime_commit_count -eq 1) "Win32 IME commit was not routed"
+          Assert-True ($notepadRuntime.native_view_ime_cancel_count -eq 1) "Win32 IME cancellation was not routed"
+          Assert-True ($notepadRuntime.native_view_ime_caret_rect_observation_count -ge 4) "Win32 IME caret anchor was not observed"
+          Assert-True (-not $notepadRuntime.native_view_ime_preedit_active) "Win32 IME retained provisional text after the script"
+          Assert-True ($null -ne $notepadRuntime.native_view_ime_caret_rect) "Win32 IME did not expose a caret rectangle"
+          Assert-True (@($notepadRuntime.native_view_ime_preedit_script_evidence).Count -eq 2) "Win32 IME preedit metadata is incomplete"
+          Assert-True (@($notepadRuntime.native_view_ime_commit_script_evidence).Count -eq 1) "Win32 IME commit metadata is incomplete"
+          Assert-True (($notepadRuntime.native_view_ime_preedit_script_evidence | Where-Object { -not $_.contains_cjk }).Count -eq 0) "Win32 IME preedit metadata lost CJK evidence"
 
       - name: Upload Win32 Viewer proof
         if: always()
@@ -824,6 +858,18 @@ jobs:
               assert any(item["contains_right_to_left"] for item in scripts)
               assert any(item["contains_combining_mark"] for item in scripts)
               assert any(item["contains_joiner"] for item in scripts)
+              assert runtime["native_view_ime_preedit_update_count"] == 2
+              assert runtime["native_view_ime_commit_count"] == 1
+              assert runtime["native_view_ime_cancel_count"] == 1
+              assert runtime["native_view_ime_caret_rect_observation_count"] >= 4
+              assert not runtime["native_view_ime_preedit_active"]
+              assert runtime["native_view_ime_caret_rect"] is not None
+              assert len(runtime["native_view_ime_preedit_script_evidence"]) == 2
+              assert len(runtime["native_view_ime_commit_script_evidence"]) == 1
+              assert all(
+                  item["contains_cjk"]
+                  for item in runtime["native_view_ime_preedit_script_evidence"]
+              )
               navigation = runtime["native_view_text_navigation_evidence"]
               assert navigation
               assert {item["backend"] for item in navigation} == {backend}
@@ -1466,6 +1512,18 @@ jobs:
               assert any(item["contains_right_to_left"] for item in scripts)
               assert any(item["contains_combining_mark"] for item in scripts)
               assert any(item["contains_joiner"] for item in scripts)
+              assert runtime["native_view_ime_preedit_update_count"] == 2
+              assert runtime["native_view_ime_commit_count"] == 1
+              assert runtime["native_view_ime_cancel_count"] == 1
+              assert runtime["native_view_ime_caret_rect_observation_count"] >= 4
+              assert not runtime["native_view_ime_preedit_active"]
+              assert runtime["native_view_ime_caret_rect"] is not None
+              assert len(runtime["native_view_ime_preedit_script_evidence"]) == 2
+              assert len(runtime["native_view_ime_commit_script_evidence"]) == 1
+              assert all(
+                  item["contains_cjk"]
+                  for item in runtime["native_view_ime_preedit_script_evidence"]
+              )
               navigation = runtime["native_view_text_navigation_evidence"]
               assert navigation
               assert {item["backend"] for item in navigation} == {backend}
@@ -2354,6 +2412,18 @@ jobs:
               assert any(item["contains_right_to_left"] for item in scripts)
               assert any(item["contains_combining_mark"] for item in scripts)
               assert any(item["contains_joiner"] for item in scripts)
+              assert runtime["native_view_ime_preedit_update_count"] == 2
+              assert runtime["native_view_ime_commit_count"] == 1
+              assert runtime["native_view_ime_cancel_count"] == 1
+              assert runtime["native_view_ime_caret_rect_observation_count"] >= 4
+              assert not runtime["native_view_ime_preedit_active"]
+              assert runtime["native_view_ime_caret_rect"] is not None
+              assert len(runtime["native_view_ime_preedit_script_evidence"]) == 2
+              assert len(runtime["native_view_ime_commit_script_evidence"]) == 1
+              assert all(
+                  item["contains_cjk"]
+                  for item in runtime["native_view_ime_preedit_script_evidence"]
+              )
               navigation = runtime["native_view_text_navigation_evidence"]
               assert navigation
               assert {item["backend"] for item in navigation} == {"linux_direct"}

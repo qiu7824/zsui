@@ -108,6 +108,11 @@ pub struct NativeHostSmokeInteractionReport {
     pub native_view_focus_visual_count: usize,
     pub native_view_focus_traversal_count: usize,
     pub native_view_text_input_count: usize,
+    pub native_view_ime_preedit_update_count: usize,
+    pub native_view_ime_commit_count: usize,
+    pub native_view_ime_cancel_count: usize,
+    pub native_view_ime_caret_rect_observation_count: usize,
+    pub native_view_ime_preedit_active: bool,
     pub native_view_text_navigation_count: usize,
     pub native_view_text_selection_change_count: usize,
     pub native_view_text_caret: Option<usize>,
@@ -242,6 +247,11 @@ impl NativeHostSmokeInteractionReport {
             native_view_focus_visual_count: 0,
             native_view_focus_traversal_count: 0,
             native_view_text_input_count: 0,
+            native_view_ime_preedit_update_count: 0,
+            native_view_ime_commit_count: 0,
+            native_view_ime_cancel_count: 0,
+            native_view_ime_caret_rect_observation_count: 0,
+            native_view_ime_preedit_active: false,
             native_view_text_navigation_count: 0,
             native_view_text_selection_change_count: 0,
             native_view_text_caret: None,
@@ -393,6 +403,17 @@ impl NativeHostSmokeInteractionReport {
             notes.push(format!(
                 "native view input smoke routed {} text character(s)",
                 report.native_view_text_input_count
+            ));
+        }
+        if report.native_view_ime_preedit_update_count > 0
+            || report.native_view_ime_commit_count > 0
+            || report.native_view_ime_cancel_count > 0
+        {
+            notes.push(format!(
+                "native IME smoke routed {} preedit update(s), {} commit(s) and {} cancellation(s)",
+                report.native_view_ime_preedit_update_count,
+                report.native_view_ime_commit_count,
+                report.native_view_ime_cancel_count
             ));
         }
         if report.native_view_focus_traversal_count > 0 {
@@ -747,6 +768,12 @@ impl NativeHostSmokeInteractionReport {
             native_view_focus_visual_count: report.native_view_focus_visual_count,
             native_view_focus_traversal_count: report.native_view_focus_traversal_count,
             native_view_text_input_count: report.native_view_text_input_count,
+            native_view_ime_preedit_update_count: report.native_view_ime_preedit_update_count,
+            native_view_ime_commit_count: report.native_view_ime_commit_count,
+            native_view_ime_cancel_count: report.native_view_ime_cancel_count,
+            native_view_ime_caret_rect_observation_count: report
+                .native_view_ime_caret_rect_observation_count,
+            native_view_ime_preedit_active: report.native_view_ime_preedit_active,
             native_view_text_navigation_count: report.native_view_text_navigation_count,
             native_view_text_selection_change_count: report.native_view_text_selection_change_count,
             native_view_text_caret: report.native_view_text_caret,
@@ -1471,6 +1498,15 @@ mod tests {
             native_view_focused_widget: None,
             native_view_text_input_count: 0,
             native_view_text_input_script_evidence: Vec::new(),
+            native_view_ime_preedit_update_count: 0,
+            native_view_ime_commit_count: 0,
+            native_view_ime_cancel_count: 0,
+            native_view_ime_caret_rect_observation_count: 0,
+            native_view_ime_preedit_active: false,
+            native_view_ime_selection: None,
+            native_view_ime_caret_rect: None,
+            native_view_ime_preedit_script_evidence: Vec::new(),
+            native_view_ime_commit_script_evidence: Vec::new(),
             native_view_text_navigation_count: 0,
             native_view_text_navigation_evidence: Vec::new(),
             native_view_text_selection_change_count: 0,

@@ -111,8 +111,10 @@ completion data as JSON.
 
 It is not yet a complete application UI runtime. AppKit and Linux now have
 first-pass native hosts, renderers, typed input, clipboard, file-dialog and
-menu paths plus final-surface target proof, but their complete input, IME,
-accessibility and per-control interaction matrices remain incomplete. The
+menu paths plus final-surface target proof. Deterministic IME preedit, commit,
+cancel and caret-anchor proof shares the real AppKit/GTK4/Winit callback helpers,
+but candidate-window experience, accessibility and broader per-control
+interaction matrices remain incomplete. The
 current Windows backend metadata points to the
 `win32_gdi` runtime. Win32 main/quick window style, transient-window host,
 create-params, message-loop and `NativeMainWindowHost` implementation live in

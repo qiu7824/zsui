@@ -309,10 +309,10 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let ime = ime.clone();
         move |context| {
             let (text, _attributes, cursor) = context.preedit_string();
-            let cursor = cursor.max(0) as usize;
-            let report = runtime.borrow_mut().dispatch_ime_preedit(
+            let report = dispatch_linux_gtk_ime_preedit(
+                &runtime,
                 text.as_str(),
-                (!text.is_empty()).then_some((cursor, cursor)),
+                (!text.is_empty()).then_some(cursor.max(0) as usize),
             );
             apply_linux_gtk_input_report(
                 report,
@@ -331,7 +331,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         move |_context, text| {
-            let report = runtime.borrow_mut().dispatch_ime_commit(text);
+            let report = dispatch_linux_gtk_ime_commit(&runtime, text);
             apply_linux_gtk_input_report(
                 report,
                 &area,
@@ -632,6 +632,22 @@ impl LinuxGtkDrawViewHost {
                 }
                 crate::NativeViewSmokeInput::Text(text) => {
                     let report = self.runtime.borrow_mut().dispatch_ime_commit(text);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::ImePreedit { text, selection } => {
+                    let report = dispatch_linux_gtk_ime_preedit(
+                        &self.runtime,
+                        text,
+                        selection.map(|(_, caret)| caret),
+                    );
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::ImeCommit(text) => {
+                    let report = dispatch_linux_gtk_ime_commit(&self.runtime, text);
+                    dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::ImeCancel => {
+                    let report = dispatch_linux_gtk_ime_cancel(&self.runtime);
                     dispatch(report, &mut reports);
                 }
                 crate::NativeViewSmokeInput::KeyDown(key) => {
@@ -941,6 +957,29 @@ fn reset_linux_gtk_ime_if_no_text_target(
     if !accepts_committed_text {
         ime.reset();
     }
+}
+
+fn dispatch_linux_gtk_ime_preedit(
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    text: &str,
+    cursor: Option<usize>,
+) -> crate::native::NativeViewInputDispatchReport {
+    runtime
+        .borrow_mut()
+        .dispatch_ime_preedit(text, cursor.map(|cursor| (cursor, cursor)))
+}
+
+fn dispatch_linux_gtk_ime_commit(
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    text: &str,
+) -> crate::native::NativeViewInputDispatchReport {
+    runtime.borrow_mut().dispatch_ime_commit(text)
+}
+
+fn dispatch_linux_gtk_ime_cancel(
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+) -> crate::native::NativeViewInputDispatchReport {
+    runtime.borrow_mut().cancel_ime_preedit()
 }
 
 fn gtk_coordinate(value: f64) -> i32 {

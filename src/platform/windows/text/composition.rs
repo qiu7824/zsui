@@ -57,6 +57,24 @@ unsafe fn windows_ime_composition_text(
     }
 }
 
+unsafe fn windows_ime_composition_selection(
+    hwnd: HWND,
+    text: &str,
+) -> Option<(usize, usize)> {
+    let context = ImmGetContext(hwnd);
+    if context.is_null() {
+        return None;
+    }
+    let cursor = ImmGetCompositionStringW(context, GCS_CURSORPOS, null_mut(), 0);
+    ImmReleaseContext(hwnd, context);
+    if cursor < 0 {
+        None
+    } else {
+        let cursor = windows_utf16_offset_to_char_index(text, cursor as usize);
+        Some((cursor, cursor))
+    }
+}
+
 unsafe fn position_windows_ime_candidate(hwnd: HWND) {
     let Some(target) = windows_win32_window_focused_target(hwnd) else {
         return;
@@ -68,18 +86,19 @@ unsafe fn position_windows_ime_candidate(hwnd: HWND) {
     if context.is_null() {
         return;
     }
+    let caret = windows_win32_window_ime_caret_rect(hwnd).unwrap_or(target.bounds);
     let form = CANDIDATEFORM {
         dwIndex: 0,
         dwStyle: CFS_EXCLUDE,
         ptCurrentPos: POINT {
-            x: target.bounds.x,
-            y: target.bounds.y + target.bounds.height,
+            x: caret.x,
+            y: caret.y + caret.height,
         },
         rcArea: RECT {
-            left: target.bounds.x,
-            top: target.bounds.y,
-            right: target.bounds.x + target.bounds.width,
-            bottom: target.bounds.y + target.bounds.height,
+            left: caret.x,
+            top: caret.y,
+            right: caret.x + caret.width.max(1),
+            bottom: caret.y + caret.height.max(1),
         },
     };
     ImmSetCandidateWindow(context, &form);

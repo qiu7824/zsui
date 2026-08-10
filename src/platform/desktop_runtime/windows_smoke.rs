@@ -70,6 +70,13 @@ fn record_windows_win32_view_input_report(
     report.native_view_text_selection_change_count += input.text_selection_change_count;
     report.native_view_text_selection = input.text_selection.or(report.native_view_text_selection);
     report.native_view_text_caret = input.text_caret.or(report.native_view_text_caret);
+    report.native_view_ime_preedit_update_count += input.ime_preedit_update_count;
+    report.native_view_ime_commit_count += input.ime_commit_count;
+    report.native_view_ime_cancel_count += input.ime_cancel_count;
+    report.native_view_ime_caret_rect_observation_count += input.ime_caret_rect_observation_count;
+    report.native_view_ime_preedit_active = input.ime_preedit_active;
+    report.native_view_ime_selection = input.ime_selection;
+    report.native_view_ime_caret_rect = input.ime_caret_rect.or(report.native_view_ime_caret_rect);
     #[cfg(feature = "textbox")]
     {
         report.native_view_text_edit_command_count += input.text_edit_command_count;
@@ -175,25 +182,25 @@ fn post_windows_native_view_input(
 ) {
     use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-        WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_XBUTTONDOWN,
-        WM_XBUTTONUP,
+        PostMessageW, SendMessageW, WM_CHAR, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+        WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP,
+        WM_XBUTTONDOWN, WM_XBUTTONUP,
     };
 
     match input {
         NativeViewSmokeInput::Move(point) => unsafe {
-            PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*point));
+            SendMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*point));
         },
         NativeViewSmokeInput::Click(point) => unsafe {
             let lparam = windows_lparam_from_point(*point);
-            PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
-            PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, lparam);
         },
         NativeViewSmokeInput::ClickWidget(_) => {}
         NativeViewSmokeInput::Drag { start, end } => unsafe {
-            PostMessageW(hwnd, WM_LBUTTONDOWN, 0, windows_lparam_from_point(*start));
-            PostMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*end));
-            PostMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 0, windows_lparam_from_point(*start));
+            SendMessageW(hwnd, WM_MOUSEMOVE, 0, windows_lparam_from_point(*end));
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, windows_lparam_from_point(*end));
         },
         NativeViewSmokeInput::DragWidget(_) => {}
         NativeViewSmokeInput::PointerDrag {
@@ -209,24 +216,37 @@ fn post_windows_native_view_input(
                 crate::ZsPointerButton::Auxiliary(_) => (WM_XBUTTONDOWN, WM_XBUTTONUP),
             };
             let wparam = windows_wparam_from_pointer(*button, *modifiers);
-            PostMessageW(hwnd, down, wparam, windows_lparam_from_point(*start));
-            PostMessageW(
+            SendMessageW(hwnd, down, wparam, windows_lparam_from_point(*start));
+            SendMessageW(
                 hwnd,
                 WM_MOUSEMOVE,
                 wparam & 0xffff,
                 windows_lparam_from_point(*end),
             );
-            PostMessageW(hwnd, up, wparam, windows_lparam_from_point(*end));
+            SendMessageW(hwnd, up, wparam, windows_lparam_from_point(*end));
         },
         NativeViewSmokeInput::Text(text) => {
             for unit in text.encode_utf16() {
                 unsafe {
-                    PostMessageW(hwnd, WM_CHAR, unit as usize, 0);
+                    SendMessageW(hwnd, WM_CHAR, unit as usize, 0);
                 }
             }
         }
+        NativeViewSmokeInput::ImePreedit { text, selection } => {
+            let _ = crate::windows_win32_host::dispatch_windows_win32_window_view_ime_preedit(
+                hwnd, text, *selection,
+            );
+        }
+        NativeViewSmokeInput::ImeCommit(text) => {
+            let _ = crate::windows_win32_host::dispatch_windows_win32_window_view_ime_commit(
+                hwnd, text,
+            );
+        }
+        NativeViewSmokeInput::ImeCancel => {
+            let _ = crate::windows_win32_host::dispatch_windows_win32_window_view_ime_cancel(hwnd);
+        }
         NativeViewSmokeInput::KeyDown(key) => unsafe {
-            PostMessageW(
+            SendMessageW(
                 hwnd,
                 WM_KEYDOWN,
                 windows_wparam_from_native_view_key(*key),
@@ -239,7 +259,7 @@ fn post_windows_native_view_input(
                 y: point.y,
             };
             ClientToScreen(hwnd, &mut screen_point);
-            PostMessageW(
+            SendMessageW(
                 hwnd,
                 WM_MOUSEWHEEL,
                 windows_wparam_from_scroll_delta_y(*delta_y),

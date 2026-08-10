@@ -62,7 +62,7 @@ use windows_sys::Win32::{
         Input::{
             Ime::{
                 ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, ImmSetCandidateWindow,
-                CANDIDATEFORM, CFS_EXCLUDE, GCS_RESULTSTR,
+                CANDIDATEFORM, CFS_EXCLUDE, GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR,
             },
             KeyboardAndMouse::{
                 GetActiveWindow, GetKeyState, ReleaseCapture, SetCapture, SetFocus,

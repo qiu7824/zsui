@@ -692,20 +692,7 @@ impl ApplicationHandler for LinuxDirectApp {
                 }
             }
             WindowEvent::Ime(ime) => {
-                let report = match ime {
-                    Ime::Preedit(text, selection) => {
-                        let selection = selection.map(|(start, end)| {
-                            (
-                                byte_to_char_index(&text, start),
-                                byte_to_char_index(&text, end),
-                            )
-                        });
-                        window.runtime.dispatch_ime_preedit(&text, selection)
-                    }
-                    Ime::Commit(text) => window.runtime.dispatch_ime_commit(&text),
-                    Ime::Disabled => window.runtime.cancel_ime_preedit(),
-                    Ime::Enabled => crate::native::NativeViewInputDispatchReport::default(),
-                };
+                let report = dispatch_linux_direct_ime_event(&mut window.runtime, &ime);
                 window.apply_report(report, event_loop);
             }
             WindowEvent::Focused(focused) => {
@@ -1085,6 +1072,26 @@ impl LinuxDirectWindow {
                 let report = self.runtime.dispatch_ime_commit(text);
                 reports.push(self.apply_report(report, event_loop));
             }
+            crate::NativeViewSmokeInput::ImePreedit { text, selection } => {
+                let selection = selection.map(|(start, end)| {
+                    (
+                        char_to_byte_index(text, start),
+                        char_to_byte_index(text, end),
+                    )
+                });
+                let event = Ime::Preedit(text.clone(), selection);
+                let report = dispatch_linux_direct_ime_event(&mut self.runtime, &event);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::ImeCommit(text) => {
+                let event = Ime::Commit(text.clone());
+                let report = dispatch_linux_direct_ime_event(&mut self.runtime, &event);
+                reports.push(self.apply_report(report, event_loop));
+            }
+            crate::NativeViewSmokeInput::ImeCancel => {
+                let report = dispatch_linux_direct_ime_event(&mut self.runtime, &Ime::Disabled);
+                reports.push(self.apply_report(report, event_loop));
+            }
             crate::NativeViewSmokeInput::KeyDown(key) => {
                 let report = self.runtime.dispatch_key(*key);
                 reports.push(self.apply_report(report, event_loop));
@@ -1400,6 +1407,33 @@ fn byte_to_char_index(text: &str, byte: usize) -> usize {
     text.char_indices()
         .take_while(|(index, _)| *index < byte.min(text.len()))
         .count()
+}
+
+fn char_to_byte_index(text: &str, index: usize) -> usize {
+    text.char_indices()
+        .nth(index)
+        .map(|(offset, _)| offset)
+        .unwrap_or(text.len())
+}
+
+fn dispatch_linux_direct_ime_event(
+    runtime: &mut crate::native::NativeViewInputRuntime,
+    ime: &Ime,
+) -> crate::native::NativeViewInputDispatchReport {
+    match ime {
+        Ime::Preedit(text, selection) => {
+            let selection = selection.map(|(start, end)| {
+                (
+                    byte_to_char_index(text, start),
+                    byte_to_char_index(text, end),
+                )
+            });
+            runtime.dispatch_ime_preedit(text, selection)
+        }
+        Ime::Commit(text) => runtime.dispatch_ime_commit(text),
+        Ime::Disabled => runtime.cancel_ime_preedit(),
+        Ime::Enabled => crate::native::NativeViewInputDispatchReport::default(),
+    }
 }
 
 fn menu_command_for_key(

@@ -224,6 +224,13 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub text_selection_change_count: usize,
     pub text_selection: Option<(usize, usize)>,
     pub text_caret: Option<usize>,
+    pub ime_preedit_update_count: usize,
+    pub ime_commit_count: usize,
+    pub ime_cancel_count: usize,
+    pub ime_caret_rect_observation_count: usize,
+    pub ime_preedit_active: bool,
+    pub ime_selection: Option<(usize, usize)>,
+    pub ime_caret_rect: Option<crate::Rect>,
     #[cfg(feature = "textbox")]
     pub text_edit_command_count: usize,
     #[cfg(feature = "textbox")]
@@ -352,6 +359,13 @@ impl WindowsWin32ViewInputDispatchReport {
         self.text_selection_change_count += next.text_selection_change_count;
         self.text_selection = next.text_selection.or(self.text_selection);
         self.text_caret = next.text_caret.or(self.text_caret);
+        self.ime_preedit_update_count += next.ime_preedit_update_count;
+        self.ime_commit_count += next.ime_commit_count;
+        self.ime_cancel_count += next.ime_cancel_count;
+        self.ime_caret_rect_observation_count += next.ime_caret_rect_observation_count;
+        self.ime_preedit_active = next.ime_preedit_active;
+        self.ime_selection = next.ime_selection;
+        self.ime_caret_rect = next.ime_caret_rect.or(self.ime_caret_rect);
         #[cfg(feature = "textbox")]
         {
             self.text_edit_command_count += next.text_edit_command_count;
@@ -925,6 +939,29 @@ pub fn dispatch_windows_win32_window_view_text_input(
     dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_text_input(text))
 }
 
+pub fn dispatch_windows_win32_window_view_ime_preedit(
+    hwnd: HWND,
+    text: &str,
+    selection: Option<(usize, usize)>,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_ime_preedit(text, selection)
+    })
+}
+
+pub fn dispatch_windows_win32_window_view_ime_commit(
+    hwnd: HWND,
+    text: &str,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.dispatch_ime_commit(text))
+}
+
+pub fn dispatch_windows_win32_window_view_ime_cancel(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, WindowsWin32ViewInputRoute::dispatch_ime_cancel)
+}
+
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
 pub(crate) fn set_windows_win32_window_accessible_text_value(hwnd: HWND, value: &str) -> bool {
     if windows_win32_window_text_accessibility_snapshot(hwnd)
@@ -1109,6 +1146,18 @@ fn windows_win32_window_focused_target(hwnd: HWND) -> Option<crate::ViewHitTarge
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
         .and_then(|record| record.route.focused_target())
+}
+
+fn windows_win32_window_ime_caret_rect(hwnd: HWND) -> Option<crate::Rect> {
+    if hwnd.is_null() {
+        return None;
+    }
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .and_then(|record| record.route.ime_caret_rect())
 }
 
 fn dispatch_windows_win32_window_view_input(

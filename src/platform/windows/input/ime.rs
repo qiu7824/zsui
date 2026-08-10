@@ -17,6 +17,29 @@ impl WindowsWin32ViewInputRoute {
         )
     }
 
+    fn dispatch_ime_preedit(
+        &mut self,
+        text: &str,
+        selection: Option<(usize, usize)>,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.dispatch_ime_preedit(text, selection);
+        self.adapt_shared_report(report, WindowsSharedInputKind::ImePreedit)
+    }
+
+    fn dispatch_ime_commit(&mut self, text: &str) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.dispatch_ime_commit(text);
+        self.adapt_shared_report(report, WindowsSharedInputKind::ImeCommit)
+    }
+
+    fn dispatch_ime_cancel(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.cancel_ime_preedit();
+        self.adapt_shared_report(report, WindowsSharedInputKind::ImeCancel)
+    }
+
+    fn ime_caret_rect(&self) -> Option<crate::Rect> {
+        self.shared_runtime.text_input_caret_rect()
+    }
+
     fn dispatch_utf16_input_unit(&mut self, unit: u16) -> WindowsWin32ViewInputDispatchReport {
         if (0xd800..=0xdbff).contains(&unit) {
             self.pending_utf16_high_surrogate = Some(unit);
@@ -46,6 +69,18 @@ impl WindowsWin32ViewInputRoute {
             },
         }
     }
+}
+
+fn windows_utf16_offset_to_char_index(text: &str, utf16_offset: usize) -> usize {
+    let mut units = 0_usize;
+    for (index, character) in text.chars().enumerate() {
+        let next = units.saturating_add(character.len_utf16());
+        if utf16_offset < next {
+            return index;
+        }
+        units = next;
+    }
+    text.chars().count()
 }
 
 fn accepted_windows_text_input_count(

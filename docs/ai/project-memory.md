@@ -580,6 +580,19 @@ history remain authoritative for implementation status.
   CJK/RTL script traits and relative `1, 4, 3, 2` caret/selection trace on real
   AppKit, X11 and Weston Wayland hosts. CI run `29801544136` and UI Memory
   Comparison run `29801544149` also passed for the same commit.
+- Scripted IME proof is a separate typed protocol from ordinary committed text:
+  `NativeViewSmokeInput` carries provisional preedit plus scalar selection,
+  commit and cancel operations, while reports retain only script metadata,
+  operation counts, final marked-state and caret-rectangle evidence. Win32
+  routes `GCS_COMPSTR`, `GCS_CURSORPOS`, `GCS_RESULTSTR` and composition end
+  through the shared runtime, converting UTF-16 cursor offsets to scalar
+  indices and anchoring the candidate form to the shaped caret rectangle.
+  AppKit `NSTextInputClient`, GTK4 `IMMulticontext` and Winit IME callbacks use
+  the same backend helpers exercised by proof. The fixed Notepad scenario must
+  observe two preedit updates, one cancellation, one commit, four caret anchors
+  and no remaining provisional text on every target. This proves protocol
+  integration and provisional-state semantics; it does not replace a manual
+  Chinese/Japanese/Korean candidate-window session on each desktop.
 - Native resize evidence must call the real top-level window API, observe a
   platform resize callback and capture the final platform surface after shared
   relayout. Resizing only the shared View surface is not native proof. The

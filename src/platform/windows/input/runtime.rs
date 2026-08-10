@@ -10,6 +10,9 @@ enum WindowsSharedInputKind {
         accepted: usize,
         target: Option<crate::ViewHitTarget>,
     },
+    ImePreedit,
+    ImeCommit,
+    ImeCancel,
     Key {
         key: crate::native::NativeViewKey,
         target: Option<crate::ViewHitTarget>,
@@ -33,6 +36,9 @@ impl WindowsSharedInputKind {
             Self::PointerCancel => "pointer_cancel",
             Self::PointerLeave => "pointer_leave",
             Self::Text { .. } => "text",
+            Self::ImePreedit => "ime_preedit",
+            Self::ImeCommit => "ime_commit",
+            Self::ImeCancel => "ime_cancel",
             Self::Key { .. } => "key_down",
             Self::Scroll => "scroll",
             Self::Blur => "blur",
@@ -414,6 +420,18 @@ impl WindowsWin32ViewInputRoute {
             text_selection_change_count: usize::from(shared.text_selection_changed),
             text_selection: shared.text_selection,
             text_caret: shared.text_caret,
+            ime_preedit_update_count: usize::from(shared.ime_preedit_updated),
+            ime_commit_count: usize::from(shared.ime_committed),
+            ime_cancel_count: usize::from(shared.ime_cancelled),
+            ime_caret_rect_observation_count: usize::from(
+                shared.ime_caret_rect.is_some()
+                    && (shared.ime_preedit_updated
+                        || shared.ime_committed
+                        || shared.ime_cancelled),
+            ),
+            ime_preedit_active: shared.ime_preedit_text.is_some(),
+            ime_selection: shared.ime_selection,
+            ime_caret_rect: shared.ime_caret_rect,
             text_drag_scroll_count: shared.text_drag_scroll_count,
             text_drag_active: shared.text_drag_active,
             text_drag_count: usize::from(text_drag_ended),

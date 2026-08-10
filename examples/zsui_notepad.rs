@@ -707,6 +707,10 @@ fn main() -> ZsuiResult<()> {
             .max(250);
         let mut options = NativeWindowSmokeRunOptions::new(proof_duration_ms)
             .native_view_click(editor_point)
+            .native_view_ime_preedit("临时🙂", Some((2, 2)))
+            .native_view_ime_cancel()
+            .native_view_ime_preedit("输入🙂", Some((2, 2)))
+            .native_view_ime_commit("输入🙂")
             .native_view_text_input(smoke_text)
             .native_view_drag(editor_point, editor_top_edge)
             .native_view_click(undo_point)
@@ -779,6 +783,11 @@ fn main() -> ZsuiResult<()> {
         }
         if !report.visible_window_was_created()
             || report.native_view_text_input_count == 0
+            || report.native_view_ime_preedit_update_count != 2
+            || report.native_view_ime_commit_count != 1
+            || report.native_view_ime_cancel_count != 1
+            || report.native_view_ime_caret_rect_observation_count < 4
+            || report.native_view_ime_preedit_active
             || report.native_view_text_undo_count == 0
             || report.native_view_text_navigation_count < 9
             || report.native_view_text_selection_change_count == 0
@@ -793,7 +802,7 @@ fn main() -> ZsuiResult<()> {
         {
             return Err(ZsuiError::host(
                 "notepad_smoke",
-                "native window, menu routing, text input/page navigation/edge-drag scrolling, typed undo or requested close policy was not verified",
+                "native window, menu routing, IME preedit/commit/cancel, text input/page navigation/edge-drag scrolling, typed undo or requested close policy was not verified",
             ));
         }
         if lock_state(&shared)?.word_wrap {
@@ -831,6 +840,20 @@ fn main() -> ZsuiResult<()> {
             return Err(ZsuiError::host(
                 "notepad_smoke",
                 "native proof did not retain privacy-preserving CJK, RTL and extended-grapheme script evidence",
+            ));
+        }
+        if !report
+            .native_view_ime_preedit_script_evidence
+            .iter()
+            .all(|evidence| evidence.contains_cjk)
+            || !report
+                .native_view_ime_commit_script_evidence
+                .iter()
+                .all(|evidence| evidence.contains_cjk)
+        {
+            return Err(ZsuiError::host(
+                "notepad_smoke",
+                "native proof did not retain privacy-preserving IME script evidence",
             ));
         }
         let bidi_visual_order = notepad_bidi_visual_order(&report)?;

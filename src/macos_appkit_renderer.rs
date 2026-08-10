@@ -148,11 +148,7 @@ define_class!(
         #[unsafe(method(insertText:replacementRange:))]
         unsafe fn insert_text(&self, string: &AnyObject, _replacement_range: NSRange) {
             let text = appkit_input_string(string);
-            self.ivars().marked_text.borrow_mut().clear();
-            self.ivars().marked_selection.set(None);
-            let report = self.ivars().runtime.borrow_mut().dispatch_ime_commit(&text);
-            self.ivars().ime_dispatched.set(report.handled);
-            self.apply_input_report(report);
+            self.dispatch_appkit_ime_commit(&text);
         }
 
         #[unsafe(method(doCommandBySelector:))]
@@ -168,32 +164,12 @@ define_class!(
             _replacement_range: NSRange,
         ) {
             let text = appkit_input_string(string);
-            let selection = utf16_range_to_char_range(&text, selected_range);
-            *self.ivars().marked_text.borrow_mut() = text.clone();
-            self.ivars().marked_selection.set(selection);
-            let report = self
-                .ivars()
-                .runtime
-                .borrow_mut()
-                .dispatch_ime_preedit(&text, selection);
-            let accepts_committed_text = self
-                .ivars()
-                .runtime
-                .borrow()
-                .accepts_committed_text_input();
-            self.ivars()
-                .ime_dispatched
-                .set(report.handled || accepts_committed_text);
-            self.apply_input_report(report);
+            self.dispatch_appkit_ime_preedit(&text, selected_range);
         }
 
         #[unsafe(method(unmarkText))]
         fn unmark_text(&self) {
-            self.ivars().marked_text.borrow_mut().clear();
-            self.ivars().marked_selection.set(None);
-            let report = self.ivars().runtime.borrow_mut().cancel_ime_preedit();
-            self.ivars().ime_dispatched.set(report.handled);
-            self.apply_input_report(report);
+            self.dispatch_appkit_ime_cancel();
         }
 
         #[unsafe(method(selectedRange))]
@@ -1386,6 +1362,45 @@ impl ZsuiAppKitMenuAccessibilityElement {
 }
 
 impl ZsuiAppKitDrawView {
+    fn dispatch_appkit_ime_preedit(
+        &self,
+        text: &str,
+        selected_range: NSRange,
+    ) -> crate::native::NativeViewInputDispatchReport {
+        let selection = utf16_range_to_char_range(text, selected_range);
+        *self.ivars().marked_text.borrow_mut() = text.to_string();
+        self.ivars().marked_selection.set(selection);
+        let report = self
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_ime_preedit(text, selection);
+        let accepts_committed_text = self.ivars().runtime.borrow().accepts_committed_text_input();
+        self.ivars()
+            .ime_dispatched
+            .set(report.handled || accepts_committed_text);
+        self.apply_input_report(report)
+    }
+
+    fn dispatch_appkit_ime_commit(
+        &self,
+        text: &str,
+    ) -> crate::native::NativeViewInputDispatchReport {
+        self.ivars().marked_text.borrow_mut().clear();
+        self.ivars().marked_selection.set(None);
+        let report = self.ivars().runtime.borrow_mut().dispatch_ime_commit(text);
+        self.ivars().ime_dispatched.set(report.handled);
+        self.apply_input_report(report)
+    }
+
+    fn dispatch_appkit_ime_cancel(&self) -> crate::native::NativeViewInputDispatchReport {
+        self.ivars().marked_text.borrow_mut().clear();
+        self.ivars().marked_selection.set(None);
+        let report = self.ivars().runtime.borrow_mut().cancel_ime_preedit();
+        self.ivars().ime_dispatched.set(report.handled);
+        self.apply_input_report(report)
+    }
+
     #[cfg(feature = "accessibility")]
     fn semantic_accessibility_nodes(&self) -> Vec<crate::ZsAccessibilityNode> {
         self.ivars()
@@ -2104,6 +2119,25 @@ impl MacosAppKitDrawViewHost {
                         .borrow_mut()
                         .dispatch_ime_commit(text);
                     dispatch(report, &mut reports);
+                }
+                crate::NativeViewSmokeInput::ImePreedit { text, selection } => {
+                    let selected_range = selection
+                        .map(|(start, end)| {
+                            let start = char_index_to_utf16_offset(text, start);
+                            let end = char_index_to_utf16_offset(text, end);
+                            NSRange::new(
+                                start.min(end),
+                                start.max(end).saturating_sub(start.min(end)),
+                            )
+                        })
+                        .unwrap_or_else(|| NSRange::new(NSNotFound as usize, 0));
+                    reports.push(self.view.dispatch_appkit_ime_preedit(text, selected_range));
+                }
+                crate::NativeViewSmokeInput::ImeCommit(text) => {
+                    reports.push(self.view.dispatch_appkit_ime_commit(text));
+                }
+                crate::NativeViewSmokeInput::ImeCancel => {
+                    reports.push(self.view.dispatch_appkit_ime_cancel());
                 }
                 crate::NativeViewSmokeInput::KeyDown(key) => {
                     let report = self.view.ivars().runtime.borrow_mut().dispatch_key(*key);
