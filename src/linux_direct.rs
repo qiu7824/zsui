@@ -2216,6 +2216,22 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShape
         linux_direct_ui_font_scale()
     }
 
+    fn measure(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+    ) -> Option<crate::Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            linux_direct_native_typography_profile(typography_scale, Some(&self.context)),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let style = resolver.resolve_text_style(semantic);
+        Some(LinuxDirectTextLayout::new(self.context.clone()).measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_linux_direct_text_line(&self.context, text)
     }
@@ -2260,6 +2276,25 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper
 
     fn typography_scale(&self) -> f32 {
         self.system.ui_scale()
+    }
+
+    fn measure(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+    ) -> Option<crate::Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            crate::linux_direct_lite::linux_lite_typography_profile(typography_scale, &self.system),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let style = resolver.resolve_text_style(semantic);
+        Some(
+            self.system
+                .measure(text, &style, (max_width > 0).then_some(max_width as f32)),
+        )
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {

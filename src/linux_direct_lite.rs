@@ -41,7 +41,7 @@ impl LinuxLiteTextSystem {
         self.ui_scale
     }
 
-    fn measure(&self, text: &str, style: &TextStyle, max_width: Option<f32>) -> Size {
+    pub(crate) fn measure(&self, text: &str, style: &TextStyle, max_width: Option<f32>) -> Size {
         if text.is_empty() {
             return Size {
                 width: 0,

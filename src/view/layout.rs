@@ -408,6 +408,7 @@ fn split_child_bounds<Msg>(
     gap: Option<Dp>,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     _resolved_scroll_content_height: Option<Dp>,
 ) -> Vec<Rect> {
     let child_count = children.len();
@@ -431,6 +432,7 @@ fn split_child_bounds<Msg>(
                 dpi,
                 false,
                 typography_scale,
+                text_measurements,
                 bounds.height,
             );
             let mut x = bounds.x;
@@ -444,6 +446,7 @@ fn split_child_bounds<Msg>(
                         dpi,
                         true,
                         typography_scale,
+                        text_measurements,
                         width,
                     );
                     let rect = Rect {
@@ -461,10 +464,24 @@ fn split_child_bounds<Msg>(
         }
         ViewNodeKind::Stack {
             direction: ViewStackDirection::Column,
-        } => split_column_child_bounds(bounds, children, gap, dpi, typography_scale),
+        } => split_column_child_bounds(
+            bounds,
+            children,
+            gap,
+            dpi,
+            typography_scale,
+            text_measurements,
+        ),
         #[cfg(feature = "list")]
         ViewNodeKind::List { .. } => {
-            split_column_child_bounds(bounds, children, gap, dpi, typography_scale)
+            split_column_child_bounds(
+                bounds,
+                children,
+                gap,
+                dpi,
+                typography_scale,
+                text_measurements,
+            )
         }
         #[cfg(feature = "scroll")]
         ViewNodeKind::Scroll {
@@ -507,6 +524,7 @@ fn split_child_bounds<Msg>(
                 .unwrap_or(gap),
             dpi,
             typography_scale,
+            text_measurements,
         ),
         _ => vec![bounds; child_count],
     }
@@ -523,6 +541,7 @@ fn split_grid_child_bounds<Msg>(
     row_gap: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> Vec<Rect> {
     let column_minimums = grid_track_minimums(
         columns.len(),
@@ -531,6 +550,7 @@ fn split_grid_child_bounds<Msg>(
         false,
         dpi,
         typography_scale,
+        text_measurements,
     );
     let column_lengths =
         allocate_grid_track_lengths(bounds.width, column_gap, columns, &column_minimums, dpi);
@@ -543,6 +563,7 @@ fn split_grid_child_bounds<Msg>(
         row_gap,
         dpi,
         typography_scale,
+        text_measurements,
         HeightMeasurement::Minimum,
     );
     let row_lengths =
@@ -561,7 +582,15 @@ fn split_grid_child_bounds<Msg>(
                         *placement,
                     )
                 })
-                .map(|cell| constrained_child_bounds(cell, &children[index], dpi, typography_scale))
+                .map(|cell| {
+                    constrained_child_bounds(
+                        cell,
+                        &children[index],
+                        dpi,
+                        typography_scale,
+                        text_measurements,
+                    )
+                })
                 .unwrap_or(Rect {
                     x: bounds.x,
                     y: bounds.y,
@@ -601,6 +630,7 @@ fn grid_track_minimums<Msg>(
     vertical: bool,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> Vec<i32> {
     let mut minimums = vec![0; track_count];
     for (placement, child) in placements.iter().zip(children) {
@@ -638,9 +668,9 @@ fn grid_track_minimums<Msg>(
             })
             .unwrap_or(0);
         let intrinsic = if vertical {
-            intrinsic_min_height_px(child, 0, dpi, typography_scale)
+            intrinsic_min_height_px(child, 0, dpi, typography_scale, text_measurements)
         } else {
-            intrinsic_min_width_px(child, dpi, typography_scale)
+            intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
         };
         minimums[track] = minimums[track].max(fixed.max(minimum).max(intrinsic));
     }
@@ -657,6 +687,7 @@ fn grid_row_minimums_for_columns<Msg>(
     row_gap: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     measurement: HeightMeasurement,
 ) -> Vec<i32> {
     let mut minimums = vec![0; row_count];
@@ -675,6 +706,7 @@ fn grid_row_minimums_for_columns<Msg>(
             child_width,
             dpi,
             typography_scale,
+            text_measurements,
             measurement,
         );
         let start = placement.row;
@@ -719,6 +751,7 @@ fn grid_intrinsic_height_px<Msg>(
     row_gap: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     measurement: HeightMeasurement,
 ) -> i32 {
     if rows.is_empty() || columns.is_empty() {
@@ -731,6 +764,7 @@ fn grid_intrinsic_height_px<Msg>(
         false,
         dpi,
         typography_scale,
+        text_measurements,
     );
     let column_lengths = allocate_grid_track_lengths(
         available_width.max(0),
@@ -748,6 +782,7 @@ fn grid_intrinsic_height_px<Msg>(
         row_gap,
         dpi,
         typography_scale,
+        text_measurements,
         measurement,
     );
     let rows_height = rows
@@ -881,6 +916,7 @@ fn constrained_child_bounds<Msg>(
     child: &ViewNode<Msg>,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> Rect {
     let width = constrained_child_axis_length(
         cell.width,
@@ -888,6 +924,7 @@ fn constrained_child_bounds<Msg>(
         dpi,
         false,
         typography_scale,
+        text_measurements,
         cell.height,
     );
     let height = constrained_child_axis_length(
@@ -896,6 +933,7 @@ fn constrained_child_bounds<Msg>(
         dpi,
         true,
         typography_scale,
+        text_measurements,
         width,
     );
     Rect {
@@ -913,6 +951,7 @@ fn constrained_child_axis_length<Msg>(
     dpi: Dpi,
     vertical: bool,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     measurement_cross: i32,
 ) -> i32 {
     let fixed = if vertical {
@@ -935,9 +974,15 @@ fn constrained_child_axis_length<Msg>(
         })
         .unwrap_or(0);
     let minimum = minimum.max(if vertical {
-        intrinsic_min_height_px(child, measurement_cross, dpi, typography_scale)
+        intrinsic_min_height_px(
+            child,
+            measurement_cross,
+            dpi,
+            typography_scale,
+            text_measurements,
+        )
     } else {
-        intrinsic_min_width_px(child, dpi, typography_scale)
+        intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
     });
     fixed
         .map(|value| {
@@ -1016,6 +1061,7 @@ fn split_column_child_bounds<Msg>(
     gap: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> Vec<Rect> {
     let heights = allocate_axis_lengths(
         bounds.height,
@@ -1026,6 +1072,7 @@ fn split_column_child_bounds<Msg>(
         dpi,
         true,
         typography_scale,
+        text_measurements,
         bounds.width,
     );
     let mut y = bounds.y;
@@ -1039,6 +1086,7 @@ fn split_column_child_bounds<Msg>(
                 dpi,
                 false,
                 typography_scale,
+                text_measurements,
                 height,
             );
             let rect = Rect {
@@ -1138,6 +1186,7 @@ fn allocate_axis_lengths<Msg>(
     dpi: Dpi,
     vertical: bool,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     cross_available: i32,
 ) -> Vec<i32> {
     let total = total.max(0);
@@ -1172,9 +1221,15 @@ fn allocate_axis_lengths<Msg>(
                 })
                 .unwrap_or(0);
             let intrinsic = if vertical {
-                intrinsic_min_height_px(child, cross_available, dpi, typography_scale)
+                intrinsic_min_height_px(
+                    child,
+                    cross_available,
+                    dpi,
+                    typography_scale,
+                    text_measurements,
+                )
             } else {
-                intrinsic_min_width_px(child, dpi, typography_scale)
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
             };
             declared.max(intrinsic)
         })
@@ -1235,6 +1290,7 @@ fn cross_axis_length<Msg>(
     dpi: Dpi,
     vertical: bool,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     measurement_cross: i32,
 ) -> i32 {
     let available = available.max(0);
@@ -1259,9 +1315,15 @@ fn cross_axis_length<Msg>(
         })
         .unwrap_or(0);
     let intrinsic = if vertical {
-        intrinsic_min_height_px(child, measurement_cross, dpi, typography_scale)
+        intrinsic_min_height_px(
+            child,
+            measurement_cross,
+            dpi,
+            typography_scale,
+            text_measurements,
+        )
     } else {
-        intrinsic_min_width_px(child, dpi, typography_scale)
+        intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
     };
     let minimum = declared_minimum.max(intrinsic);
     // A stack owns its cross-axis cell, and text fills the available width so
@@ -1295,6 +1357,7 @@ fn intrinsic_min_width_px<Msg>(
     node: &ViewNode<Msg>,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> i32 {
     let declared = node
         .style
@@ -1326,7 +1389,56 @@ fn intrinsic_min_width_px<Msg>(
     let content = match &node.kind {
         #[cfg(feature = "label")]
         ViewNodeKind::Text { text, style } => {
-            estimated_text_min_width_px(text, *style, dpi, typography_scale)
+            measured_text_min_width_px(
+                text,
+                *style,
+                dpi,
+                typography_scale,
+                text_measurements,
+            )
+        }
+        #[cfg(feature = "button")]
+        ViewNodeKind::Button {
+            label,
+            presentation: ZsButtonPresentation::Standard,
+            enabled,
+            ..
+        } => {
+            let mut style = SemanticTextStyle::body();
+            style.role = TextRole::Button;
+            style.color = if *enabled {
+                ColorRole::PrimaryText
+            } else {
+                ColorRole::DisabledText
+            };
+            style.horizontal_align = crate::HorizontalAlign::Center;
+            let label_width = measured_text_min_width_px(
+                label,
+                style,
+                dpi,
+                typography_scale,
+                text_measurements,
+            );
+            let native_padding = if node.style.padding.is_some() {
+                0
+            } else {
+                let metrics = crate::ZsBaseControlMetrics::for_platform(
+                    node.resolved_platform_style(),
+                );
+                metrics
+                    .button_padding_left
+                    .to_px(dpi)
+                    .round_i32()
+                    .max(0)
+                    .saturating_add(
+                        metrics
+                            .button_padding_right
+                            .to_px(dpi)
+                            .round_i32()
+                            .max(0),
+                    )
+            };
+            label_width.saturating_add(native_padding)
         }
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
@@ -1339,7 +1451,9 @@ fn intrinsic_min_width_px<Msg>(
         } => node
             .children
             .iter()
-            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .map(|child| {
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+            })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
         ViewNodeKind::Stack {
@@ -1347,21 +1461,27 @@ fn intrinsic_min_width_px<Msg>(
         } => node
             .children
             .iter()
-            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .map(|child| {
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+            })
             .max()
             .unwrap_or(0),
         #[cfg(feature = "list")]
         ViewNodeKind::List { .. } => node
             .children
             .iter()
-            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .map(|child| {
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+            })
             .max()
             .unwrap_or(0),
         ViewNodeKind::Spacer => 0,
         _ => node
             .children
             .iter()
-            .map(|child| intrinsic_min_width_px(child, dpi, typography_scale))
+            .map(|child| {
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+            })
             .max()
             .unwrap_or(0),
     };
@@ -1380,12 +1500,14 @@ fn intrinsic_min_height_px<Msg>(
     available_width: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> i32 {
     measured_height_px(
         node,
         available_width,
         dpi,
         typography_scale,
+        text_measurements,
         HeightMeasurement::Minimum,
     )
 }
@@ -1396,12 +1518,14 @@ fn natural_height_px<Msg>(
     available_width: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> i32 {
     measured_height_px(
         node,
         available_width,
         dpi,
         typography_scale,
+        text_measurements,
         HeightMeasurement::Natural,
     )
 }
@@ -1411,6 +1535,7 @@ fn measured_height_px<Msg>(
     available_width: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
     measurement: HeightMeasurement,
 ) -> i32 {
     let declared_height = |value| {
@@ -1479,7 +1604,14 @@ fn measured_height_px<Msg>(
     let content = match &node.kind {
         #[cfg(feature = "label")]
         ViewNodeKind::Text { text, style } => {
-            estimated_text_min_height_px(text, *style, content_width, dpi, typography_scale)
+            measured_text_min_height_px(
+                text,
+                *style,
+                content_width,
+                dpi,
+                typography_scale,
+                text_measurements,
+            )
         }
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
@@ -1503,13 +1635,21 @@ fn measured_height_px<Msg>(
                 dpi,
                 false,
                 typography_scale,
+                text_measurements,
                 0,
             );
             node.children
                 .iter()
                 .zip(widths)
                 .map(|(child, width)| {
-                    measured_height_px(child, width, dpi, typography_scale, measurement)
+                    measured_height_px(
+                        child,
+                        width,
+                        dpi,
+                        typography_scale,
+                        text_measurements,
+                        measurement,
+                    )
                 })
                 .max()
                 .unwrap_or(0)
@@ -1520,7 +1660,14 @@ fn measured_height_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                measured_height_px(child, content_width, dpi, typography_scale, measurement)
+                measured_height_px(
+                    child,
+                    content_width,
+                    dpi,
+                    typography_scale,
+                    text_measurements,
+                    measurement,
+                )
             })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
@@ -1529,7 +1676,14 @@ fn measured_height_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                measured_height_px(child, content_width, dpi, typography_scale, measurement)
+                measured_height_px(
+                    child,
+                    content_width,
+                    dpi,
+                    typography_scale,
+                    text_measurements,
+                    measurement,
+                )
             })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
@@ -1554,6 +1708,7 @@ fn measured_height_px<Msg>(
                 .unwrap_or(gap),
             dpi,
             typography_scale,
+            text_measurements,
             measurement,
         ),
         #[cfg(feature = "tabs")]
@@ -1573,6 +1728,7 @@ fn measured_height_px<Msg>(
                         tab_content_width,
                         dpi,
                         typography_scale,
+                        text_measurements,
                         measurement,
                     )
                 })
@@ -1587,7 +1743,14 @@ fn measured_height_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                measured_height_px(child, content_width, dpi, typography_scale, measurement)
+                measured_height_px(
+                    child,
+                    content_width,
+                    dpi,
+                    typography_scale,
+                    text_measurements,
+                    measurement,
+                )
             })
             .max()
             .unwrap_or(0),
@@ -1628,13 +1791,19 @@ fn standalone_badge_size_px<Msg>(
     )
 }
 
-#[cfg(feature = "label")]
-fn estimated_text_min_width_px(
+#[cfg(any(feature = "button", feature = "label"))]
+fn measured_text_min_width_px(
     text: &str,
     style: SemanticTextStyle,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> i32 {
+    if style.wrap != crate::TextWrap::Word {
+        if let Some(measured) = text_measurements.measure(text, style, 0) {
+            return measured.width.max(0);
+        }
+    }
     let units = if style.wrap == crate::TextWrap::Word {
         text.lines()
             .map(estimated_wrapping_segment_units)
@@ -1647,13 +1816,22 @@ fn estimated_text_min_width_px(
 }
 
 #[cfg(feature = "label")]
-fn estimated_text_min_height_px(
+fn measured_text_min_height_px(
     text: &str,
     style: SemanticTextStyle,
     available_width: i32,
     dpi: Dpi,
     typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
 ) -> i32 {
+    if let Some(measured) = text_measurements.measure(text, style, available_width) {
+        return measured.height.max(1);
+    }
+    if style.wrap != crate::TextWrap::Word {
+        if let Some(measured) = text_measurements.measure(text, style, 0) {
+            return measured.height.max(1);
+        }
+    }
     let line_height = Dp::new(
         style
             .role
@@ -1683,7 +1861,7 @@ fn estimated_text_min_height_px(
     line_height.saturating_mul(rows)
 }
 
-#[cfg(feature = "label")]
+#[cfg(any(feature = "button", feature = "label"))]
 fn estimated_text_units_px(
     units: i32,
     style: SemanticTextStyle,
@@ -1710,7 +1888,7 @@ fn estimated_text_units_px(
     Dp::new(width).to_px(dpi).ceil_i32().max(1)
 }
 
-#[cfg(feature = "label")]
+#[cfg(any(feature = "button", feature = "label"))]
 fn estimated_wrapping_segment_units(line: &str) -> i32 {
     let mut longest = 0i32;
     let mut current_ascii_word = 0i32;
@@ -1898,4 +2076,57 @@ fn clipped_rect(rect: Rect, clip: Option<Rect>) -> Option<Rect> {
         width,
         height,
     })
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ViewTextMeasurement {
+    text: String,
+    style: crate::SemanticTextStyle,
+    max_width: i32,
+    size: crate::Size,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ViewTextMeasurements {
+    entries: Vec<ViewTextMeasurement>,
+}
+
+impl ViewTextMeasurements {
+    pub(crate) fn insert(
+        &mut self,
+        text: impl Into<String>,
+        style: crate::SemanticTextStyle,
+        max_width: i32,
+        size: crate::Size,
+    ) {
+        let text = text.into();
+        let max_width = max_width.max(0);
+        let size = size.clamp_non_negative();
+        if let Some(entry) = self.entries.iter_mut().find(|entry| {
+            entry.text == text && entry.style == style && entry.max_width == max_width
+        }) {
+            entry.size = size;
+            return;
+        }
+        self.entries.push(ViewTextMeasurement {
+            text,
+            style,
+            max_width,
+            size,
+        });
+    }
+
+    pub(crate) fn measure(
+        &self,
+        text: &str,
+        style: crate::SemanticTextStyle,
+        max_width: i32,
+    ) -> Option<crate::Size> {
+        let max_width = max_width.max(0);
+        self.entries
+            .iter()
+            .find(|entry| {
+                entry.text == text && entry.style == style && entry.max_width == max_width
+            })
+            .map(|entry| entry.size)
+    }
 }

@@ -60,6 +60,17 @@ pub(crate) trait NativeTextShaper {
         1.0
     }
 
+    fn measure(
+        &self,
+        _text: &str,
+        _style: crate::SemanticTextStyle,
+        _max_width: i32,
+        _dpi: Dpi,
+        _typography_scale: f32,
+    ) -> Option<crate::Size> {
+        None
+    }
+
     fn shape_line(&self, text: &str) -> Option<NativeShapedTextLine>;
 }
 
@@ -118,6 +129,52 @@ impl NativeTextShapingBackend {
             Self::Test(shape) => shape(text, fallback_width),
         };
         shaped.unwrap_or_else(|| NativeShapedTextLine::logical_cells(text, fallback_width))
+    }
+
+    pub(crate) fn measure_draw_plan_text(
+        &self,
+        plan: &NativeDrawPlan,
+        dpi: Dpi,
+        previous: &crate::view::ViewTextMeasurements,
+    ) -> crate::view::ViewTextMeasurements {
+        let mut measurements = crate::view::ViewTextMeasurements::default();
+        let Self::Platform(shaper, _) = self else {
+            return measurements;
+        };
+        let typography_scale = plan.typography_scale();
+        for command in &plan.commands {
+            let NativeDrawCommand::Text(command) = command else {
+                continue;
+            };
+            if let Some(size) = previous
+                .measure(&command.text, command.style, 0)
+                .or_else(|| shaper.measure(&command.text, command.style, 0, dpi, typography_scale))
+            {
+                measurements.insert(command.text.clone(), command.style, 0, size);
+            }
+            if command.style.wrap == crate::TextWrap::Word && command.bounds.width > 0 {
+                if let Some(size) = previous
+                    .measure(&command.text, command.style, command.bounds.width)
+                    .or_else(|| {
+                        shaper.measure(
+                            &command.text,
+                            command.style,
+                            command.bounds.width,
+                            dpi,
+                            typography_scale,
+                        )
+                    })
+                {
+                    measurements.insert(
+                        command.text.clone(),
+                        command.style,
+                        command.bounds.width,
+                        size,
+                    );
+                }
+            }
+        }
+        measurements
     }
 }
 

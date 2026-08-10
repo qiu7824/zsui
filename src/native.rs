@@ -83,6 +83,7 @@ use crate::{
     view::{
         live_view_runtime, live_view_runtime_with_app_commands, AppCx, SharedLiveViewRuntime, View,
         ViewEvent, ViewEventCx, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewPaintCx,
+        ViewTextMeasurements,
     },
     window::{Window, WindowSpec},
 };
@@ -1408,6 +1409,7 @@ pub(crate) struct NativeViewInputRuntime {
     dpi: Dpi,
     typography_scale_per_mille: u16,
     text_shaping: crate::native_input_visuals::NativeTextShapingBackend,
+    text_measurements: std::sync::Arc<ViewTextMeasurements>,
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
@@ -1764,6 +1766,7 @@ impl NativeViewInputRuntime {
             typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
             ),
             text_shaping: crate::native_input_visuals::NativeTextShapingBackend::default(),
+            text_measurements: std::sync::Arc::new(ViewTextMeasurements::default()),
             interaction_plan,
             ui_command_view,
             live_view,
@@ -1963,15 +1966,98 @@ impl NativeViewInputRuntime {
         self.reconcile_modal_focus(&mut NativeViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
-        update
-            .redraw
-            .then(|| self.compose_input_visuals(runtime.draw_plan()))
+        if !update.redraw {
+            return None;
+        }
+        let plan = self.stabilize_native_text_layout(runtime.draw_plan());
+        Some(self.compose_input_visuals(plan))
     }
     pub(crate) fn set_text_shaping_backend(
         &mut self,
         backend: crate::native_input_visuals::NativeTextShapingBackend,
     ) {
+        self.clear_native_text_measurements();
         self.text_shaping = backend;
+        self.refresh_native_text_measurements();
+    }
+
+    fn clear_native_text_measurements(&mut self) {
+        let measurements = std::sync::Arc::new(ViewTextMeasurements::default());
+        self.text_measurements = measurements.clone();
+        if let Some(runtime) = &self.live_view {
+            runtime.set_text_measurements(measurements);
+        }
+    }
+
+    fn raw_view_draw_plan(&self) -> Option<NativeDrawPlan> {
+        if self.view_suspended {
+            return None;
+        }
+        if let Some(runtime) = &self.live_view {
+            return Some(runtime.draw_plan());
+        }
+        let view = self.ui_command_view.as_ref()?;
+        let elapsed = self
+            .animation_epoch
+            .map(|epoch| epoch.elapsed())
+            .unwrap_or_default();
+        let mut paint_cx = ViewPaintCx::with_animation_elapsed(self.dpi, elapsed);
+        paint_cx.set_typography_scale(self.typography_scale());
+        view.paint(&mut paint_cx);
+        Some(paint_cx.into_plan())
+    }
+
+    fn refresh_native_text_measurements(&mut self) -> bool {
+        let previous = self.text_measurements.clone();
+        let Some(plan) = self.raw_view_draw_plan() else {
+            return false;
+        };
+        let _ = self.stabilize_native_text_layout(plan);
+        previous.as_ref() != self.text_measurements.as_ref()
+    }
+
+    fn install_native_text_measurements(
+        &mut self,
+        measurements: std::sync::Arc<ViewTextMeasurements>,
+    ) -> bool {
+        if measurements.as_ref() == self.text_measurements.as_ref() {
+            return false;
+        }
+        self.text_measurements = measurements.clone();
+        if let Some(runtime) = &self.live_view {
+            runtime.set_text_measurements(measurements);
+            self.interaction_plan = Some(runtime.interaction_plan());
+            return true;
+        }
+        let surface = self.surface;
+        let dpi = self.dpi;
+        let typography_scale = self.typography_scale();
+        if let (Some(surface), Some(view)) = (surface, self.ui_command_view.as_mut()) {
+            let mut layout_cx = ViewLayoutCx::new(surface, dpi)
+                .with_typography_scale(typography_scale)
+                .with_text_measurements(measurements);
+            view.layout(&mut layout_cx);
+            self.interaction_plan = Some(view.interaction_plan());
+        }
+        true
+    }
+
+    fn stabilize_native_text_layout(&mut self, mut plan: NativeDrawPlan) -> NativeDrawPlan {
+        for _ in 0..2 {
+            let measurements = std::sync::Arc::new(self.text_shaping.measure_draw_plan_text(
+                &plan,
+                self.dpi,
+                self.text_measurements.as_ref(),
+            ));
+            if !self.install_native_text_measurements(measurements) {
+                break;
+            }
+            let Some(next) = self.raw_view_draw_plan() else {
+                break;
+            };
+            plan = next;
+        }
+        plan
     }
 
     #[cfg(feature = "tooltip")]
@@ -2637,6 +2723,7 @@ impl NativeViewInputRuntime {
         }
         self.typography_scale_per_mille = scale_per_mille;
         self.text_shaping.release_idle_memory();
+        self.clear_native_text_measurements();
         let scale = self.typography_scale();
         let plan = if let Some(runtime) = &self.live_view {
             runtime.set_typography_scale(scale);
@@ -2648,7 +2735,9 @@ impl NativeViewInputRuntime {
         } else {
             let surface = self.surface?;
             let view = self.ui_command_view.as_mut()?;
-            let mut layout_cx = ViewLayoutCx::new(surface, self.dpi).with_typography_scale(scale);
+            let mut layout_cx = ViewLayoutCx::new(surface, self.dpi)
+                .with_typography_scale(scale)
+                .with_text_measurements(self.text_measurements.clone());
             view.layout(&mut layout_cx);
             self.interaction_plan = Some(view.interaction_plan());
             let mut paint_cx = ViewPaintCx::new(self.dpi);
@@ -2656,6 +2745,7 @@ impl NativeViewInputRuntime {
             view.paint(&mut paint_cx);
             paint_cx.into_plan()
         };
+        let plan = self.stabilize_native_text_layout(plan);
         Some(self.compose_input_visuals(plan))
     }
 
@@ -2693,6 +2783,9 @@ impl NativeViewInputRuntime {
             ime_selection: self.ime_preedit.as_ref().and_then(|state| state.selection),
             ..NativeViewInputDispatchReport::default()
         };
+        if self.dpi != dpi {
+            self.clear_native_text_measurements();
+        }
         if self.surface == Some(surface) && self.dpi == dpi {
             report.ime_caret_rect = self.text_input_caret_rect();
             self.populate_text_report(&mut report);
@@ -2761,8 +2854,9 @@ impl NativeViewInputRuntime {
                 report.redraw_plan = Some(runtime.draw_plan());
             }
         } else if let Some(view) = &mut self.ui_command_view {
-            let mut layout_cx =
-                ViewLayoutCx::new(surface, dpi).with_typography_scale(typography_scale);
+            let mut layout_cx = ViewLayoutCx::new(surface, dpi)
+                .with_typography_scale(typography_scale)
+                .with_text_measurements(self.text_measurements.clone());
             view.layout(&mut layout_cx);
             let interaction_plan = view.interaction_plan();
             report.hit_target_count = interaction_plan.hit_target_count();
@@ -2798,6 +2892,7 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "toast")]
         self.sync_toast_runtime(std::time::Instant::now());
         if let Some(plan) = report.redraw_plan.take() {
+            let plan = self.stabilize_native_text_layout(plan);
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.hit_target_count = self.hit_target_count();
@@ -7792,7 +7887,8 @@ impl NativeViewInputRuntime {
                 view.event(&mut event_cx, &event);
                 if let Some(surface) = self.surface {
                     let mut layout_cx = ViewLayoutCx::new(surface, self.dpi)
-                        .with_typography_scale(typography_scale);
+                        .with_typography_scale(typography_scale)
+                        .with_text_measurements(self.text_measurements.clone());
                     view.layout(&mut layout_cx);
                     let interaction_plan = view.interaction_plan();
                     report.hit_target_count = interaction_plan.hit_target_count();
@@ -7869,6 +7965,7 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "textbox")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
+            let plan = self.stabilize_native_text_layout(plan);
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
@@ -8098,6 +8195,7 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "textbox")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
+            let plan = self.stabilize_native_text_layout(plan);
             report.redraw_plan = Some(self.compose_input_visuals(plan));
         }
         report.focused_widget = self.focused_widget.map(|widget| widget.0);
@@ -14213,6 +14311,37 @@ mod tests {
         assert!(report.surface_changed);
         assert!(report.redraw_plan.is_some());
         assert_ne!(initial.bounds, resized.bounds);
+    }
+
+    #[cfg(all(
+        windows,
+        feature = "label",
+        feature = "text-input-core",
+        feature = "windows-win32"
+    ))]
+    #[test]
+    fn native_runtime_installs_windows_system_text_measurements_before_paint() {
+        let value = "中文 proportional text / 平台真实测量";
+        let style = crate::SemanticTextStyle::body();
+        let builder = native_window("Native Text Measurement")
+            .size(320, 120)
+            .stateful_view(
+                (),
+                move |_| crate::styled_text(value, style),
+                |_state, _message: (), _cx| {},
+            );
+        let mut runtime = builder.native_view_input_runtime();
+
+        runtime.set_text_shaping_backend(
+            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
+        );
+
+        let measured = runtime
+            .text_measurements
+            .measure(value, style, 0)
+            .expect("Windows system text measurement should be retained for View layout");
+        assert!(measured.width > 0);
+        assert!(measured.height > 0);
     }
 
     #[test]

@@ -2351,6 +2351,22 @@ impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
         appkit_ui_font_scale()
     }
 
+    fn measure(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+    ) -> Option<Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            appkit_native_typography_profile(typography_scale),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let style = resolver.resolve_text_style(semantic);
+        Some(MacosAppKitTextLayout.measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_macos_appkit_text_line(text)
     }

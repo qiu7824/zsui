@@ -1051,35 +1051,38 @@ impl ViewHitTargetKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ViewLayoutCx {
     pub bounds: Rect,
     pub dpi: Dpi,
     pub(crate) typography_scale_per_mille: u16,
+    pub(crate) text_measurements: Arc<ViewTextMeasurements>,
     depth: usize,
 }
 
 impl ViewLayoutCx {
-    pub const fn new(bounds: Rect, dpi: Dpi) -> Self {
+    pub fn new(bounds: Rect, dpi: Dpi) -> Self {
         Self {
             bounds,
             dpi,
             typography_scale_per_mille:
                 crate::render_protocol::default_typography_scale_per_mille(),
+            text_measurements: Arc::new(ViewTextMeasurements::default()),
             depth: 0,
         }
     }
 
-    pub(crate) fn child(self, bounds: Rect) -> Self {
+    pub(crate) fn child(&self, bounds: Rect) -> Self {
         Self {
             bounds,
             dpi: self.dpi,
             typography_scale_per_mille: self.typography_scale_per_mille,
+            text_measurements: self.text_measurements.clone(),
             depth: self.depth.saturating_add(1),
         }
     }
 
-    pub(crate) const fn is_root(self) -> bool {
+    pub(crate) const fn is_root(&self) -> bool {
         self.depth == 0
     }
 
@@ -1089,7 +1092,15 @@ impl ViewLayoutCx {
         self
     }
 
-    pub(crate) fn typography_scale(self) -> f32 {
+    pub(crate) fn with_text_measurements(
+        mut self,
+        measurements: Arc<ViewTextMeasurements>,
+    ) -> Self {
+        self.text_measurements = measurements;
+        self
+    }
+
+    pub(crate) fn typography_scale(&self) -> f32 {
         f32::from(self.typography_scale_per_mille) / 1_000.0
     }
 }

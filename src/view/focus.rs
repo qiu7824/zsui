@@ -15,6 +15,7 @@ trait LiveViewDriver: Send {
     fn surface(&self) -> (Rect, Dpi);
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
     fn set_typography_scale(&mut self, scale: f32) -> bool;
+    fn set_text_measurements(&mut self, measurements: Arc<ViewTextMeasurements>) -> bool;
     fn suspend(&mut self) -> bool;
     fn resume(&mut self) -> LiveViewUpdate;
     fn is_suspended(&self) -> bool;
@@ -145,6 +146,13 @@ impl SharedLiveViewRuntime {
 
     pub(crate) fn set_typography_scale(&self, scale: f32) -> bool {
         self.lock().set_typography_scale(scale)
+    }
+
+    pub(crate) fn set_text_measurements(
+        &self,
+        measurements: Arc<ViewTextMeasurements>,
+    ) -> bool {
+        self.lock().set_text_measurements(measurements)
     }
 
     pub fn draw_plan(&self) -> NativeDrawPlan {
@@ -433,6 +441,7 @@ where
     bounds: Rect,
     dpi: Dpi,
     typography_scale_per_mille: u16,
+    text_measurements: Arc<ViewTextMeasurements>,
     revision: u64,
     animation_epoch: std::time::Instant,
     suspended: bool,
@@ -463,6 +472,7 @@ where
             dpi,
             typography_scale_per_mille:
                 crate::render_protocol::default_typography_scale_per_mille(),
+            text_measurements: Arc::new(ViewTextMeasurements::default()),
             revision: 0,
             animation_epoch: std::time::Instant::now(),
             suspended: false,
@@ -488,7 +498,8 @@ where
 
     fn layout_current_view(&mut self) {
         let mut cx = ViewLayoutCx::new(self.bounds, self.dpi)
-            .with_typography_scale(self.typography_scale());
+            .with_typography_scale(self.typography_scale())
+            .with_text_measurements(self.text_measurements.clone());
         self.view.layout(&mut cx);
     }
 
@@ -552,6 +563,17 @@ where
             self.layout_current_view();
         }
         self.revision = self.revision.saturating_add(1);
+        true
+    }
+
+    fn set_text_measurements(&mut self, measurements: Arc<ViewTextMeasurements>) -> bool {
+        if self.text_measurements.as_ref() == measurements.as_ref() {
+            return false;
+        }
+        self.text_measurements = measurements;
+        if !self.suspended {
+            self.layout_current_view();
+        }
         true
     }
 

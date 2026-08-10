@@ -1069,6 +1069,22 @@ impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
         "WindowsGdi"
     }
 
+    fn measure(
+        &self,
+        text: &str,
+        semantic: SemanticTextStyle,
+        max_width: i32,
+        dpi: Dpi,
+        typography_scale: f32,
+    ) -> Option<Size> {
+        let dc = WindowsGdiOwnedMemoryDc::new()?;
+        let mut style = WindowsGdiStyleResolver::default().resolve_text_style(semantic);
+        let typography_scale = typography_scale.max(0.5);
+        style.size *= typography_scale;
+        style.line_height *= typography_scale;
+        Some(WindowsGdiTextLayout::with_dpi(dc.0, dpi).measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_windows_gdi_text_line(text)
     }

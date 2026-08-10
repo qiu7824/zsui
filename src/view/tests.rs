@@ -1162,6 +1162,152 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn native_text_measurement_replaces_logical_cell_width_during_layout() {
+        let label = WidgetId::new(728);
+        let action = WidgetId::new(729);
+        let label_text = "设置路径 / Settings path";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            label_text,
+            style,
+            0,
+            crate::Size {
+                width: 187,
+                height: 23,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(label_text, style).id(label),
+            button("浏览 / Browse").id(action),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 140,
+                    height: 40,
+                },
+                Dpi::standard(),
+            )
+            .with_text_measurements(Arc::new(measurements)),
+        );
+        let label_bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == label.into())
+            .expect("measured label should expose layout bounds")
+            .bounds;
+
+        assert_eq!(label_bounds.width, 187);
+    }
+
+    #[test]
+    #[cfg(all(feature = "button", feature = "label"))]
+    fn native_button_measurement_expands_the_control_before_text_can_clip() {
+        let button_id = WidgetId::new(732);
+        let label = "宽按钮 / Proportional action";
+        let mut style = SemanticTextStyle::body();
+        style.role = TextRole::Button;
+        style.horizontal_align = crate::HorizontalAlign::Center;
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            label,
+            style,
+            0,
+            crate::Size {
+                width: 196,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([button(label).id(button_id)]);
+        let output = view.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 420,
+                    height: 40,
+                },
+                Dpi::standard(),
+            )
+            .with_text_measurements(Arc::new(measurements)),
+        );
+        let bounds = output
+            .children
+            .iter()
+            .find(|node| node.component == button_id.into())
+            .expect("button should expose layout bounds")
+            .bounds;
+        let metrics = crate::ZsBaseControlMetrics::current();
+        let expected = 196
+            + metrics
+                .button_padding_left
+                .to_px(Dpi::standard())
+                .round_i32()
+            + metrics
+                .button_padding_right
+                .to_px(Dpi::standard())
+                .round_i32();
+
+        assert!(bounds.width >= expected);
+    }
+
+    #[test]
+    #[cfg(feature = "label")]
+    fn native_wrapped_text_height_prevents_following_content_overlap() {
+        let wrapped = WidgetId::new(730);
+        let following = WidgetId::new(731);
+        let value = "中文和 proportional Latin text 必须共享真实断行测量。";
+        let mut style = SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        style.ellipsis = false;
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            value,
+            style,
+            200,
+            crate::Size {
+                width: 196,
+                height: 63,
+            },
+        );
+        let mut view: ViewNode<()> = column([
+            styled_text(value, style).id(wrapped),
+            text("后续内容 / Following content").id(following),
+        ])
+        .gap(Dp::new(8.0));
+        let output = view.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 160,
+                },
+                Dpi::standard(),
+            )
+            .with_text_measurements(Arc::new(measurements)),
+        );
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("text child should expose layout bounds")
+                .bounds
+        };
+        let wrapped_bounds = bounds_for(wrapped);
+        let following_bounds = bounds_for(following);
+
+        assert_eq!(wrapped_bounds.height, 63);
+        assert!(following_bounds.y >= wrapped_bounds.y + wrapped_bounds.height + 8);
+    }
+
+    #[test]
     #[cfg(feature = "label")]
     fn semantic_page_uses_platform_page_padding_and_content_gap() {
         let first = WidgetId::new(719);

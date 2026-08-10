@@ -109,6 +109,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                         plan.content_bounds.width,
                         cx.dpi,
                         cx.typography_scale(),
+                        cx.text_measurements.as_ref(),
                     )
                 })
                 .unwrap_or(0);
@@ -149,6 +150,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                     child,
                     cx.dpi,
                     cx.typography_scale(),
+                    cx.text_measurements.as_ref(),
                 )
             });
             #[cfg(not(feature = "scroll"))]
@@ -157,6 +159,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                 child,
                 cx.dpi,
                 cx.typography_scale(),
+                cx.text_measurements.as_ref(),
             );
             let mut child_cx = cx.child(child_bounds);
             children.extend(child.layout(&mut child_cx).children);
@@ -572,6 +575,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         content_bounds.width,
                         cx.dpi,
                         cx.typography_scale(),
+                        cx.text_measurements.as_ref(),
                     )
                 })
                 .unwrap_or(0);
@@ -611,6 +615,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 cx.bounds.width,
                 cx.dpi,
                 cx.typography_scale(),
+                cx.text_measurements.as_ref(),
             )
             .saturating_sub(padding.saturating_mul(2));
             let resolved_content_px = content_bounds.height.max(natural_content_px);
@@ -651,6 +656,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             self.style.gap,
             cx.dpi,
             cx.typography_scale(),
+            cx.text_measurements.as_ref(),
             #[cfg(feature = "scroll")]
             Some(self.resolved_scroll_content_height),
             #[cfg(not(feature = "scroll"))]

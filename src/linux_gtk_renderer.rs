@@ -1195,6 +1195,22 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
         linux_gtk_ui_font_scale()
     }
 
+    fn measure(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+    ) -> Option<Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            linux_gtk_native_typography_profile(typography_scale, Some(&self.context)),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let style = resolver.resolve_text_style(semantic);
+        Some(LinuxGtkTextLayout::new(self.context.clone()).measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_linux_gtk_text_line(&self.context, text)
     }
