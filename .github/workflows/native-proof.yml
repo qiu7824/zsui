@@ -1230,10 +1230,23 @@ jobs:
               exit 1
             fi
             xdotool windowraise "$window" 2>/dev/null || true
-            sleep 0.5
-            import -window "$window" "$screenshot"
+            capture="$root/native-system-dialog-capture.png"
+            rm -f "$screenshot" "$capture"
+            for attempt in $(seq 1 40); do
+              if import -window "$window" "$capture" 2>/dev/null \
+                && [ -s "$capture" ] \
+                && [ "$(stat --format=%s "$capture")" -ge 1024 ]; then
+                mv "$capture" "$screenshot"
+                break
+              fi
+              rm -f "$capture"
+              sleep 0.2
+            done
             if [ ! -s "$screenshot" ] || [ "$(stat --format=%s "$screenshot")" -lt 1024 ]; then
-              import -window root "$screenshot"
+              kill "$dialog_pid" 2>/dev/null || true
+              wait "$dialog_pid" 2>/dev/null || true
+              echo "the Linux desktop dialog did not produce a valid window capture" >&2
+              exit 1
             fi
             xdotool key --window "$window" Return
             wait "$dialog_pid"
