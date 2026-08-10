@@ -2228,7 +2228,7 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShape
             linux_direct_native_typography_profile(typography_scale, Some(&self.context)),
             NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
         );
-        let style = resolver.resolve_text_style(semantic);
+        let style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
         Some(LinuxDirectTextLayout::new(self.context.clone()).measure(text, &style, max_width))
     }
 
@@ -2290,7 +2290,7 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper
             crate::linux_direct_lite::linux_lite_typography_profile(typography_scale, &self.system),
             NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
         );
-        let style = resolver.resolve_text_style(semantic);
+        let style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
         Some(
             self.system
                 .measure(text, &style, (max_width > 0).then_some(max_width as f32)),
