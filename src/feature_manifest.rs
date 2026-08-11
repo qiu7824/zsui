@@ -640,6 +640,23 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "shared self-drawn notepad acceptance example on target-native Win32, AppKit and Linux hosts",
         ),
         ZsuiCargoFeature::new(
+            "notepad-demo-gtk",
+            Tooling,
+            false,
+            Vec::new(),
+            vec![
+                "linux-gtk",
+                "button",
+                "label",
+                "textbox",
+                "tabs",
+                "dialog",
+                "clipboard",
+                "document-shell",
+            ],
+            "same shared notepad source built against the real GTK4 application and DrawingArea host",
+        ),
+        ZsuiCargoFeature::new(
             "notepad-demo-lite",
             Tooling,
             false,
@@ -860,6 +877,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "desktop-winit",
                 "hotkey",
                 "localization",
+                "linux-gtk",
                 "linux-system-icons",
                 "mobile",
                 "native-smoke",
@@ -960,6 +978,20 @@ mod tests {
             .expect("Linux lite text feature should be listed");
         assert_eq!(linux_lite.enables, vec!["linux-direct-host", "rust-text"]);
         assert_eq!(linux_lite.optional_dependency_names, vec!["tiny-skia"]);
+    }
+
+    #[test]
+    fn notepad_gtk_profile_selects_only_the_gtk_host() {
+        let manifest = zsui_feature_manifest();
+        let gtk = manifest
+            .iter()
+            .find(|feature| feature.name == "notepad-demo-gtk")
+            .expect("GTK notepad profile should be listed");
+
+        assert!(gtk.enables.contains(&"linux-gtk"));
+        assert!(!gtk.enables.contains(&"window"));
+        assert!(!gtk.enables.contains(&"linux-direct"));
+        assert!(!gtk.enables.contains(&"linux-direct-lite"));
     }
 
     #[test]

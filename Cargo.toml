@@ -126,6 +126,7 @@ video = ["widgets-base"]
 native-smoke = ["image"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
+notepad-demo-gtk = ["linux-gtk", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
 notepad-demo-lite = ["linux-direct-lite", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell", "native-smoke"]
 calculator-demo = ["window", "calculator", "native-smoke"]
 component-gallery-demo = ["window", "all-widgets", "native-smoke", "style", "dark-mode"]
@@ -223,6 +224,11 @@ required-features = ["workbench", "window"]
 name = "zsui_notepad"
 path = "examples/zsui_notepad.rs"
 required-features = ["notepad-demo"]
+
+[[example]]
+name = "zsui_notepad_gtk"
+path = "examples/zsui_notepad.rs"
+required-features = ["notepad-demo-gtk"]
 
 [[example]]
 name = "zsui_notepad_lite"

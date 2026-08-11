@@ -1161,7 +1161,7 @@ jobs:
           retention-days: 30
 
   linux-direct-proof:
-    name: Lightweight Linux Runtime Proof
+    name: Linux Native Runtime Proof
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -1183,6 +1183,7 @@ jobs:
             libcairo2-dev \
             libdbus-1-dev \
             libgdk-pixbuf-2.0-dev \
+            libgtk-4-dev \
             libpango1.0-dev \
             libx11-dev \
             libxkbcommon-dev \
@@ -1222,6 +1223,12 @@ jobs:
             --example zsui_notepad \
             --no-default-features \
             --features notepad-demo
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad_gtk \
+            --no-default-features \
+            --features notepad-demo-gtk,accessibility
           cargo build \
             --release \
             --locked \
@@ -1328,6 +1335,7 @@ jobs:
           set -o pipefail
           mkdir -p \
             target/native-proof/ubuntu-24.04-x86_64 \
+            target/native-proof/ubuntu-24.04-x86_64-gtk4 \
             target/native-proof/ubuntu-24.04-x86_64-lite
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/native_clipboard_smoke \
@@ -1395,6 +1403,13 @@ jobs:
               --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/zsui_notepad_gtk \
+              --native-proof \
+              --width 960 \
+              --height 640 \
+              --output target/native-proof/ubuntu-24.04-x86_64-gtk4 \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-gtk4/notepad.log
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/zsui_notepad_lite \
               --native-proof \
@@ -1814,12 +1829,56 @@ jobs:
           assert proof["window"]["height"] == 640
           validate_notepad_text(runtime, "linux_direct")
 
+          gtk_root = Path("target/native-proof/ubuntu-24.04-x86_64-gtk4")
+          gtk_png = gtk_root / "notepad-interaction.png"
+          gtk_report = gtk_root / "notepad-interaction.json"
+          if gtk_png.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
+              raise SystemExit(f"{gtk_png} is not a PNG")
+          proof = json.loads(gtk_report.read_text(encoding="utf-8"))
+          runtime = proof["runtime"]
+          capture = runtime.get("native_view_capture") or {}
+          assert proof["schema"] == "zsui.native-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["backend"] == "gtk4"
+          assert proof["capture_backend"] == "gtk_widget_paintable_gsk_texture"
+          assert proof["os_family"] == "ubuntu-24.04"
+          assert proof["architecture"] == "x86_64"
+          assert proof["errors"] == []
+          assert proof["unhandled_commands"] == []
+          assert proof["typography"]["platform"] == "Gtk"
+          assert proof["typography"]["source"] == "gtk_settings_pango_context"
+          assert proof["typography"] == capture["typography"]
+          assert capture["backend"] == "gtk_widget_paintable_gsk_texture"
+          assert capture["logical_width"] == 960
+          assert capture["logical_height"] == 640
+          assert capture["pixel_width"] > 0
+          assert capture["pixel_height"] > 0
+          assert capture["scale_factor"] > 0.0
+          assert runtime["created_window_count"] == 1
+          assert runtime["screenshot_captured"] is True
+          assert not runtime["screenshot_error"]
+          assert runtime["window_menu_command_routed"] is True
+          memory = runtime["process_memory_during_runtime"]
+          assert memory["source"] == "linux_procfs_status_smaps_rollup"
+          assert memory["sample_point"] == "native_window_before_teardown"
+          assert memory["resident_bytes"] > 0
+          validate_notepad_text(runtime, "gtk")
+
       - name: Upload Linux proof
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: zsui-linux-direct-native-proof
           path: target/native-proof/ubuntu-24.04-x86_64
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload GTK4 native proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-gtk4-native-proof
+          path: target/native-proof/ubuntu-24.04-x86_64-gtk4
           if-no-files-found: error
           retention-days: 30
 

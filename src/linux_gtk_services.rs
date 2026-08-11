@@ -33,6 +33,7 @@ pub(crate) struct LinuxGtkNativeWindowRunReport {
     pub native_view_capture: Option<Result<crate::NativeViewCaptureEvidence, String>>,
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub menu_command_routed: bool,
+    pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
 }
 
 pub(crate) fn run_linux_gtk_native_window_event_loop(
@@ -49,6 +50,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             native_view_capture: None,
             proof_input_reports: Vec::new(),
             menu_command_routed: false,
+            process_memory: None,
         });
     }
     let application = gtk::Application::builder()
@@ -66,6 +68,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let proof_inputs = Rc::new(proof_inputs.to_vec());
     let proof_input_reports = Rc::new(RefCell::new(Vec::new()));
     let menu_command_routed = Rc::new(RefCell::new(false));
+    let process_memory = Rc::new(RefCell::new(None));
 
     application.connect_activate({
         let specs = Rc::clone(&specs);
@@ -79,6 +82,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         let proof_inputs = Rc::clone(&proof_inputs);
         let proof_input_reports = Rc::clone(&proof_input_reports);
         let menu_command_routed = Rc::clone(&menu_command_routed);
+        let process_memory = Rc::clone(&process_memory);
         move |application| {
             if state.borrow().is_some() {
                 return;
@@ -170,7 +174,11 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                 let state = Rc::clone(&state);
                 let capture_path = Rc::clone(&capture_path);
                 let capture_result = Rc::clone(&capture_result);
+                let process_memory = Rc::clone(&process_memory);
                 gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
+                    *process_memory.borrow_mut() = crate::desktop_runtime::capture_process_memory(
+                        "native_window_before_teardown",
+                    );
                     if let Some(path) = capture_path.as_deref() {
                         let result = state
                             .borrow()
@@ -201,11 +209,13 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     }
     let created_window_count = *created_count.borrow();
     let menu_command_routed = *menu_command_routed.borrow();
+    let process_memory = process_memory.borrow_mut().take();
     Ok(LinuxGtkNativeWindowRunReport {
         created_window_count,
         native_view_capture,
         proof_input_reports,
         menu_command_routed,
+        process_memory,
     })
 }
 

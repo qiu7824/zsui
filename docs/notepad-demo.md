@@ -95,6 +95,13 @@ renderer without Cairo/Pango:
 cargo run --example zsui_notepad_lite --no-default-features --features notepad-demo-lite
 ```
 
+The real GTK4 `ApplicationWindow` and `DrawingArea` host uses that same source
+and application state rather than a GTK-specific UI implementation:
+
+```powershell
+cargo run --example zsui_notepad_gtk --no-default-features --features notepad-demo-gtk
+```
+
 Run the auto-closing native smoke path:
 
 ```powershell
@@ -164,6 +171,8 @@ acceptance application does not depend on it.
 `notepad-demo-lite` retains that application feature slice but replaces the
 `window` umbrella with `linux-direct-lite`. It is an acceptance profile, not a
 second Linux application implementation.
+`notepad-demo-gtk` does the same for the `linux-gtk` backend and therefore does
+not pull the Winit/Softbuffer Linux host into that executable.
 
 ## Code-volume and runtime comparison
 
