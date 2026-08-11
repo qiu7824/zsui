@@ -1228,7 +1228,7 @@ jobs:
             --locked \
             --example zsui_notepad_gtk \
             --no-default-features \
-            --features notepad-demo-gtk,accessibility
+            --features notepad-demo-gtk
           cargo build \
             --release \
             --locked \
@@ -1321,11 +1321,23 @@ jobs:
           assert (root / "native-system-dialog.png").stat().st_size >= 1024
           PY
 
-      - name: Verify lite renderer linkage
+      - name: Verify optional Linux renderer boundaries
         run: |
           if ldd target/release/examples/zsui_notepad_lite | grep -Eiq 'cairo|pango'; then
             ldd target/release/examples/zsui_notepad_lite
             echo "linux-direct-lite unexpectedly links Cairo/Pango" >&2
+            exit 1
+          fi
+          if cargo tree \
+            --locked \
+            --no-default-features \
+            --features notepad-demo-gtk \
+            | grep -Eq ' (winit|softbuffer|accesskit_winit) v'; then
+            cargo tree \
+              --locked \
+              --no-default-features \
+              --features notepad-demo-gtk
+            echo "notepad-demo-gtk unexpectedly pulls the Winit/Softbuffer host" >&2
             exit 1
           fi
 
