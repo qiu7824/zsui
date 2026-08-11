@@ -1211,6 +1211,10 @@ jobs:
 
       - name: Build lightweight Linux proof applications
         run: |
+          mkdir -p \
+            target/native-proof/ubuntu-24.04-x86_64 \
+            target/native-proof/ubuntu-24.04-x86_64-gtk4 \
+            target/native-proof/ubuntu-24.04-x86_64-lite
           cargo build \
             --release \
             --locked \
@@ -1223,12 +1227,6 @@ jobs:
             --example zsui_notepad \
             --no-default-features \
             --features notepad-demo
-          cargo build \
-            --release \
-            --locked \
-            --example zsui_notepad_gtk \
-            --no-default-features \
-            --features notepad-demo-gtk
           cargo build \
             --release \
             --locked \
@@ -1253,6 +1251,28 @@ jobs:
             --example native_dialog_smoke \
             --no-default-features \
             --features linux-direct,native-smoke
+
+      - name: Build real GTK4 proof application
+        id: gtk-build
+        run: |
+          set -o pipefail
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad_gtk \
+            --no-default-features \
+            --features notepad-demo-gtk \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-gtk4/build.log
+
+      - name: Summarize GTK4 build failure
+        if: failure() && steps.gtk-build.outcome == 'failure'
+        run: |
+          log=target/native-proof/ubuntu-24.04-x86_64-gtk4/build.log
+          summary="$(grep -Eai 'error(\[E[0-9]+\])?|could not compile|not supported' "$log" | tail -20 | tr '\n' ' ' || true)"
+          if test -z "$summary"; then
+            summary="$(tail -30 "$log" | tr '\n' ' ')"
+          fi
+          echo "::error title=GTK4 build failure::$summary"
 
       - name: Run native Linux localized dialog proof
         run: |

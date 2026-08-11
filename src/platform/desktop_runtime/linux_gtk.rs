@@ -54,6 +54,10 @@ impl DesktopRuntimeBackend for Backend {
                 .map(std::path::Path::new),
             &request.options.native_view_inputs,
         )?;
+        let native_window_resize_error = request
+            .options
+            .native_window_resize
+            .map(|_| "GTK4 smoke resize proof is not connected".to_string());
         complete_native_smoke(
             request,
             DesktopNativeSmokeOutcome {
@@ -61,10 +65,7 @@ impl DesktopRuntimeBackend for Backend {
                 proof_input_reports: run.proof_input_reports,
                 native_view_capture: run.native_view_capture,
                 native_window_resize: None,
-                native_window_resize_error: request
-                    .options
-                    .native_window_resize
-                    .map(|_| "GTK4 smoke resize proof is not connected".to_string()),
+                native_window_resize_error,
                 menu_command_routed: run.menu_command_routed,
                 menu_surface_created: false,
                 menu_surface_height: 0,

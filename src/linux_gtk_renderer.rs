@@ -934,14 +934,9 @@ fn sync_linux_gtk_ime(
         if let Some((value, selection)) = surrounding {
             let cursor = crate::native_text_edit::char_to_byte_index(&value, selection.caret)
                 .min(i32::MAX as usize) as i32;
-            #[cfg(feature = "accessibility")]
-            {
-                let anchor = crate::native_text_edit::char_to_byte_index(&value, selection.anchor)
-                    .min(i32::MAX as usize) as i32;
-                ime.set_surrounding_with_selection(&value, cursor, anchor);
-            }
-            #[cfg(not(feature = "accessibility"))]
-            ime.set_surrounding(&value, cursor);
+            let anchor = crate::native_text_edit::char_to_byte_index(&value, selection.anchor)
+                .min(i32::MAX as usize) as i32;
+            ime.set_surrounding_with_selection(&value, cursor, anchor);
         }
         ime.focus_in();
     } else {
