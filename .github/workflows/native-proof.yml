@@ -1448,14 +1448,6 @@ jobs:
           export GTK_A11Y=atspi
           export ZSUI_NATIVE_PROOF_DURATION_MS=12000
           root=target/native-proof/ubuntu-24.04-x86_64-gtk4
-          ./target/release/examples/zsui_notepad_gtk \
-            --native-proof \
-            --width 960 \
-            --height 640 \
-            --output "$root" \
-            >"$root/notepad.log" 2>&1 &
-          gtk_pid=$!
-          trap 'kill "$gtk_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 80); do
             if gdbus introspect \
               --session \
@@ -1464,7 +1456,6 @@ jobs:
               >"$root/atspi-status.log" 2>&1; then
               break
             fi
-            kill -0 "$gtk_pid"
             sleep 0.1
           done
           gdbus call \
@@ -1488,6 +1479,14 @@ jobs:
             --method org.freedesktop.DBus.Properties.Get \
             org.a11y.Status IsEnabled \
             >>"$root/atspi-status.log"
+          ./target/release/examples/zsui_notepad_gtk \
+            --native-proof \
+            --width 960 \
+            --height 640 \
+            --output "$root" \
+            >"$root/notepad.log" 2>&1 &
+          gtk_pid=$!
+          trap 'kill "$gtk_pid" 2>/dev/null || true' EXIT
           /usr/bin/python3 - <<'PY'
           import json
           import time
@@ -1498,6 +1497,7 @@ jobs:
           deadline = time.monotonic() + 10.0
           application = None
           snapshot = []
+          observed = []
 
           def children(node):
               for index in range(node.childCount):
@@ -1517,6 +1517,7 @@ jobs:
 
           while time.monotonic() < deadline and not snapshot:
               desktop = pyatspi.Registry.getDesktop(0)
+              observed = []
               for candidate in children(desktop):
                   try:
                       nodes = list(walk(candidate))
@@ -1526,6 +1527,7 @@ jobs:
                       ]
                   except Exception:
                       continue
+                  observed.append(evidence)
                   if any("ZSUI Notepad" in item["name"] for item in evidence):
                       text_nodes = [
                           item for item in evidence if "text" in item["role"].lower()
@@ -1537,6 +1539,10 @@ jobs:
               if not snapshot:
                   time.sleep(0.1)
 
+          (root / "gtk-atspi-observed.json").write_text(
+              json.dumps({"applications": observed}, ensure_ascii=False, indent=2),
+              encoding="utf-8",
+          )
           if application is None:
               raise SystemExit("AT-SPI did not expose the GTK4 ZSUI Notepad text box")
           text_nodes = [item for item in snapshot if "text" in item["role"].lower()]
