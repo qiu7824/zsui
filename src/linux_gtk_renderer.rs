@@ -921,7 +921,11 @@ fn sync_linux_gtk_text_accessibility(
         area.reset_property(gtk::AccessibleProperty::ValueText);
         area.reset_property(gtk::AccessibleProperty::MultiLine);
         area.reset_property(gtk::AccessibleProperty::ReadOnly);
-        area.update_state(&[gtk::accessible::State::Hidden(true)]);
+        // The DrawingArea represents the document editor even before it owns
+        // keyboard focus. Hiding it here removes the only editable surface
+        // from GTK's AT-SPI tree; let GTK derive Hidden from widget visibility
+        // while focus only controls the value properties above.
+        area.reset_state(gtk::AccessibleState::Hidden);
     }
 }
 
