@@ -8,7 +8,7 @@ Compose with traits, route typed messages, and compile only the controls,
 services, and platform backends an application enables.
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.7-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -422,7 +422,7 @@ Use a small feature set when embedding ZSUI into another Rust app:
 
 ```toml
 [dependencies]
-zsui = { version = "0.2.0-preview.7", default-features = false, features = [
+zsui = { version = "0.2.0", default-features = false, features = [
     "window",
     "button",
     "toggle",
@@ -449,14 +449,15 @@ Localization is an independent `localization` service feature. Applications own
 their `ZsLocalizer`, use stable message IDs, Fluent parameters and plural rules,
 Unicode locale fallback, and normal typed state updates for runtime language
 changes. See the [localization guide](docs/localization.md).
-The component catalog tracks 48 desktop component families. Forty-seven have
-first-pass runtime surfaces and one remains contract-only. The optional
+The component catalog tracks 49 desktop component families. All 49 have
+runtime surfaces, typed document contracts, and feature-gated builds. The optional
 `canvas` feature provides a retained custom-drawing surface with local `Dp`
 geometry, semantic colors and typed activation without exposing renderer or
 platform handles to application code.
-The `window` feature selects Win32, AppKit or GTK4 through
+The `window` feature selects Win32, AppKit, or Linux Direct through
 target-specific dependencies, so the one-line window entry does not require an
-extra backend feature on supported desktop targets. Cargo features are additive
+extra backend feature on supported desktop targets. GTK4 remains an optional
+native compatibility host on Linux. Cargo features are additive
 across the dependency graph, so
 large widgets and heavy native backends should move toward split crates or
 feature modules such as `zsui-core`, `zsui-shell`, `zsui-render`,
@@ -588,9 +589,8 @@ WKWebView, WebKitGTK, Wry, Tauri, and other browser shells cannot enter ZSUI.
 The isolated benchmark under `comparisons/` is not part of the framework.
 
 `docs/notepad-demo.md` records the reproducible ZSUI, egui, Iced, Slint,
-Tauri 2 and Windows Notepad comparison. The result is intentionally candid:
-ZSUI has the smallest measured native-service output and idle footprint, while
-the reusable service gaps still make its application source longer.
+Tauri 2 and Windows Notepad comparison. Formal application and Viewer rows are
+kept separate, and every memory claim is tied to a fixed workload and runner.
 
 The optional `calculator` feature adds a typed decimal engine and reusable
 standard-calculator View with a platform-adaptive keypad, memory row, history
@@ -617,7 +617,7 @@ Segoe MDL2 Assets family. macOS candidates use SF Symbols and Linux candidates
 use the current GTK symbolic icon theme. An MIT Fluent System Icons SVG subset
 is available through target-aware backend gating or the explicit
 `fluent-icons` feature. No system icon font is bundled. AppKit `NSImage` and GTK
-`GtkIconTheme` runtime lookup remain explicit completion gates; see
+`GtkIconTheme` lookup are exercised by fixed target proof; see
 [`docs/native-icons.md`](docs/native-icons.md).
 
 Audit a declaration before attaching it to a host:
@@ -716,10 +716,10 @@ assert!(report.is_valid());
   list row selection can dispatch through the same command-backed view tree,
   and `WM_MOUSEWHEEL` can route into typed scroll events for scroll containers
 - optional native focused-text accessibility behind `accessibility`: Win32 UI
-  Automation Edit/Value, AppKit text value/selection/range selectors and GTK4
-  TextBox/value semantics; protected text remains masked, while complete
-  text-range providers and AppKit/GTK target assistive-technology proof remain
-  pending; Windows has a real hidden-HWND/UI Automation CI probe
+  Automation Edit/Value/TextPattern, AppKit text value/selection/range
+  selectors, GTK4 AT-SPI semantics, and Linux Direct AccessKit projection;
+  protected text remains masked and fixed target jobs exercise each desktop
+  bridge. Rich UIA attributes and embedded-object ranges remain later work
 - reusable `ZsToggleRenderPlan` geometry for the owner-drawn settings toggle;
   the same plan drives Shell accessories and the
   standalone feature-gated `toggle(...)` View widget
@@ -749,8 +749,8 @@ assert!(report.is_valid());
   `Shell_NotifyIconW`, wired into the direct Windows `NativeWindowHost` path
   and optional `native_smoke_run --tray` status-item smoke, with native
   command-id table routing, RAII popup-menu creation/cleanup and
-  `TrackPopupMenu` selection routing for status menus; target smoke for real
-  user popup selection is still pending
+  `TrackPopupMenu` selection routing for status menus; the fixed native-proof
+  suite verifies status-menu creation, command routing, and resource cleanup
 - Win32 main/quick/transient window style, create-params,
   message-loop and `NativeMainWindowHost`/`NativeTransientWindowHost`
   implementations in `src/platform/windows/mod.rs`
@@ -767,7 +767,7 @@ assert!(report.is_valid());
   `examples/native_smoke_manifest.rs`
 - target-smoke artifact writing through `write_native_host_smoke_artifacts()`
   and `examples/native_smoke_record.rs`
-- first-pass auto-closing native smoke windows through
+- auto-closing native smoke windows through
   `NativeWindowSmokeRunOptions` and `examples/native_smoke_run.rs`
 - Windows `window.png` capture for native smoke artifacts through the direct
   Win32 `HWND`
@@ -803,8 +803,9 @@ feature it falls back to in-memory clipboard storage.
   with bounded cache, stable keys and typed viewport messages.
 - `examples/desktop_native_showcase.rs`: one shared desktop `State`, `Msg`,
   `view` and `update` with navigation, command bar, text editor, scrolling,
-  theme intent and a native menu. The AppKit and GTK4 completion gate is
-  documented in [`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md).
+  theme intent and a native menu. Win32, AppKit, Linux Direct, and the optional
+  GTK4 host are validated by the v0.2 native-proof gate documented in
+  [`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md).
 - `examples/navigation_shell_layout.rs`: product-neutral navigation/card shell
   layout projected to a native draw plan. Application views can declare one
   adaptive `navigation_view` with `.content(WidgetId, ViewNode)`; ZSUI owns the
@@ -864,7 +865,7 @@ combinations with:
 The same matrix runs in `.github/workflows/ci.yml`, together with default,
 no-default, full Windows and Linux/macOS desktop checks.
 
-On Windows, the current first-pass native smoke run can produce the full target
+On Windows, the native smoke run can produce the full target
 artifact set:
 
 ```powershell

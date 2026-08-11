@@ -1714,6 +1714,7 @@ jobs:
           dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
             export XDG_CURRENT_DESKTOP=GNOME
             export GTK_USE_PORTAL=1
+            dbus-update-activation-environment DISPLAY XAUTHORITY
             root=target/native-proof/ubuntu-24.04-x86_64
             mkdir -p "$root"
 
@@ -1785,6 +1786,7 @@ jobs:
           dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
             export XDG_CURRENT_DESKTOP=GNOME
             export GTK_USE_PORTAL=1
+            dbus-update-activation-environment DISPLAY XAUTHORITY
             root=target/native-proof/ubuntu-24.04-x86_64
 
             capture_owner_dialog() {

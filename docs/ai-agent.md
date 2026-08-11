@@ -36,10 +36,11 @@ and is not part of normal task context.
 - Product data, persistence, sync and business behavior stay in the product.
 - Cargo defaults remain small; advanced controls, services and backends are
   explicit features or optional dependencies.
-- Windows is the strongest real runtime today. macOS/Linux are first-pass
-  desktop paths. Android still requires a real runtime and device proof.
-- The component catalog currently tracks 49 families: all 49 have first-pass
-  runtime surfaces, with none contract-only or not started. WebView is intentionally outside the
+- Win32, AppKit, Linux Direct and the optional GTK4 compatibility host satisfy
+  the v0.2 desktop runtime gate with fixed target proof. Their post-v0.2 feature
+  breadth may still differ.
+- The component catalog currently tracks 49 families: all 49 have runtime
+  surfaces, with none contract-only or not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
 
 ## Task Router

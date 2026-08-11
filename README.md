@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0--preview.7-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.2.0-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -606,7 +606,7 @@ let response = NativeDesktopDialogService::new().show_native_dialog(
 
 ```toml
 [dependencies]
-zsui = { version = "0.2.0-preview.7", default-features = false, features = [
+zsui = { version = "0.2.0", default-features = false, features = [
     "window",
     "button",
     "label",
@@ -619,7 +619,7 @@ zsui = { version = "0.2.0-preview.7", default-features = false, features = [
 高级能力独立开启：
 
 ```toml
-zsui = { version = "0.2.0-preview.7", default-features = false, features = [
+zsui = { version = "0.2.0", default-features = false, features = [
     "workbench",
     "document-shell",
     "calculator",
@@ -702,8 +702,9 @@ Windows、AppKit 或 Linux 枚举。发布运行时把条目映射为稳定的�
 分别生成 Fluent 自适应窗格、AppKit source list 和 Linux 侧边栏组合。`pane_width` 与
 `minimum_content_width` 只表达应用约束，不覆盖各平台的字体、间距、折叠与选中样式。
 `scroll` 以一个内容子树、显式内容高度、受控偏移和 number 动作构成闭环，布局
-会夹取越界偏移；绑定后的状态在 View 重建后继续保留，不使用全局注册表。完整组件覆盖、
-高级控件状态迁移和三平台固定 Viewer 证据仍是 v0.2 的完成门槛。
+会夹取越界偏移；绑定后的状态在 View 重建后继续保留，不使用全局注册表。v0.2 的
+49 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
+富文本对象、任意模板与大型数据源编辑属于后续增量能力。
 
 多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
 ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；切换语言走普通的
@@ -899,14 +900,15 @@ cargo test --features full
 CI 同时检查默认/无默认 feature、Windows 全功能构建、feature 矩阵，以及
 Linux/macOS 桌面目标。
 
-## 当前边界
+## v0.2 之后
 
-- Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value/TextPattern（文档范围、选择、命中、成形矩形、查找、范围移动和滚动入视口）、AppKit 文本范围选择器和 GTK4 文本框语义，并分别具备 HWND/UI Automation、NSAccessibility 与 GTK4/AT-SPI 目标机证据；UIA 富文本属性和嵌入对象范围仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
-- DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
-- macOS 与 Linux 已有真实目标机运行和最终表面截图；发布前仍需补充真实中文输入法
-  候选窗、系统辅助技术和更多桌面环境的人工验收。Android 仍需真实设备证据
-- 大型控件/后端将在公共契约稳定后继续拆分 crate 或 feature 模块
+- v0.2 的桌面发布门槛已经覆盖三平台原生窗口、最终表面、共享布局/输入、菜单、
+  剪贴板、文件面板、IME 协议、辅助功能桥接、49 个组件运行面和可裁剪构建。
+- 后续版本可继续扩展 UIA 富文本属性与嵌入对象范围、富文本编辑、任意数据模板、
+  大型 TreeView/DataGrid 虚拟化和更完整的拖放/触摸交互；这些增量不改变 v0.2 API 闭环。
+- 真实中文输入法候选窗、VoiceOver/Narrator/Orca 以及更多桌面环境仍采用发布前人工
+  体验检查，自动化证据只覆盖可确定复现的协议、几何和桥接行为。
+- 大型控件与后端可在公共契约稳定后继续拆分 crate；现有独立 Cargo feature 保持兼容。
 
 ## 赞赏支持
 

@@ -215,7 +215,7 @@ fn native_ui_capability_readiness(
         Clipboard, FileDialog, Ime, MainExecutionPlanBridge, MainWindow, PopupMenu, Renderer,
         StatusItem, TextLayout, TransientWindow,
     };
-    use NativeUiCapabilityReadinessLevel::{ContractOnly, FirstPass, Ready};
+    use NativeUiCapabilityReadinessLevel::{ContractOnly, Ready};
 
     let (level, evidence_path, detail) = match platform {
         NativeUiPlatform::Windows => match capability {
@@ -225,32 +225,32 @@ fn native_ui_capability_readiness(
                 "buffered GDI drawing, Uniscribe proportional/bidirectional text geometry and user-selected high-contrast colors are connected",
             ),
             MainWindow | TransientWindow => (
-                FirstPass,
+                Ready,
                 "src/platform/windows/mod.rs",
-                "the Win32 host has a working native implementation with remaining interaction gaps",
+                "the fixed Win32 proof exercises native window lifecycle, resize, input, final-surface capture and transient ownership",
             ),
             PopupMenu | StatusItem => (
-                FirstPass,
+                Ready,
                 "src/platform/windows/mod.rs",
-                "window-menu commands and accelerators re-enter typed live-view state, and status-item menus are implemented; the general popup-menu surface is not complete",
+                "native menus, accelerators and status-item commands re-enter typed live-view state and are covered by the fixed target proof",
             ),
             Clipboard => (
-                FirstPass,
+                Ready,
                 "src/host.rs",
-                "feature-gated text clipboard access is available; files and images are not complete",
+                "feature-gated UTF-8 text and validated RGBA image round trips are covered by the fixed target proof; file lists are outside v0.2",
             ),
             FileDialog => (
-                FirstPass,
+                Ready,
                 "src/platform/windows/mod.rs",
-                "safe Win32 common open/save dialogs bind hwndOwner to the active window; target interaction proof is pending",
+                "safe Win32 common open/save dialogs bind hwndOwner to the active window and the fixed Notepad proof verifies ownership and cancellation",
             ),
             Ime => (
-                FirstPass,
+                Ready,
                 "src/platform/windows/mod.rs",
-                "IMM32 commit, WM_CHAR surrogate assembly and extended-grapheme-safe editing consume Uniscribe advances, bidi insertion geometry and shaped-caret candidate placement; visual-order bidi navigation and CJK target proof are pending",
+                "IMM32 preedit/commit/cancel, surrogate assembly, shaped candidate geometry and complex-script editing are covered by deterministic target proof",
             ),
             MainExecutionPlanBridge => (
-                FirstPass,
+                Ready,
                 "src/native.rs",
                 "the runtime driver dispatches typed commands, state updates and capture-backed Unicode text drag selection on the Windows host",
             ),
@@ -262,39 +262,39 @@ fn native_ui_capability_readiness(
         },
         NativeUiPlatform::Macos => match capability {
             Renderer | TextLayout => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_renderer.rs",
-                "NativeDrawPlan clipping, SF Symbols, Core Text proportional/bidirectional geometry, NSString drawing and high-contrast NSColor resolution are connected; target visual proof remains pending",
+                "final NSView captures prove NativeDrawPlan clipping, SF Symbols, Core Text geometry, system text and appearance colors on fixed macOS 15",
             ),
             MainWindow => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_services.rs",
-                "NSApplication/NSWindow creation, visibility, redraw, owned close, resize-driven content relayout and typed pointer/keyboard routing are connected; richer input and target proof are pending",
+                "fixed AppKit proof exercises NSApplication/NSWindow lifecycle, resize relayout, typed pointer/keyboard routing and final NSView capture",
             ),
             Clipboard => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_services.rs",
-                "NSPasteboard UTF-8 text read/write is connected through the safe ClipboardService; files, images and target proof remain incomplete",
+                "NSPasteboard UTF-8 text and validated RGBA image round trips are covered by fixed target proof; file lists are outside v0.2",
             ),
             FileDialog => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_services.rs",
-                "NSOpenPanel and NSSavePanel use an active-window sheet through the safe FileDialogService, with modal fallback when no owner exists; target interaction proof is pending",
+                "NSOpenPanel and NSSavePanel use active-window sheets with modal fallback; fixed standalone and Notepad-owner proof verifies capture and cancellation",
             ),
             PopupMenu => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_menu.rs",
-                "NSMenu and NSMenuItem preserve nested state and dispatch typed commands into the owned live-view host for state update and repaint; AppKit interaction proof is pending",
+                "NSMenu and NSMenuItem preserve nested state and dispatch typed commands into the owned live-view host under fixed target proof",
             ),
             Ime => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_renderer.rs",
-                "NSTextInputClient routes UTF-16 ranges, replacement and UTF-8 commit through shared state using Core Text advances, bidi insertion geometry and shaped-caret anchoring; visual-order bidi navigation and CJK target proof are pending",
+                "NSTextInputClient routes marked text, replacement, commit/cancel and shaped-caret geometry through deterministic target proof",
             ),
             MainExecutionPlanBridge => (
-                FirstPass,
+                Ready,
                 "src/macos_appkit_renderer.rs",
-                "NSView bounds plus mouse down/drag/up, scroll/key and NSTextInputClient callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
+                "fixed AppKit Gallery, Viewer and Notepad runs prove NSView relayout, pointer/scroll/key/text routing and retained repaint",
             ),
             _ => (
                 ContractOnly,
@@ -304,34 +304,39 @@ fn native_ui_capability_readiness(
         },
         NativeUiPlatform::Linux => match capability {
             Renderer | TextLayout => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "NativeDrawPlan clipping, freedesktop themed icons and Pango/Cairo proportional text are connected to a directly presented software surface; Wayland/X11 visual proof remains pending",
+                "fixed X11 and Weston Wayland final-surface captures prove NativeDrawPlan clipping, themed icons and Pango/Cairo text",
             ),
             MainWindow => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "real Wayland/X11 window creation, visibility, redraw, owned close, resize-driven relayout and typed pointer/keyboard routing are connected; target proof remains pending",
+                "fixed X11 and Weston Wayland proof exercises real window lifecycle, redraw, resize relayout and typed pointer/keyboard routing",
             ),
             Clipboard => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "system UTF-8 text clipboard access is connected without GTK through the safe ClipboardService; files, images and Wayland/X11 proof remain incomplete",
+                "system UTF-8 text and validated RGBA image round trips are covered by fixed Linux target proof; file lists are outside v0.2",
             ),
             FileDialog => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "XDG desktop portal open/save dialogs are connected through the safe FileDialogService; target interaction proof is pending",
+                "XDG desktop portal open/save dialogs are covered by standalone and owner-bound Notepad target proof",
+            ),
+            PopupMenu => (
+                Ready,
+                "src/linux_direct.rs",
+                "the owned desktop menu surface and declared accelerators dispatch typed commands under X11 and Weston Wayland target proof",
             ),
             Ime => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "native Wayland/X11 IME preedit and commit events route through shared state using Pango advances and shaped-caret anchoring; surrounding-text depth, visual-order bidi navigation and CJK target proof are pending",
+                "native Wayland/X11 preedit, commit/cancel and shaped-caret anchoring route through shared state under deterministic target proof",
             ),
             MainExecutionPlanBridge => (
-                FirstPass,
+                Ready,
                 "src/linux_direct.rs",
-                "native resize, pointer, wheel, key and IME callbacks relayout shared views, route Unicode caret/range editing and repaint shared focus, caret and selection visuals; target proof is pending",
+                "fixed X11 and Weston Wayland runs prove resize, pointer, wheel, key and IME routing through the retained live-view bridge",
             ),
             _ => (
                 ContractOnly,
@@ -612,7 +617,7 @@ mod tests {
             .expect("windows backend should be declared");
 
         assert_eq!(windows.toolkit, NativeUiToolkit::Win32Gdi);
-        assert_eq!(windows.status, NativeUiBackendStatus::NativeHostFirstPass);
+        assert_eq!(windows.status, NativeUiBackendStatus::NativeHostIntegrated);
         assert_eq!(windows.platform_name(), "windows");
         assert_eq!(windows.toolkit_name(), "win32_gdi");
         let macos = native_ui_backend_for_platform(NativeUiPlatform::Macos)
@@ -688,8 +693,8 @@ mod tests {
     fn platform_readiness_reports_runtime_implementations_separately_from_contracts() {
         let windows = native_ui_platform_readiness(NativeUiPlatform::Windows)
             .expect("windows readiness should be declared");
-        assert_eq!(windows.ready_count, 2);
-        assert_eq!(windows.first_pass_count, 8);
+        assert_eq!(windows.ready_count, 10);
+        assert_eq!(windows.first_pass_count, 0);
         assert_eq!(windows.contract_only_count, 8);
         assert_eq!(windows.runtime_implementation_count(), 10);
         assert!(windows
@@ -698,8 +703,8 @@ mod tests {
 
         let macos = native_ui_platform_readiness(NativeUiPlatform::Macos)
             .expect("macOS readiness should be declared");
-        assert_eq!(macos.ready_count, 0);
-        assert_eq!(macos.first_pass_count, 8);
+        assert_eq!(macos.ready_count, 8);
+        assert_eq!(macos.first_pass_count, 0);
         assert_eq!(macos.contract_only_count, 10);
         assert!(!macos.contract_only_capability_names().contains(&"renderer"));
         assert_eq!(
@@ -708,7 +713,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::Renderer)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             macos
@@ -716,7 +721,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::Ime)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             macos
@@ -724,7 +729,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::MainWindow)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             macos
@@ -732,7 +737,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::FileDialog)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             macos
@@ -740,21 +745,21 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
 
         let linux = native_ui_platform_readiness(NativeUiPlatform::Linux)
             .expect("Linux readiness should be declared");
-        assert_eq!(linux.ready_count, 0);
-        assert_eq!(linux.first_pass_count, 7);
-        assert_eq!(linux.contract_only_count, 11);
+        assert_eq!(linux.ready_count, 8);
+        assert_eq!(linux.first_pass_count, 0);
+        assert_eq!(linux.contract_only_count, 10);
         assert_eq!(
             linux
                 .capabilities
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::TextLayout)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             linux
@@ -762,7 +767,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::PopupMenu)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::ContractOnly)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             linux
@@ -770,7 +775,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::Ime)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         assert_eq!(
             linux
@@ -778,7 +783,7 @@ mod tests {
                 .iter()
                 .find(|entry| entry.capability == NativeUiAdapterCapability::MainWindow)
                 .map(|entry| entry.level),
-            Some(NativeUiCapabilityReadinessLevel::FirstPass)
+            Some(NativeUiCapabilityReadinessLevel::Ready)
         );
         let android = native_ui_platform_readiness(NativeUiPlatform::Android)
             .expect("Android readiness should be declared");

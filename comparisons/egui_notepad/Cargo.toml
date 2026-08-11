@@ -20,7 +20,7 @@ perf-full = ["perf-matrix"]
 perf-viewer = ["perf-matrix"]
 
 [dependencies]
-eframe = { version = "=0.35.0", default-features = false, features = ["default_fonts", "glow"] }
+eframe = { version = "=0.35.0", default-features = false, features = ["default_fonts", "glow", "x11"] }
 rfd = "=0.17.2"
 
 [profile.release]

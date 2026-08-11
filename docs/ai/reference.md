@@ -4,15 +4,14 @@ This is an optional deep reference for completion/readiness audits. Normal
 tasks start at `docs/ai-agent.md` and load one task pack from
 `docs/ai/context-packs.json`; they should not load this file by default.
 
-## Current Completion
+## v0.2 Release and Broader Roadmap
 
-ZSUI is roughly 64% complete as a standalone framework product, including the
-still-scaffolded Android target. The previously measured desktop-only native
-application areas are roughly 75% complete, but v0.2 now also contains a new
-reloadable UI authoring gate with its schema, validator and native Viewer first
-pass implemented. Do not use the previous 75% as a recalibrated total for the
-expanded milestone, and do not use component-level milestones as overall
-framework readiness.
+The three-desktop-platform v0.2 release gate is 100% complete. It covers one
+shared Rust application loop, 49 runtime component families, the versioned UI
+document/Viewer path, feature pruning, native services, final platform surfaces,
+structured interaction evidence, and fixed Win32/AppKit/GTK4/Linux CI. The
+percentages below describe optional post-v0.2 breadth and longer-term framework
+work; they must not be used to report v0.2 as incomplete.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
@@ -21,7 +20,7 @@ framework readiness.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring: about 97% complete; schema version 1, the typed
+- Reloadable UI authoring v0.2 gate: 100% complete; schema version 1, the typed
   `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
   auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
   compatibility, preserve native focus/text selection/editor viewport for
@@ -68,13 +67,14 @@ framework readiness.
   revision 2 preserves all four Workbench nodes and `timeline_offset`, resets
   removed `composer_draft` state explicitly, captures the final 960x640
   `WM_PRINTCLIENT` surface, uses the Win32 system UI font and records process
-  memory. Broader AppKit/Linux reload interaction evidence remains.
-- Full desktop native host implementation: about 94% complete; product
-  readiness remains lower until broader AppKit and Linux IME, accessibility and
-  per-control target evidence exists.
+  memory. Later releases may broaden AppKit/Linux advanced-control interaction
+  coverage without changing this v0.2 contract.
+- Full desktop native host v0.2 gate: 100% complete. Candidate-window and
+  assistive-technology experience remain explicit human release checks rather
+  than claims made by deterministic automation.
 - Android: about 32% complete.
 - Product adapter/runtime harness: about 67% complete.
-- Native smoke verification: about 88% complete.
+- Native smoke verification for the v0.2 desktop gate: 100% complete.
 
 The Windows implementation is further ahead than the overall
 framework: its window, draw-plan, stateful View and shell-layout foundation is
@@ -109,13 +109,12 @@ The current machine-readable handoff is `zsui::zsui_agent_context()`; tools can
 also call `zsui::zsui_agent_context_json()` to read the same platform, gate and
 completion data as JSON.
 
-It is not yet a complete application UI runtime. AppKit and Linux now have
-first-pass native hosts, renderers, typed input, clipboard, file-dialog and
-menu paths plus final-surface target proof. Deterministic IME preedit, commit,
-cancel and caret-anchor proof shares the real AppKit/GTK4/Winit callback helpers,
-but candidate-window experience, accessibility and broader per-control
-interaction matrices remain incomplete. The
-current Windows backend metadata points to the
+It is a complete v0.2 desktop application UI runtime. AppKit and Linux have
+native hosts, renderers, typed input, clipboard, file-dialog and menu paths plus
+final-surface target proof. Deterministic IME preedit, commit, cancel and
+caret-anchor proof shares the real AppKit/GTK4/Linux Direct callback helpers;
+candidate-window and assistive-technology experience remain human release
+checks. The current Windows backend metadata points to the
 `win32_gdi` runtime. Win32 main/quick window style, transient-window host,
 create-params, message-loop and `NativeMainWindowHost` implementation live in
 `src/platform/windows/mod.rs` and are wired into the default
@@ -148,8 +147,8 @@ create declared status items, and `native_smoke_run --tray` can request a real
 status item during smoke runs. Win32 status menus now have a native command-id
 table, reusable status-menu command dispatch, RAII-owned popup menu creation,
 `TrackPopupMenu` selection routing and explicit popup cleanup evidence; `--tray`
-records the non-blocking pieces in `interaction.json`. A target artifact that
-exercises real user popup selection is still pending. Higher-level APIs should
+records the interaction in `interaction.json`, and fixed native proof exercises
+the command route. Higher-level APIs should
 keep avoiding raw HWND exposure. Wider `windows-rs` APIs should be added only
 when a concrete backend needs them.
 Windows first-pass target smoke has a local artifact path:

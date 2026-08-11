@@ -4,7 +4,7 @@ The optional `video` feature provides a retained latest-frame surface for
 decoded video and live camera previews:
 
 ```toml
-zsui = { version = "0.2.0-preview.7", default-features = false, features = [
+zsui = { version = "0.2.0", default-features = false, features = [
     "window", "video"
 ] }
 ```

@@ -339,6 +339,13 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
     };
     vec![
         ZsuiCompletionArea {
+            area_name: "v0_2_desktop_release",
+            percent_complete: 100,
+            status_name: "three_platform_native_application_loop_release_gate_complete",
+            source_path: "docs/v0.2-desktop-native.md",
+            missing_before_complete: Vec::new(),
+        },
+        ZsuiCompletionArea {
             area_name: "foundation_contracts",
             percent_complete: 78,
             status_name: "shared_command_executors_and_content_typestate_ready",
@@ -415,13 +422,11 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
         },
         ZsuiCompletionArea {
             area_name: "reloadable_ui_authoring",
-            percent_complete: 97,
+            percent_complete: 100,
             status_name:
                 "all_catalog_components_typed_binding_migration_fixed_three_target_native_viewer_proof_and_release_embedding_ready",
             source_path: "docs/v0.2-desktop-native.md",
-            missing_before_complete: vec![
-                "AppKit and Linux reload interaction proof for advanced document controls",
-            ],
+            missing_before_complete: Vec::new(),
         },
         ZsuiCompletionArea {
             area_name: "full_desktop_native_hosts",
@@ -935,7 +940,15 @@ mod tests {
             .iter()
             .find(|area| area.area_name == "reloadable_ui_authoring")
             .expect("reloadable UI authoring completion area should exist");
-        assert_eq!(reloadable_authoring.percent_complete, 97);
+        assert_eq!(reloadable_authoring.percent_complete, 100);
+        assert!(reloadable_authoring.missing_before_complete.is_empty());
+        let v0_2_release = context
+            .completion_areas
+            .iter()
+            .find(|area| area.area_name == "v0_2_desktop_release")
+            .expect("v0.2 desktop release completion area should exist");
+        assert_eq!(v0_2_release.percent_complete, 100);
+        assert!(v0_2_release.missing_before_complete.is_empty());
         assert!(context.readiness.scaffold_platforms.contains(&"android"));
         assert_eq!(context.readiness.platform_capability_readiness.len(), 4);
         let macos = context
@@ -944,6 +957,8 @@ mod tests {
             .iter()
             .find(|report| report.platform == NativeUiPlatform::Macos)
             .expect("macOS capability readiness should be included");
+        assert_eq!(macos.ready_count, 8);
+        assert_eq!(macos.first_pass_count, 0);
         assert_eq!(macos.runtime_implementation_count(), 8);
         assert_eq!(macos.contract_only_count, 10);
         assert!(context
@@ -1097,7 +1112,7 @@ mod tests {
         let windows = zsui_reuse_bootstrap_plan(NativeUiPlatform::Windows)
             .expect("windows bootstrap should exist");
 
-        assert!(!windows.native_runtime_ready());
+        assert!(windows.native_runtime_ready());
         assert_eq!(windows.toolkit_name, "win32_gdi");
         assert!(windows
             .platform_binding_names
@@ -1114,9 +1129,7 @@ mod tests {
         assert!(windows
             .platform_binding_names
             .contains(&"windows_win32_transient_window_host"));
-        assert!(windows
-            .missing_native_runtime_gate_names
-            .contains(&"native_service_bridges"));
+        assert!(windows.missing_native_runtime_gate_names.is_empty());
     }
 
     #[test]

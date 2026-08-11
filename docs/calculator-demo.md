@@ -57,7 +57,7 @@ target/zsui-calculator/
 The reusable API remains optional:
 
 ```toml
-zsui = { version = "0.2.0-preview.7", default-features = false, features = [
+zsui = { version = "0.2.0", default-features = false, features = [
     "window",
     "calculator",
 ] }
