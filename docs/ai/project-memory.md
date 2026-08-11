@@ -593,6 +593,11 @@ history remain authoritative for implementation status.
   and no remaining provisional text on every target. This proves protocol
   integration and provisional-state semantics; it does not replace a manual
   Chinese/Japanese/Korean candidate-window session on each desktop.
+  Native UI Proof run `31435845881` on commit `99ee393` passed the enforced
+  IME sequence on Win32, AppKit, X11/lite and real Weston Wayland hosts; its
+  Win32 job now launches the same Notepad acceptance application instead of
+  relying only on Viewer input. CI run `31435845844` and UI Memory Comparison
+  run `31435845959` also passed for the same commit.
 - Native resize evidence must call the real top-level window API, observe a
   platform resize callback and capture the final platform surface after shared
   relayout. Resizing only the shared View surface is not native proof. The
