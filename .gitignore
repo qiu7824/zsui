@@ -10,4 +10,6 @@
 !/comparisons/tauri_notepad/Cargo.lock
 *.pdb
 *.exe
+__pycache__/
+*.py[cod]
 .DS_Store

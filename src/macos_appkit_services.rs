@@ -29,7 +29,7 @@ use objc2_foundation::{
     NSSize, NSString, NSURL,
 };
 #[cfg(feature = "native-smoke")]
-use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSTimer};
+use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSRunLoopCommonModes, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -1117,7 +1117,7 @@ fn appkit_run_file_panel(
     #[cfg(not(feature = "native-smoke"))]
     let _ = kind;
     #[cfg(feature = "native-smoke")]
-    let owner_proof_capture = appkit_schedule_owner_file_panel_proof(panel, kind)?;
+    let owner_proof_capture = appkit_schedule_owner_file_panel_proof(panel, owner, kind)?;
 
     let response = Rc::new(Cell::new(None));
     let completed_response = Rc::clone(&response);
@@ -1157,6 +1157,7 @@ type AppKitFilePanelProofCapture = Rc<RefCell<Option<Result<(), String>>>>;
 #[cfg(feature = "native-smoke")]
 fn appkit_schedule_owner_file_panel_proof(
     panel: &NSSavePanel,
+    owner: &NSWindow,
     kind: AppKitFilePanelKind,
 ) -> ZsuiResult<Option<AppKitFilePanelProofCapture>> {
     let Some(output) = std::env::var_os("ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR") else {
@@ -1173,16 +1174,16 @@ fn appkit_schedule_owner_file_panel_proof(
     let capture_result = Rc::new(RefCell::new(None));
     let completed_capture = Rc::clone(&capture_result);
     let proof_panel = panel.retain();
+    let proof_owner = owner.retain();
     let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
         let result = appkit_capture_file_panel_png(&proof_panel, &screenshot);
         *completed_capture.borrow_mut() = Some(result);
-        // SAFETY: this callback runs on the AppKit main run loop while the
-        // panel is installed as a sheet of the ZSUI owner window.
-        unsafe { proof_panel.cancel(None) };
+        proof_owner.endSheet_returnCode(&proof_panel, NSModalResponseCancel);
     });
     let capture_timer =
         unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.35, false, &capture_and_cancel) };
     unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSDefaultRunLoopMode) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSRunLoopCommonModes) };
     Ok(Some(capture_result))
 }
 
