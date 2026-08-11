@@ -2581,7 +2581,7 @@ pub(crate) fn linux_direct_open_file_dialog(
             dialog = dialog.add_filter(&filter.name, &extensions);
         }
     }
-    Ok(dialog.pick_files())
+    Ok(crate::native_file_dialog::normalize_open_file_dialog_selection(dialog.pick_files()))
 }
 
 pub(crate) fn linux_direct_save_file_dialog(

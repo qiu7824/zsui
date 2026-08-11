@@ -1,5 +1,12 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(any(test, target_os = "linux"))]
+pub(crate) fn normalize_open_file_dialog_selection(
+    selection: Option<Vec<PathBuf>>,
+) -> Option<Vec<PathBuf>> {
+    selection.filter(|paths| !paths.is_empty())
+}
+
 #[cfg(any(test, target_os = "macos"))]
 use crate::FileDialogFilter;
 
@@ -62,6 +69,17 @@ pub(crate) fn native_save_dialog_suggested_name<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_open_selection_is_a_cancelled_dialog() {
+        assert_eq!(normalize_open_file_dialog_selection(None), None);
+        assert_eq!(normalize_open_file_dialog_selection(Some(Vec::new())), None);
+        let path = PathBuf::from("selected.txt");
+        assert_eq!(
+            normalize_open_file_dialog_selection(Some(vec![path.clone()])),
+            Some(vec![path])
+        );
+    }
 
     #[test]
     fn native_extensions_drop_wildcards_invalid_patterns_and_duplicates() {

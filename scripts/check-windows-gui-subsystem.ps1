@@ -44,7 +44,11 @@ foreach ($source in Get-ChildItem -LiteralPath $examplesRoot -Filter "*.rs" -Fil
 }
 
 function Get-PeSubsystem([string]$Path) {
-    $resolved = [IO.Path]::GetFullPath((Join-Path $workspace $Path))
+    $resolved = if ([IO.Path]::IsPathRooted($Path)) {
+        [IO.Path]::GetFullPath($Path)
+    } else {
+        [IO.Path]::GetFullPath((Join-Path $workspace $Path))
+    }
     if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
         throw "Windows GUI executable does not exist: $resolved"
     }
