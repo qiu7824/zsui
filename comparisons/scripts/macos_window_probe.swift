@@ -1,5 +1,7 @@
 import AppKit
+import CoreFoundation
 import CoreGraphics
+import Darwin
 import Foundation
 
 func fail(_ message: String) -> Never {
@@ -36,7 +38,7 @@ func visibleWindows(processIds: Set<Int>) -> [[String: Any]] {
         guard bounds.width >= 320, bounds.height >= 240 else {
             return nil
         }
-        return [
+        let result: [String: Any] = [
             "pid": processId,
             "window_id": number,
             "x": bounds.origin.x,
@@ -44,6 +46,7 @@ func visibleWindows(processIds: Set<Int>) -> [[String: Any]] {
             "width": bounds.width,
             "height": bounds.height,
         ]
+        return result
     }
 }
 

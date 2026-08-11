@@ -1713,8 +1713,28 @@ jobs:
         run: |
           dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
             export XDG_CURRENT_DESKTOP=GNOME
+            export XDG_SESSION_TYPE=x11
+            export GDK_BACKEND=x11
             export GTK_USE_PORTAL=1
             dbus-update-activation-environment DISPLAY XAUTHORITY
+            /usr/libexec/xdg-desktop-portal-gtk > /tmp/zsui-portal-gtk.log 2>&1 &
+            portal_gtk_pid=$!
+            /usr/libexec/xdg-desktop-portal > /tmp/zsui-portal.log 2>&1 &
+            portal_pid=$!
+            trap '\''kill "$portal_pid" "$portal_gtk_pid" 2>/dev/null || true'\'' EXIT
+            for attempt in $(seq 1 50); do
+              if gdbus introspect --session \
+                --dest org.freedesktop.portal.Desktop \
+                --object-path /org/freedesktop/portal/desktop \
+                --only-properties >/dev/null 2>&1; then
+                break
+              fi
+              sleep 0.1
+            done
+            gdbus introspect --session \
+              --dest org.freedesktop.portal.Desktop \
+              --object-path /org/freedesktop/portal/desktop \
+              --only-properties >/dev/null
             root=target/native-proof/ubuntu-24.04-x86_64
             mkdir -p "$root"
 
@@ -1785,8 +1805,28 @@ jobs:
         run: |
           dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
             export XDG_CURRENT_DESKTOP=GNOME
+            export XDG_SESSION_TYPE=x11
+            export GDK_BACKEND=x11
             export GTK_USE_PORTAL=1
             dbus-update-activation-environment DISPLAY XAUTHORITY
+            /usr/libexec/xdg-desktop-portal-gtk > /tmp/zsui-owner-portal-gtk.log 2>&1 &
+            portal_gtk_pid=$!
+            /usr/libexec/xdg-desktop-portal > /tmp/zsui-owner-portal.log 2>&1 &
+            portal_pid=$!
+            trap '\''kill "$portal_pid" "$portal_gtk_pid" 2>/dev/null || true'\'' EXIT
+            for attempt in $(seq 1 50); do
+              if gdbus introspect --session \
+                --dest org.freedesktop.portal.Desktop \
+                --object-path /org/freedesktop/portal/desktop \
+                --only-properties >/dev/null 2>&1; then
+                break
+              fi
+              sleep 0.1
+            done
+            gdbus introspect --session \
+              --dest org.freedesktop.portal.Desktop \
+              --object-path /org/freedesktop/portal/desktop \
+              --only-properties >/dev/null
             root=target/native-proof/ubuntu-24.04-x86_64
 
             capture_owner_dialog() {

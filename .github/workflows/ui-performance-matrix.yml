@@ -55,15 +55,15 @@ jobs:
         with:
           workspaces: . -> target
 
-      - name: Build 20 release matrix applications
-        run: bash comparisons/scripts/build_unix_performance_matrix.sh
-
       - name: Build macOS native window probe
         run: |
           mkdir -p target/ui-performance-matrix/tools
           swiftc -O \
             comparisons/scripts/macos_window_probe.swift \
             -o target/ui-performance-matrix/tools/macos-window-probe
+
+      - name: Build 20 release matrix applications
+        run: bash comparisons/scripts/build_unix_performance_matrix.sh
 
       - name: Measure real AppKit and comparison windows
         run: |
