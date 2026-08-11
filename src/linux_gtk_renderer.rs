@@ -533,13 +533,12 @@ impl LinuxGtkDrawViewHost {
     pub(crate) fn accessibility_node_count(&self) -> usize {
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
         {
+            // Focus can move to a modal dialog while the editor remains a
+            // visible AT-SPI node, so node existence must not depend on the
+            // focused-text snapshot.
             return usize::from(
                 self.area.accessible_role() == gtk::AccessibleRole::TextBox
-                    && self
-                        .runtime
-                        .borrow()
-                        .focused_text_accessibility_snapshot()
-                        .is_some(),
+                    && self.area.is_visible(),
             );
         }
         #[cfg(not(all(feature = "accessibility", feature = "text-input-core")))]
