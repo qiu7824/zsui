@@ -27,10 +27,11 @@ func visibleWindows(processIds: Set<Int>) -> [[String: Any]] {
             let number = window[kCGWindowNumber as String] as? Int,
             let layer = window[kCGWindowLayer as String] as? Int,
             layer == 0,
-            let boundsValue = window[kCGWindowBounds as String] as? CFDictionary
+            let boundsObject = window[kCGWindowBounds as String]
         else {
             return nil
         }
+        let boundsValue = boundsObject as! CFDictionary
         var bounds = CGRect.zero
         guard CGRectMakeWithDictionaryRepresentation(boundsValue, &bounds) else {
             return nil
