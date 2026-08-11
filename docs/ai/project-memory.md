@@ -439,6 +439,23 @@ history remain authoritative for implementation status.
   A shared `DrawPlan` image or cross-compilation is not Linux target evidence;
   the fixed Ubuntu proof job must upload the final surface PNG and matching
   runtime JSON.
+- Native UI Proof run `31453329710` on commit `cb7d830` closes the first real
+  GTK4 and AppKit text-accessibility target slice. The same platform-neutral
+  Notepad source ran in a real GTK4 `ApplicationWindow`/`DrawingArea`, captured
+  the final GSK texture, routed the complete IME/input/menu script and exposed
+  the external AT-SPI tree `application -> frame -> text`. The editor remains
+  present in that tree while a modal dialog owns focus; focus only controls its
+  value properties. The structured runtime report independently recorded
+  `gtk4_atspi` with one visible framework node. The fixed macOS 15 job also
+  required the Notepad `appkit_nsaccessibility` backend and a non-empty native
+  tree. UI Memory Comparison run `31453329721` and CI run `31453329730` passed
+  the same commit, including Windows full tests, macOS/Linux target checks and
+  the locked feature matrix.
+- `accessibility` owns shared semantics plus Win32, AppKit and GTK4 toolkit
+  bindings. The Winit-based Linux Direct AccessKit bridge is separately gated
+  by `linux-direct-accessibility`; a GTK4 accessibility build must not resolve
+  Winit, Softbuffer or AccessKit-Winit. This is a packaging boundary, not a
+  second application API or state/update path.
 - Native UI Proof run `29660600122` on commit `00951e5` passed AppKit,
   lightweight Linux and real Weston Wayland scenes. The Wayland artifact
   records `display_server=wayland`, final presented PNGs, AccessKit/AT-SPI
@@ -1422,12 +1439,17 @@ history remain authoritative for implementation status.
   testing, native shaped bounding rectangles, typed selection routing and
   top/bottom aligned ScrollIntoView through the self-drawn text viewport.
   AppKit exposes focused text-field/text-area selectors on the custom `NSView`,
-  and GTK4 exposes a hidden-until-focused TextBox/value semantic surface.
+  and GTK4 exposes a visible TextBox semantic surface whose value properties
+  follow the focused self-drawn editor without removing the node when focus
+  moves to a modal surface. Linux Direct adds AccessKit only through
+  `linux-direct-accessibility`.
   Password snapshots stay masked; Win32 advertises neither ValuePattern nor
   TextPattern for protected text, and AppKit marks protected content with the
   secure-text subrole. This feature must not introduce a native child editor,
-  WebView or global widget registry. UIA rich attributes/embedded-object ranges
-  plus real AppKit/GTK assistive-technology target proof remain readiness work.
+  WebView or global widget registry. Fixed target proof now covers real HWND
+  UIA, AppKit NSAccessibility and GTK4 AT-SPI paths; UIA rich attributes and
+  embedded-object ranges plus release-time VoiceOver/Orca experience remain
+  readiness work.
 - ToggleButton is an independent `toggle-button` Cargo feature and reuses the
   shared explicit Boolean `Toggled` message path rather than inheriting Button
   behavior or storing state in a backend. It remains self-drawn: Windows,
