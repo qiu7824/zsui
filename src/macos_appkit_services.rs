@@ -12,6 +12,8 @@ use objc2::rc::Retained;
 #[cfg(feature = "native-smoke")]
 use objc2::runtime::AnyObject;
 use objc2::runtime::ProtocolObject;
+#[cfg(feature = "native-smoke")]
+use objc2::Message;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
@@ -27,7 +29,7 @@ use objc2_foundation::{
     NSSize, NSString, NSURL,
 };
 #[cfg(feature = "native-smoke")]
-use objc2_foundation::{NSDictionary, NSTimer};
+use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -659,22 +661,31 @@ impl NativeDialogService for MacosAppKitDialogService {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum AppKitFilePanelKind {
+    Open,
+    Save,
+}
+
+impl AppKitFilePanelKind {
+    #[cfg(feature = "native-smoke")]
+    const fn owner_proof_file_name(self) -> &'static str {
+        match self {
+            Self::Open => "notepad-owner-open-panel.png",
+            Self::Save => "notepad-owner-save-panel.png",
+        }
+    }
+}
+
 pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
     let mtm = appkit_main_thread_marker("NSOpenPanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSOpenPanel::openPanel(mtm);
-    panel.setCanChooseFiles(true);
-    panel.setCanChooseDirectories(false);
-    panel.setAllowsMultipleSelection(spec.allow_multiple);
-    panel.setTitle(Some(&NSString::from_str(&spec.title)));
-    panel.setPrompt(Some(&NSString::from_str("Open")));
-    if let Some(allowed) = appkit_allowed_file_types(&spec.filters) {
-        #[allow(deprecated)]
-        panel.setAllowedFileTypes(Some(&allowed));
-    }
-    appkit_set_initial_directory(&panel, spec.current_path.as_deref());
+    appkit_configure_open_panel(&panel, spec);
 
-    if appkit_run_file_panel(&panel, owner.as_deref()) != NSModalResponseOK {
+    if appkit_run_file_panel(&panel, owner.as_deref(), AppKitFilePanelKind::Open)?
+        != NSModalResponseOK
+    {
         return Ok(None);
     }
 
@@ -703,22 +714,11 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
     let mtm = appkit_main_thread_marker("NSSavePanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSSavePanel::savePanel(mtm);
-    panel.setCanCreateDirectories(true);
-    panel.setTitle(Some(&NSString::from_str(&spec.title)));
-    panel.setPrompt(Some(&NSString::from_str("Save")));
-    if let Some(name) = native_save_dialog_suggested_name(
-        spec.suggested_name.as_deref(),
-        spec.current_path.as_deref(),
-    ) {
-        panel.setNameFieldStringValue(&NSString::from_str(&name));
-    }
-    if let Some(allowed) = appkit_allowed_file_types(&spec.filters) {
-        #[allow(deprecated)]
-        panel.setAllowedFileTypes(Some(&allowed));
-    }
-    appkit_set_initial_directory(&panel, spec.current_path.as_deref());
+    appkit_configure_save_panel(&panel, spec);
 
-    if appkit_run_file_panel(&panel, owner.as_deref()) != NSModalResponseOK {
+    if appkit_run_file_panel(&panel, owner.as_deref(), AppKitFilePanelKind::Save)?
+        != NSModalResponseOK
+    {
         return Ok(None);
     }
     panel
@@ -732,6 +732,36 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
             })
         })
         .transpose()
+}
+
+fn appkit_configure_open_panel(panel: &NSOpenPanel, spec: &FileDialogSpec) {
+    panel.setCanChooseFiles(true);
+    panel.setCanChooseDirectories(false);
+    panel.setAllowsMultipleSelection(spec.allow_multiple);
+    panel.setTitle(Some(&NSString::from_str(&spec.title)));
+    panel.setPrompt(Some(&NSString::from_str("Open")));
+    if let Some(allowed) = appkit_allowed_file_types(&spec.filters) {
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&allowed));
+    }
+    appkit_set_initial_directory(panel, spec.current_path.as_deref());
+}
+
+fn appkit_configure_save_panel(panel: &NSSavePanel, spec: &SaveFileDialogSpec) {
+    panel.setCanCreateDirectories(true);
+    panel.setTitle(Some(&NSString::from_str(&spec.title)));
+    panel.setPrompt(Some(&NSString::from_str("Save")));
+    if let Some(name) = native_save_dialog_suggested_name(
+        spec.suggested_name.as_deref(),
+        spec.current_path.as_deref(),
+    ) {
+        panel.setNameFieldStringValue(&NSString::from_str(&name));
+    }
+    if let Some(allowed) = appkit_allowed_file_types(&spec.filters) {
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&allowed));
+    }
+    appkit_set_initial_directory(panel, spec.current_path.as_deref());
 }
 
 pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
@@ -758,6 +788,126 @@ pub fn macos_appkit_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<Di
             format!("NSAlert returned unexpected response {response}"),
         )
     })
+}
+
+/// Runs the production NSOpenPanel configuration, captures its final AppKit
+/// view and cancels it from the modal run loop.
+#[cfg(feature = "native-smoke")]
+#[doc(hidden)]
+pub fn macos_appkit_open_file_dialog_cancel_proof(
+    spec: &FileDialogSpec,
+    screenshot: &Path,
+) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    let mtm = appkit_main_thread_marker("NSOpenPanel proof")?;
+    let _ = appkit_active_file_dialog_owner(mtm);
+    let panel = NSOpenPanel::openPanel(mtm);
+    appkit_configure_open_panel(&panel, spec);
+    let response = appkit_run_file_panel_cancel_proof(&panel, screenshot)?;
+    if response != NSModalResponseCancel {
+        return Err(ZsuiError::host(
+            "macos_open_file_dialog_proof",
+            format!("NSOpenPanel returned unexpected response {response}"),
+        ));
+    }
+    Ok(None)
+}
+
+/// Runs the production NSSavePanel configuration, captures its final AppKit
+/// view and cancels it from the modal run loop.
+#[cfg(feature = "native-smoke")]
+#[doc(hidden)]
+pub fn macos_appkit_save_file_dialog_cancel_proof(
+    spec: &SaveFileDialogSpec,
+    screenshot: &Path,
+) -> ZsuiResult<Option<PathBuf>> {
+    let mtm = appkit_main_thread_marker("NSSavePanel proof")?;
+    let _ = appkit_active_file_dialog_owner(mtm);
+    let panel = NSSavePanel::savePanel(mtm);
+    appkit_configure_save_panel(&panel, spec);
+    let response = appkit_run_file_panel_cancel_proof(&panel, screenshot)?;
+    if response != NSModalResponseCancel {
+        return Err(ZsuiError::host(
+            "macos_save_file_dialog_proof",
+            format!("NSSavePanel returned unexpected response {response}"),
+        ));
+    }
+    Ok(None)
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_run_file_panel_cancel_proof(
+    panel: &NSSavePanel,
+    screenshot: &Path,
+) -> ZsuiResult<objc2_app_kit::NSModalResponse> {
+    let capture_result = Rc::new(RefCell::new(None));
+    let completed_capture = Rc::clone(&capture_result);
+    let proof_panel = panel.retain();
+    let screenshot = screenshot.to_path_buf();
+    let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        let result = appkit_capture_file_panel_png(&proof_panel, &screenshot);
+        *completed_capture.borrow_mut() = Some(result);
+        // SAFETY: the timer executes on the main modal run loop and the panel
+        // owns the native cancellation action.
+        unsafe { proof_panel.cancel(None) };
+    });
+    let capture_timer =
+        unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.35, false, &capture_and_cancel) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSModalPanelRunLoopMode) };
+
+    let response = panel.runModal();
+    panel.orderOut(None);
+    capture_result
+        .borrow_mut()
+        .take()
+        .ok_or_else(|| {
+            ZsuiError::host(
+                "macos_file_dialog_proof",
+                "the AppKit file-panel capture callback did not run",
+            )
+        })?
+        .map_err(|error| ZsuiError::host("macos_file_dialog_proof", error))?;
+    Ok(response)
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_capture_file_panel_png(panel: &NSSavePanel, path: &Path) -> Result<(), String> {
+    panel.displayIfNeeded();
+    let view = panel
+        .contentView()
+        .ok_or_else(|| "the AppKit file panel has no content view".to_string())?;
+    let bounds = view.bounds();
+    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+        return Err("the AppKit file-panel content view has empty bounds".to_string());
+    }
+    view.layoutSubtreeIfNeeded();
+    view.setNeedsDisplay(true);
+    view.displayIfNeeded();
+    let bitmap = view
+        .bitmapImageRepForCachingDisplayInRect(bounds)
+        .ok_or_else(|| {
+            "AppKit could not allocate an NSBitmapImageRep for the file panel".to_string()
+        })?;
+    view.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+    let properties = NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
+    let data = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
+    }
+    .ok_or_else(|| "NSBitmapImageRep could not encode the file-panel PNG".to_string())?;
+
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("could not create file-panel proof directory: {error}"))?;
+    }
+    let byte_count = data.length();
+    let mut bytes = vec![0_u8; byte_count];
+    if let Some(buffer) = NonNull::new(bytes.as_mut_ptr().cast::<c_void>()) {
+        unsafe { data.getBytes_length(buffer, byte_count) };
+    }
+    std::fs::write(path, bytes)
+        .map_err(|error| format!("could not write file-panel PNG capture: {error}"))
 }
 
 /// Runs the production NSAlert path while capturing the alert's final AppKit
@@ -958,10 +1108,16 @@ fn appkit_active_file_dialog_owner(mtm: MainThreadMarker) -> Option<Retained<NSW
 fn appkit_run_file_panel(
     panel: &NSSavePanel,
     owner: Option<&NSWindow>,
-) -> objc2_app_kit::NSModalResponse {
+    kind: AppKitFilePanelKind,
+) -> ZsuiResult<objc2_app_kit::NSModalResponse> {
     let Some(owner) = owner else {
-        return panel.runModal();
+        return Ok(panel.runModal());
     };
+
+    #[cfg(not(feature = "native-smoke"))]
+    let _ = kind;
+    #[cfg(feature = "native-smoke")]
+    let owner_proof_capture = appkit_schedule_owner_file_panel_proof(panel, kind)?;
 
     let response = Rc::new(Cell::new(None));
     let completed_response = Rc::clone(&response);
@@ -975,9 +1131,59 @@ fn appkit_run_file_panel(
         run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
     }
     panel.orderOut(None);
-    response
+
+    #[cfg(feature = "native-smoke")]
+    if let Some(capture_result) = owner_proof_capture {
+        capture_result
+            .borrow_mut()
+            .take()
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "macos_owner_file_dialog_proof",
+                    "the AppKit owner-bound file-panel capture callback did not run",
+                )
+            })?
+            .map_err(|error| ZsuiError::host("macos_owner_file_dialog_proof", error))?;
+    }
+
+    Ok(response
         .get()
-        .expect("AppKit sheet completion set a modal response")
+        .expect("AppKit sheet completion set a modal response"))
+}
+
+#[cfg(feature = "native-smoke")]
+type AppKitFilePanelProofCapture = Rc<RefCell<Option<Result<(), String>>>>;
+
+#[cfg(feature = "native-smoke")]
+fn appkit_schedule_owner_file_panel_proof(
+    panel: &NSSavePanel,
+    kind: AppKitFilePanelKind,
+) -> ZsuiResult<Option<AppKitFilePanelProofCapture>> {
+    let Some(output) = std::env::var_os("ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR") else {
+        return Ok(None);
+    };
+    let output = PathBuf::from(output);
+    if output.as_os_str().is_empty() {
+        return Err(ZsuiError::host(
+            "macos_owner_file_dialog_proof",
+            "ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR is empty",
+        ));
+    }
+    let screenshot = output.join(kind.owner_proof_file_name());
+    let capture_result = Rc::new(RefCell::new(None));
+    let completed_capture = Rc::clone(&capture_result);
+    let proof_panel = panel.retain();
+    let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        let result = appkit_capture_file_panel_png(&proof_panel, &screenshot);
+        *completed_capture.borrow_mut() = Some(result);
+        // SAFETY: this callback runs on the AppKit main run loop while the
+        // panel is installed as a sheet of the ZSUI owner window.
+        unsafe { proof_panel.cancel(None) };
+    });
+    let capture_timer =
+        unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.35, false, &capture_and_cancel) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSDefaultRunLoopMode) };
+    Ok(Some(capture_result))
 }
 
 fn appkit_main_thread_marker(operation: &'static str) -> ZsuiResult<MainThreadMarker> {

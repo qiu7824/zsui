@@ -10,6 +10,7 @@ $requiredAttribute = '#![cfg_attr(all(windows, not(debug_assertions)), windows_s
 $consoleToolMarker = 'ZSUI_WINDOWS_CONSOLE_TOOL:'
 $additionalGuiExamples = @(
     "native_dialog_smoke.rs",
+    "native_file_dialog_smoke.rs",
     "zsui_calculator.rs"
 )
 

@@ -208,6 +208,11 @@ path = "examples/native_dialog_smoke.rs"
 required-features = ["native-smoke"]
 
 [[example]]
+name = "native_file_dialog_smoke"
+path = "examples/native_file_dialog_smoke.rs"
+required-features = ["native-smoke"]
+
+[[example]]
 name = "declaration_audit"
 path = "examples/declaration_audit.rs"
 required-features = ["button", "label"]

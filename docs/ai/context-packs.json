@@ -226,23 +226,27 @@
       "purpose": "Equal-complexity Minimal, Common, Full Native App and Viewer release measurements",
       "required": [
         "scripts/measure-ui-performance-matrix.ps1",
+        "comparisons/scripts/measure_unix_performance_matrix.py",
+        "comparisons/performance-matrix-applications.json",
         "docs/ui-performance-matrix.md",
-        "Cargo.toml",
-        "examples/ui_performance_minimal.rs",
-        "examples/ui-documents/performance-viewer.json"
+        "Cargo.toml"
       ],
       "optional": [
+        "comparisons/scripts/build_unix_performance_matrix.sh",
+        ".github/workflows/ui-performance-matrix.yml",
+        "examples/ui_performance_minimal.rs",
+        "examples/ui-documents/performance-viewer.json",
         "examples/invoice_workbench.rs",
         "examples/component_gallery.rs",
         "src/bin/zsui-viewer.rs",
         "comparisons/egui_notepad",
         "comparisons/iced_notepad",
         "comparisons/slint_notepad",
-        "comparisons/tauri_notepad",
-        "docs/invoice-workbench-comparison.md"
+        "comparisons/tauri_notepad"
       ],
       "verify": [
         "[void][scriptblock]::Create((Get-Content -Raw scripts/measure-ui-performance-matrix.ps1))",
+        "python -c \"import ast,pathlib; ast.parse(pathlib.Path('comparisons/scripts/measure_unix_performance_matrix.py').read_text(encoding='utf-8'))\"",
         "cargo check --example ui_performance_minimal --no-default-features --features window,button,label",
         "cargo check --example invoice_workbench --no-default-features --features window,workbench,list,dialog",
         "cargo check --example component_gallery --no-default-features --features component-gallery-demo",

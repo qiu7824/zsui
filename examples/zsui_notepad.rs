@@ -21,6 +21,8 @@ const DOCUMENT_EDITOR: WidgetId = WidgetId::new(1);
 const UNDO_BUTTON: WidgetId = WidgetId::new(2);
 const WRAP_BUTTON: WidgetId = WidgetId::new(3);
 const PENDING_DIALOG: WidgetId = WidgetId::new(4);
+const OPEN_BUTTON: WidgetId = WidgetId::new(5);
+const SAVE_BUTTON: WidgetId = WidgetId::new(6);
 const DOCUMENT_TAB: ZsTabId = ZsTabId::new(1);
 const EFFECT_OPEN: &str = "notepad.effect.open";
 const EFFECT_SAVE: &str = "notepad.effect.save";
@@ -114,8 +116,10 @@ fn view(shared: &SharedState) -> ViewNode<Msg> {
         ZsCommandBarSpec::new()
             .leading([
                 command_button("新建 / New", ZsIcon::Add, ZsDocumentShellCommand::New),
-                command_button("打开 / Open", ZsIcon::Folder, ZsDocumentShellCommand::Open),
-                command_button("保存 / Save", ZsIcon::Save, ZsDocumentShellCommand::Save),
+                command_button("打开 / Open", ZsIcon::Folder, ZsDocumentShellCommand::Open)
+                    .id(OPEN_BUTTON),
+                command_button("保存 / Save", ZsIcon::Save, ZsDocumentShellCommand::Save)
+                    .id(SAVE_BUTTON),
             ])
             .trailing([
                 command_button("撤销 / Undo", ZsIcon::Undo, ZsDocumentShellCommand::Undo)
@@ -537,6 +541,9 @@ fn save_pending_document(
 fn main() -> ZsuiResult<()> {
     let args = std::env::args().collect::<Vec<_>>();
     let native_proof = args.iter().any(|argument| argument == "--native-proof");
+    let file_dialog_proof = args
+        .iter()
+        .any(|argument| argument == "--file-dialog-proof");
     let menu_proof = native_proof && args.iter().any(|argument| argument == "--menu-proof");
     let memory_report = args
         .windows(2)
@@ -611,6 +618,86 @@ fn main() -> ZsuiResult<()> {
                 .map_err(|error| ZsuiError::host("serialize_notepad_memory", error.to_string()))?,
         )
         .map_err(|error| ZsuiError::host("write_notepad_memory", error.to_string()))?;
+        return Ok(());
+    }
+
+    if file_dialog_proof {
+        let interaction_plan =
+            builder
+                .native_view_interaction_plan()
+                .cloned()
+                .ok_or_else(|| {
+                    ZsuiError::host("notepad_file_dialog_proof", "interaction plan is missing")
+                })?;
+        let point_for = |widget, label: &str| {
+            interaction_plan
+                .hit_target_for_widget(widget)
+                .map(|target| Point {
+                    x: target.bounds.x + target.bounds.width / 2,
+                    y: target.bounds.y + target.bounds.height / 2,
+                })
+                .ok_or_else(|| {
+                    ZsuiError::host(
+                        "notepad_file_dialog_proof",
+                        format!("{label} has no interaction bounds"),
+                    )
+                })
+        };
+        let open_point = point_for(OPEN_BUTTON, "Open button")?;
+        let save_point = point_for(SAVE_BUTTON, "Save button")?;
+        let output = args
+            .windows(2)
+            .find(|pair| pair[0] == "--output")
+            .map(|pair| PathBuf::from(&pair[1]))
+            .unwrap_or_else(|| "target/native-proof".into());
+        fs::create_dir_all(&output).map_err(|error| {
+            ZsuiError::host("create_notepad_file_dialog_proof_dir", error.to_string())
+        })?;
+        let screenshot = output.join("notepad-file-dialog-owner.png");
+        let report_path = output.join("notepad-file-dialog-owner.json");
+        let report = builder.run_smoke(
+            NativeWindowSmokeRunOptions::new(12_000)
+                .native_view_click(open_point)
+                .native_view_click(save_point)
+                .screenshot_file(screenshot.to_string_lossy().into_owned())
+                .require_screenshot(true),
+        )?;
+        let notice = lock_state(&shared)?.notice.clone();
+        if !report.visible_window_was_created()
+            || report.native_view_app_command_count < 2
+            || report.native_view_unhandled_click_count != 0
+            || !report.native_view_app_command_errors.is_empty()
+            || notice != "已取消保存 / Save cancelled"
+        {
+            return Err(ZsuiError::host(
+                "notepad_file_dialog_proof",
+                format!(
+                    "owner-bound open/save cancellation did not return through typed state: {notice}"
+                ),
+            ));
+        }
+        let document = NativeProofDocument::new(
+            "zsui_notepad",
+            "notepad-file-dialog-owner",
+            "system",
+            window_width,
+            window_height,
+            interaction_plan.hit_targets.clone(),
+            report,
+        )
+        .messages([
+            "OpenRequested",
+            "OpenCancelled",
+            "SaveRequested",
+            "SaveCancelled",
+        ]);
+        fs::write(
+            &report_path,
+            serde_json::to_vec_pretty(&document).map_err(|error| {
+                ZsuiError::host("serialize_notepad_file_dialog_proof", error.to_string())
+            })?,
+        )
+        .map_err(|error| ZsuiError::host("write_notepad_file_dialog_proof", error.to_string()))?;
         return Ok(());
     }
 

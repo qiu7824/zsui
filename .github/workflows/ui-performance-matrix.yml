@@ -1,0 +1,224 @@
+name: UI Performance Matrix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "comparisons/**"
+      - "examples/**"
+      - "src/**"
+      - "scripts/measure-ui-performance-matrix.ps1"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ui-performance-matrix.yml"
+  pull_request:
+    paths:
+      - "comparisons/**"
+      - "examples/**"
+      - "src/**"
+      - "scripts/measure-ui-performance-matrix.ps1"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ui-performance-matrix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-performance-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-15-matrix:
+    name: macOS 15 arm64 Equal-Complexity Matrix
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      RUST_BACKTRACE: "1"
+      SLINT_BACKEND: winit-software
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Assert fixed runner
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = "15"
+          test "$(uname -m)" = "arm64"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build 20 release matrix applications
+        run: bash comparisons/scripts/build_unix_performance_matrix.sh
+
+      - name: Build macOS native window probe
+        run: |
+          mkdir -p target/ui-performance-matrix/tools
+          swiftc -O \
+            comparisons/scripts/macos_window_probe.swift \
+            -o target/ui-performance-matrix/tools/macos-window-probe
+
+      - name: Measure real AppKit and comparison windows
+        run: |
+          python3 comparisons/scripts/measure_unix_performance_matrix.py \
+            --applications comparisons/performance-matrix-applications.json \
+            --output target/ui-performance-matrix/macos-15-arm64 \
+            --platform macos \
+            --runner macos-15-arm64 \
+            --macos-probe target/ui-performance-matrix/tools/macos-window-probe \
+            --startup-runs 3 \
+            --memory-samples 3 \
+            --warmup-seconds 2 \
+            --cpu-seconds 2
+
+      - name: Validate macOS matrix contract
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("target/ui-performance-matrix/macos-15-arm64")
+          report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+          assert report["schema"] == "zsui.ui-performance-matrix/v1"
+          assert report["machine"]["runner"] == "macos-15-arm64"
+          assert set(report["implementations"]) == {"zsui", "egui", "iced", "slint", "tauri"}
+          for framework, profiles in report["implementations"].items():
+              assert set(profiles) == {"minimal", "common", "full", "viewer"}
+              for profile, item in profiles.items():
+                  assert item["executable_bytes"] > 0
+                  assert item["cold_start"]["first_presented_frame_ms"] > 0
+                  assert item["warm_start"]["first_presented_frame_median_ms"] > 0
+                  assert item["empty_window"]["memory"]["rss_bytes"] > 0
+                  assert item["full_page_memory"]["rss_bytes"] > 0
+                  assert item["hidden_memory"]["rss_bytes"] > 0
+                  assert item["full_page_memory"]["peak_rss_bytes"] > 0
+                  assert item["full_page_memory"]["private_rss_bytes"] is None
+                  assert item["full_page_memory"]["proportional_set_size_bytes"] is None
+                  assert item["idle_cpu"]["machine_percent"] >= 0
+                  assert item["repaint_cpu"]["machine_percent"] >= 0
+                  assert item["screenshot_captured"] is True
+                  assert Path(item["screenshot"]).stat().st_size >= 1024
+          PY
+
+      - name: Upload macOS matrix
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-performance-matrix-macos-15-arm64
+          path: target/ui-performance-matrix/macos-15-arm64
+          retention-days: 30
+
+  ubuntu-24-matrix:
+    name: Ubuntu 24.04 x86_64 Equal-Complexity Matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      TZ: UTC
+      RUST_BACKTRACE: "1"
+      SLINT_BACKEND: winit-software
+      WINIT_UNIX_BACKEND: x11
+      ZSUI_LINUX_ICON_THEME: Adwaita
+      ZSUI_LINUX_UI_FONT: Ubuntu Sans 11
+      WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Linux build and window runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            adwaita-icon-theme \
+            dbus-x11 \
+            fonts-noto-cjk \
+            fonts-ubuntu \
+            imagemagick \
+            libayatana-appindicator3-dev \
+            libcairo2-dev \
+            libdbus-1-dev \
+            libfontconfig1-dev \
+            libgdk-pixbuf-2.0-dev \
+            libgtk-4-dev \
+            libpango1.0-dev \
+            librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            xauth \
+            xdotool \
+            xvfb
+          fc-cache --force
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build 20 release matrix applications
+        run: bash comparisons/scripts/build_unix_performance_matrix.sh
+
+      - name: Measure real X11 and comparison windows
+        run: |
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' \
+            python3 comparisons/scripts/measure_unix_performance_matrix.py \
+              --applications comparisons/performance-matrix-applications.json \
+              --output target/ui-performance-matrix/ubuntu-24.04-x86_64 \
+              --platform linux \
+              --runner ubuntu-24.04-x86_64 \
+              --startup-runs 3 \
+              --memory-samples 3 \
+              --warmup-seconds 2 \
+              --cpu-seconds 2
+
+      - name: Validate Linux matrix contract
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("target/ui-performance-matrix/ubuntu-24.04-x86_64")
+          report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+          assert report["schema"] == "zsui.ui-performance-matrix/v1"
+          assert report["machine"]["runner"] == "ubuntu-24.04-x86_64"
+          assert set(report["implementations"]) == {"zsui", "egui", "iced", "slint", "tauri"}
+          for framework, profiles in report["implementations"].items():
+              assert set(profiles) == {"minimal", "common", "full", "viewer"}
+              for profile, item in profiles.items():
+                  assert item["executable_bytes"] > 0
+                  assert item["cold_start"]["first_presented_frame_ms"] > 0
+                  assert item["warm_start"]["first_presented_frame_median_ms"] > 0
+                  assert item["empty_window"]["memory"]["rss_bytes"] > 0
+                  assert item["full_page_memory"]["rss_bytes"] > 0
+                  assert item["hidden_memory"]["rss_bytes"] > 0
+                  assert item["full_page_memory"]["peak_rss_bytes"] > 0
+                  assert item["full_page_memory"]["private_rss_bytes"] > 0
+                  assert item["full_page_memory"]["proportional_set_size_bytes"] > 0
+                  assert item["idle_cpu"]["machine_percent"] >= 0
+                  assert item["repaint_cpu"]["machine_percent"] >= 0
+                  assert item["screenshot_captured"] is True
+                  assert Path(item["screenshot"]).stat().st_size >= 1024
+          PY
+
+      - name: Upload Linux matrix
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-performance-matrix-ubuntu-24.04-x86_64
+          path: target/ui-performance-matrix/ubuntu-24.04-x86_64
+          retention-days: 30

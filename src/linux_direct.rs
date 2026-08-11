@@ -1,7 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
@@ -41,6 +42,33 @@ use crate::{
 type LinuxDisplayHandle = OwnedDisplayHandle;
 type LinuxSoftBufferContext = SoftBufferContext<LinuxDisplayHandle>;
 type LinuxSoftBufferSurface = SoftBufferSurface<LinuxDisplayHandle, Rc<WinitWindow>>;
+
+thread_local! {
+    static LINUX_DIRECT_FILE_DIALOG_PARENT: RefCell<Option<Weak<WinitWindow>>> =
+        const { RefCell::new(None) };
+}
+
+struct LinuxDirectFileDialogParentGuard(Option<Weak<WinitWindow>>);
+
+impl Drop for LinuxDirectFileDialogParentGuard {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        LINUX_DIRECT_FILE_DIALOG_PARENT.with(|parent| {
+            parent.replace(previous);
+        });
+    }
+}
+
+fn with_linux_direct_file_dialog_parent<T>(window: &Rc<WinitWindow>, run: impl FnOnce() -> T) -> T {
+    let previous =
+        LINUX_DIRECT_FILE_DIALOG_PARENT.with(|parent| parent.replace(Some(Rc::downgrade(window))));
+    let _guard = LinuxDirectFileDialogParentGuard(previous);
+    run()
+}
+
+fn linux_direct_file_dialog_parent() -> Option<Rc<WinitWindow>> {
+    LINUX_DIRECT_FILE_DIALOG_PARENT.with(|parent| parent.borrow().as_ref()?.upgrade())
+}
 
 pub(crate) const LINUX_DIRECT_LITE_CAPTURE_BACKEND: &str =
     "winit_softbuffer_zsui_rust_text_tiny_skia";
@@ -1116,11 +1144,13 @@ impl LinuxDirectWindow {
         event_loop: &ActiveEventLoop,
     ) -> crate::native::NativeViewInputDispatchReport {
         let (executor, commands) = self.runtime.take_pending_app_command_dispatch();
-        let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
-            &mut report,
-            executor,
-            commands,
-        );
+        let effect_executed = with_linux_direct_file_dialog_parent(&self.window, || {
+            crate::native::dispatch_deferred_native_view_app_commands(
+                &mut report,
+                executor,
+                commands,
+            )
+        });
         if effect_executed {
             self.runtime.refresh_live_view_after_app_effect(&mut report);
         }
@@ -2534,6 +2564,9 @@ pub(crate) fn linux_direct_open_file_dialog(
     spec: &crate::FileDialogSpec,
 ) -> ZsuiResult<Option<Vec<PathBuf>>> {
     let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
+    if let Some(parent) = linux_direct_file_dialog_parent() {
+        dialog = dialog.set_parent(parent.as_ref());
+    }
     if let Some(path) = &spec.current_path {
         dialog = dialog.set_directory(path);
     }
@@ -2555,6 +2588,9 @@ pub(crate) fn linux_direct_save_file_dialog(
     spec: &crate::SaveFileDialogSpec,
 ) -> ZsuiResult<Option<PathBuf>> {
     let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
+    if let Some(parent) = linux_direct_file_dialog_parent() {
+        dialog = dialog.set_parent(parent.as_ref());
+    }
     if let Some(path) = &spec.current_path {
         dialog = dialog.set_directory(path);
     }

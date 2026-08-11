@@ -1,0 +1,29 @@
+{
+  "schema": "zsui.ui-performance-applications/v1",
+  "applications": [
+    { "framework": "zsui", "profile": "minimal", "executable": "target/ui-performance-matrix/bin/zsui-minimal", "working_directory": ".", "arguments": [] },
+    { "framework": "zsui", "profile": "common", "executable": "target/ui-performance-matrix/bin/zsui-common", "working_directory": ".", "arguments": [] },
+    { "framework": "zsui", "profile": "full", "executable": "target/ui-performance-matrix/bin/zsui-full", "working_directory": ".", "arguments": ["--page", "inputs", "--width", "1000", "--height", "700", "--benchmark-static"] },
+    { "framework": "zsui", "profile": "viewer", "executable": "target/ui-performance-matrix/bin/zsui-viewer", "working_directory": ".", "arguments": ["examples/ui-documents/performance-viewer.json", "--width", "1000", "--height", "700", "--poll-ms", "250"] },
+
+    { "framework": "egui", "profile": "minimal", "executable": "target/ui-performance-matrix/bin/egui-minimal", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "egui", "profile": "common", "executable": "target/ui-performance-matrix/bin/egui-common", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "egui", "profile": "full", "executable": "target/ui-performance-matrix/bin/egui-full", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "egui", "profile": "viewer", "executable": "target/ui-performance-matrix/bin/egui-viewer", "working_directory": ".", "arguments": ["--benchmark-seconds", "120", "--document", "examples/ui-documents/performance-viewer.json"] },
+
+    { "framework": "iced", "profile": "minimal", "executable": "target/ui-performance-matrix/bin/iced-minimal", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "iced", "profile": "common", "executable": "target/ui-performance-matrix/bin/iced-common", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "iced", "profile": "full", "executable": "target/ui-performance-matrix/bin/iced-full", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "iced", "profile": "viewer", "executable": "target/ui-performance-matrix/bin/iced-viewer", "working_directory": ".", "arguments": ["--benchmark-seconds", "120", "--document", "examples/ui-documents/performance-viewer.json"] },
+
+    { "framework": "slint", "profile": "minimal", "executable": "target/ui-performance-matrix/bin/slint-minimal", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "slint", "profile": "common", "executable": "target/ui-performance-matrix/bin/slint-common", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "slint", "profile": "full", "executable": "target/ui-performance-matrix/bin/slint-full", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "slint", "profile": "viewer", "executable": "target/ui-performance-matrix/bin/slint-viewer", "working_directory": ".", "arguments": ["--benchmark-seconds", "120", "--document", "examples/ui-documents/performance-viewer.json"] },
+
+    { "framework": "tauri", "profile": "minimal", "executable": "target/ui-performance-matrix/bin/tauri-minimal", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "tauri", "profile": "common", "executable": "target/ui-performance-matrix/bin/tauri-common", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "tauri", "profile": "full", "executable": "target/ui-performance-matrix/bin/tauri-full", "working_directory": ".", "arguments": ["--benchmark-seconds", "120"] },
+    { "framework": "tauri", "profile": "viewer", "executable": "target/ui-performance-matrix/bin/tauri-viewer", "working_directory": ".", "arguments": ["--benchmark-seconds", "120", "--document", "examples/ui-documents/performance-viewer.json"] }
+  ]
+}

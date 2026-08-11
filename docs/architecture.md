@@ -751,6 +751,9 @@ imports a native dialog type.
 Unsupported features return `ZsuiError::Unsupported` or appear in
 `HostCapabilities` degradation reports. A host may accept a window declaration
 and still downgrade unsupported traits such as transparency or always-on-top.
+The native file-panel gate launches and captures the selected target's real
+open and save surfaces, then requires cancellation to return through the same
+`NativeFileDialogService`; specification-only tests are not target evidence.
 Native backend completion also requires the smoke artifact contract in
 `docs/native-host-smoke.md`; code-level host contracts alone are not proof that
 the target OS integration is complete.

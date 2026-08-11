@@ -347,6 +347,28 @@ modality remains a separate host-integrated interaction gate. It proves the
 optional operating-system message service only; it is not a visual baseline
 for the self-drawn WinUI/AppKit/GTK `ContentDialog` component above.
 
+System-owned open and save panels use a second service proof:
+
+```powershell
+cargo run --release --locked --example native_file_dialog_smoke --no-default-features --features windows-win32,native-smoke -- --output target/native-file-dialog.json --open-screenshot target/native-open-panel.png --save-screenshot target/native-save-panel.png
+```
+
+The executable sends one platform-neutral `FileDialogSpec` and
+`SaveFileDialogSpec` through `NativeFileDialogService`. The fixed target jobs
+must find and capture both real panels before cancelling their native actions.
+The `zsui.native-file-dialog-proof/v1` report records the target surface,
+multiple-selection contract, filters, suggested save name, both cancellation
+results and both screenshots. Windows uses `GetOpenFileNameW` and
+`GetSaveFileNameW`, macOS uses `NSOpenPanel` and `NSSavePanel`, and Linux Direct
+uses the XDG desktop portal. A shared draw plan, an application-rendered file
+browser or a JSON-only contract test is not accepted. The standalone proof
+records `owner_window_supplied=false`. The shared Notepad
+`--file-dialog-proof` path clicks its real Open and Save command buttons, binds
+the resulting Win32 dialog, AppKit sheet, Linux Direct XDG panel or GTK4
+`FileChooserNative` to the live Notepad window, captures both surfaces, cancels
+them natively and requires both results to return through typed application
+state without an unhandled command.
+
 The dedicated self-drawn in-app Toast smoke path is:
 
 ```powershell

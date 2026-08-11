@@ -77,9 +77,15 @@ jobs:
           cargo build `
             --release `
             --locked `
+            --example native_file_dialog_smoke `
+            --no-default-features `
+            --features windows-win32,native-smoke
+          cargo build `
+            --release `
+            --locked `
             --example zsui_notepad `
             --no-default-features `
-            --features notepad-demo,accessibility
+            --features notepad-demo,accessibility,native-smoke
 
       - name: Run native Win32 RGBA clipboard proof
         shell: pwsh
@@ -301,6 +307,288 @@ jobs:
             $proof.errors.Count -ne 0
           ) {
             throw "Win32 localized native-dialog proof is incomplete"
+          }
+
+      - name: Run native Win32 file-dialog proof
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $report = Join-Path $root "native-file-dialog.json"
+          $openScreenshot = Join-Path $root "native-open-panel.png"
+          $saveScreenshot = Join-Path $root "native-save-panel.png"
+          $process = Start-Process `
+            -FilePath .\target\release\examples\native_file_dialog_smoke.exe `
+            -ArgumentList @(
+              "--output", $report,
+              "--open-screenshot", $openScreenshot,
+              "--save-screenshot", $saveScreenshot
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class ZsuiFileDialogProofNative {
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT {
+                  public int Left;
+                  public int Top;
+                  public int Right;
+                  public int Bottom;
+              }
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(IntPtr window, out RECT rect);
+              [DllImport("user32.dll")]
+              public static extern IntPtr GetDlgItem(IntPtr dialog, int itemId);
+              [DllImport("user32.dll")]
+              public static extern IntPtr SendMessageW(
+                  IntPtr window,
+                  uint message,
+                  IntPtr wParam,
+                  IntPtr lParam
+              );
+              [DllImport("user32.dll", SetLastError = true)]
+              public static extern bool PrintWindow(IntPtr window, IntPtr target, uint flags);
+          }
+          '@
+
+          function Capture-And-Cancel([string]$title, [string]$screenshot) {
+            $window = [IntPtr]::Zero
+            for ($attempt = 0; $attempt -lt 120 -and $window -eq [IntPtr]::Zero; $attempt++) {
+              Start-Sleep -Milliseconds 100
+              if ($process.HasExited) {
+                break
+              }
+              $process.Refresh()
+              if ($process.MainWindowTitle -eq $title) {
+                $window = $process.MainWindowHandle
+              }
+            }
+            if ($window -eq [IntPtr]::Zero) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the Win32 file dialog did not become visible: $title"
+            }
+            $rect = New-Object ZsuiFileDialogProofNative+RECT
+            if (-not [ZsuiFileDialogProofNative]::GetWindowRect($window, [ref]$rect)) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "GetWindowRect failed for the Win32 file dialog"
+            }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            if ($width -lt 480 -or $height -lt 300) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the Win32 file dialog has invalid geometry ${width}x${height}"
+            }
+            $bitmap = New-Object System.Drawing.Bitmap($width, $height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $target = $graphics.GetHdc()
+              try {
+                if (-not [ZsuiFileDialogProofNative]::PrintWindow($window, $target, 2)) {
+                  throw "PrintWindow failed for the Win32 file dialog"
+                }
+              } finally {
+                $graphics.ReleaseHdc($target)
+              }
+              $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+            $cancel = [ZsuiFileDialogProofNative]::GetDlgItem($window, 2)
+            if ($cancel -eq [IntPtr]::Zero) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the Win32 file dialog has no native Cancel button"
+            }
+            [void][ZsuiFileDialogProofNative]::SendMessageW(
+              $cancel,
+              0x00F5,
+              [IntPtr]::Zero,
+              [IntPtr]::Zero
+            )
+          }
+
+          Capture-And-Cancel "ZSUI 打开文件验证 / Open File Proof" $openScreenshot
+          Capture-And-Cancel "ZSUI 保存文件验证 / Save File Proof" $saveScreenshot
+          if (-not $process.WaitForExit(10000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "native_file_dialog_smoke timed out"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "native_file_dialog_smoke exited with code $($process.ExitCode)"
+          }
+          $proof = Get-Content $report -Raw | ConvertFrom-Json
+          if (
+            $proof.schema -ne "zsui.native-file-dialog-proof/v1" -or
+            $proof.platform -ne "windows" -or
+            $proof.native_open_surface -ne "win32_get_open_file_name" -or
+            $proof.native_save_surface -ne "win32_get_save_file_name" -or
+            $proof.owner_window_supplied -ne $false -or
+            -not $proof.open_allows_multiple -or
+            $proof.suggested_name -ne "zsui-native-proof.txt" -or
+            -not $proof.open_cancelled -or
+            -not $proof.save_cancelled -or
+            -not $proof.open_screenshot_captured -or
+            -not $proof.save_screenshot_captured -or
+            $proof.errors.Count -ne 0
+          ) {
+            throw "Win32 native file-dialog proof is incomplete"
+          }
+
+      - name: Run owner-bound Win32 Notepad file-dialog proof
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-2025-x86_64"
+          $process = Start-Process `
+            -FilePath .\target\release\examples\zsui_notepad.exe `
+            -ArgumentList @(
+              "--file-dialog-proof",
+              "--output", $root,
+              "--width", "960",
+              "--height", "640"
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          public static class ZsuiOwnerFileDialogProofNative {
+              public delegate bool EnumWindowsCallback(IntPtr window, IntPtr parameter);
+              [StructLayout(LayoutKind.Sequential)]
+              public struct RECT {
+                  public int Left;
+                  public int Top;
+                  public int Right;
+                  public int Bottom;
+              }
+              [DllImport("user32.dll")]
+              public static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr parameter);
+              [DllImport("user32.dll")]
+              public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+              [DllImport("user32.dll")]
+              public static extern IntPtr GetWindow(IntPtr window, uint command);
+              [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+              public static extern int GetWindowTextW(IntPtr window, StringBuilder text, int capacity);
+              [DllImport("user32.dll")]
+              public static extern bool GetWindowRect(IntPtr window, out RECT rect);
+              [DllImport("user32.dll")]
+              public static extern IntPtr GetDlgItem(IntPtr dialog, int itemId);
+              [DllImport("user32.dll")]
+              public static extern IntPtr SendMessageW(
+                  IntPtr window,
+                  uint message,
+                  IntPtr wParam,
+                  IntPtr lParam
+              );
+              [DllImport("user32.dll", SetLastError = true)]
+              public static extern bool PrintWindow(IntPtr window, IntPtr target, uint flags);
+              public static IntPtr FindProcessWindow(uint processId, string title) {
+                  IntPtr result = IntPtr.Zero;
+                  EnumWindows((window, parameter) => {
+                      uint candidateProcessId;
+                      GetWindowThreadProcessId(window, out candidateProcessId);
+                      if (candidateProcessId != processId) return true;
+                      var text = new StringBuilder(512);
+                      GetWindowTextW(window, text, text.Capacity);
+                      if (text.ToString() != title) return true;
+                      result = window;
+                      return false;
+                  }, IntPtr.Zero);
+                  return result;
+              }
+          }
+          '@
+
+          function Capture-Owner-Dialog([string]$title, [string]$screenshot) {
+            $window = [IntPtr]::Zero
+            for ($attempt = 0; $attempt -lt 150 -and $window -eq [IntPtr]::Zero; $attempt++) {
+              Start-Sleep -Milliseconds 100
+              if ($process.HasExited) {
+                break
+              }
+              $window = [ZsuiOwnerFileDialogProofNative]::FindProcessWindow(
+                [uint32]$process.Id,
+                $title
+              )
+            }
+            if ($window -eq [IntPtr]::Zero) {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the owner-bound Win32 file dialog did not become visible: $title"
+            }
+            $owner = [ZsuiOwnerFileDialogProofNative]::GetWindow($window, 4)
+            $ownerTitle = New-Object System.Text.StringBuilder 256
+            [void][ZsuiOwnerFileDialogProofNative]::GetWindowTextW(
+              $owner,
+              $ownerTitle,
+              $ownerTitle.Capacity
+            )
+            if ($owner -eq [IntPtr]::Zero -or $ownerTitle.ToString() -ne "ZSUI Notepad") {
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              throw "the Win32 file dialog is not owned by the ZSUI Notepad window"
+            }
+            $rect = New-Object ZsuiOwnerFileDialogProofNative+RECT
+            if (-not [ZsuiOwnerFileDialogProofNative]::GetWindowRect($window, [ref]$rect)) {
+              throw "GetWindowRect failed for the owner-bound Win32 file dialog"
+            }
+            $width = $rect.Right - $rect.Left
+            $height = $rect.Bottom - $rect.Top
+            $bitmap = New-Object System.Drawing.Bitmap($width, $height)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $target = $graphics.GetHdc()
+              try {
+                if (-not [ZsuiOwnerFileDialogProofNative]::PrintWindow($window, $target, 2)) {
+                  throw "PrintWindow failed for the owner-bound Win32 file dialog"
+                }
+              } finally {
+                $graphics.ReleaseHdc($target)
+              }
+              $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+            $cancel = [ZsuiOwnerFileDialogProofNative]::GetDlgItem($window, 2)
+            if ($cancel -eq [IntPtr]::Zero) {
+              throw "the owner-bound Win32 file dialog has no native Cancel button"
+            }
+            [void][ZsuiOwnerFileDialogProofNative]::SendMessageW(
+              $cancel,
+              0x00F5,
+              [IntPtr]::Zero,
+              [IntPtr]::Zero
+            )
+          }
+
+          Capture-Owner-Dialog `
+            "打开文本文档 / Open text document" `
+            (Join-Path $root "notepad-owner-open-panel.png")
+          Capture-Owner-Dialog `
+            "保存文本文档 / Save text document" `
+            (Join-Path $root "notepad-owner-save-panel.png")
+          if (-not $process.WaitForExit(15000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            throw "owner-bound Win32 Notepad proof timed out"
+          }
+          if ($process.ExitCode -ne 0) {
+            throw "owner-bound Win32 Notepad proof exited with code $($process.ExitCode)"
+          }
+          $proof = Get-Content (Join-Path $root "notepad-file-dialog-owner.json") -Raw | ConvertFrom-Json
+          if (
+            $proof.schema -ne "zsui.native-proof/v1" -or
+            $proof.platform -ne "windows" -or
+            $proof.scenario -ne "notepad-file-dialog-owner" -or
+            $proof.errors.Count -ne 0 -or
+            $proof.runtime.native_view_app_command_count -lt 2 -or
+            $proof.runtime.native_view_unhandled_click_count -ne 0
+          ) {
+            throw "owner-bound Win32 Notepad file-dialog proof is incomplete"
           }
 
       - name: Prepare deterministic reload sources
@@ -643,7 +931,7 @@ jobs:
             --locked \
             --example zsui_notepad \
             --no-default-features \
-            --features notepad-demo,accessibility
+            --features notepad-demo,accessibility,native-smoke
           cargo build \
             --release \
             --locked \
@@ -666,6 +954,12 @@ jobs:
             --release \
             --locked \
             --example native_dialog_smoke \
+            --no-default-features \
+            --features macos-appkit,native-smoke
+          cargo build \
+            --release \
+            --locked \
+            --example native_file_dialog_smoke \
             --no-default-features \
             --features macos-appkit,native-smoke
 
@@ -695,6 +989,63 @@ jobs:
           assert proof["localized_button_labels"] == ["确定", "取消", "是", "否"]
           assert proof["errors"] == []
           assert (root / "native-system-dialog.png").stat().st_size >= 1024
+          PY
+
+      - name: Run native AppKit file-panel proof
+        run: |
+          set -o pipefail
+          root=target/native-proof/macos-15-arm64
+          ./target/release/examples/native_file_dialog_smoke \
+            --output "$root/native-file-dialog.json" \
+            --open-screenshot "$root/native-open-panel.png" \
+            --save-screenshot "$root/native-save-panel.png"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/macos-15-arm64")
+          proof = json.loads((root / "native-file-dialog.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-file-dialog-proof/v1"
+          assert proof["platform"] == "macos"
+          assert proof["native_open_surface"] == "appkit_nsopenpanel"
+          assert proof["native_save_surface"] == "appkit_nssavepanel"
+          assert proof["owner_window_supplied"] is False
+          assert proof["open_allows_multiple"] is True
+          assert proof["suggested_name"] == "zsui-native-proof.txt"
+          assert proof["open_cancelled"] is True
+          assert proof["save_cancelled"] is True
+          assert proof["open_screenshot_captured"] is True
+          assert proof["save_screenshot_captured"] is True
+          assert proof["errors"] == []
+          assert (root / "native-open-panel.png").stat().st_size >= 1024
+          assert (root / "native-save-panel.png").stat().st_size >= 1024
+          PY
+
+      - name: Run owner-bound AppKit Notepad file-panel proof
+        run: |
+          set -o pipefail
+          root=target/native-proof/macos-15-arm64
+          ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR="$root" \
+            ./target/release/examples/zsui_notepad \
+              --file-dialog-proof \
+              --width 960 \
+              --height 640 \
+              --output "$root"
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/macos-15-arm64")
+          proof = json.loads((root / "notepad-file-dialog-owner.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-proof/v1"
+          assert proof["platform"] == "macos"
+          assert proof["scenario"] == "notepad-file-dialog-owner"
+          assert proof["errors"] == []
+          assert proof["runtime"]["native_view_app_command_count"] >= 2
+          assert proof["runtime"]["native_view_unhandled_click_count"] == 0
+          assert (root / "notepad-owner-open-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-owner-save-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-file-dialog-owner.png").stat().st_size >= 1024
           PY
 
       - name: Run real AppKit proof scenes
@@ -1199,9 +1550,12 @@ jobs:
             librsvg2-common \
             xvfb \
             xauth \
+            x11-utils \
             dbus-x11 \
             imagemagick \
             xdotool \
+            xdg-desktop-portal \
+            xdg-desktop-portal-gtk \
             zenity \
             fonts-ubuntu \
             fonts-noto-cjk \
@@ -1234,7 +1588,7 @@ jobs:
             --locked \
             --example zsui_notepad \
             --no-default-features \
-            --features notepad-demo
+            --features notepad-demo,native-smoke
           cargo build \
             --release \
             --locked \
@@ -1259,6 +1613,12 @@ jobs:
             --example native_dialog_smoke \
             --no-default-features \
             --features linux-direct,native-smoke
+          cargo build \
+            --release \
+            --locked \
+            --example native_file_dialog_smoke \
+            --no-default-features \
+            --features linux-direct,native-smoke
 
       - name: Build real GTK4 proof application
         id: gtk-build
@@ -1269,7 +1629,7 @@ jobs:
             --locked \
             --example zsui_notepad_gtk \
             --no-default-features \
-            --features notepad-demo-gtk,accessibility \
+            --features notepad-demo-gtk,accessibility,native-smoke \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-gtk4/build.log
 
       - name: Summarize GTK4 build failure
@@ -1347,6 +1707,247 @@ jobs:
           assert proof["localized_button_labels"] == ["确定", "取消", "是", "否"]
           assert proof["errors"] == []
           assert (root / "native-system-dialog.png").stat().st_size >= 1024
+          PY
+
+      - name: Run native Linux XDG file-dialog proof
+        run: |
+          dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
+            export XDG_CURRENT_DESKTOP=GNOME
+            export GTK_USE_PORTAL=1
+            root=target/native-proof/ubuntu-24.04-x86_64
+            mkdir -p "$root"
+
+            capture_and_cancel() {
+              title="$1"
+              screenshot="$2"
+              window=
+              for attempt in $(seq 1 120); do
+                window=$(xdotool search --onlyvisible --name "$title" 2>/dev/null | head -n 1 || true)
+                if [ -n "$window" ]; then
+                  break
+                fi
+                if ! kill -0 "$proof_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.1
+              done
+              if [ -z "$window" ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the XDG file dialog did not become visible: $title" >&2
+                exit 1
+              fi
+              xdotool windowactivate --sync "$window" 2>/dev/null || true
+              sleep 0.25
+              if ! import -window "$window" "$screenshot" 2>/dev/null \
+                || [ ! -s "$screenshot" ] \
+                || [ "$(stat --format=%s "$screenshot")" -lt 1024 ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the XDG file dialog did not produce a valid capture: $title" >&2
+                exit 1
+              fi
+              xdotool key --window "$window" Escape
+            }
+
+            ./target/release/examples/native_file_dialog_smoke \
+              --output "$root/native-file-dialog.json" \
+              --open-screenshot "$root/native-open-panel.png" \
+              --save-screenshot "$root/native-save-panel.png" &
+            proof_pid=$!
+            capture_and_cancel "Open File Proof" "$root/native-open-panel.png"
+            capture_and_cancel "Save File Proof" "$root/native-save-panel.png"
+            wait "$proof_pid"
+          '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/ubuntu-24.04-x86_64")
+          proof = json.loads((root / "native-file-dialog.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-file-dialog-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["native_open_surface"] == "xdg_desktop_portal_open_file"
+          assert proof["native_save_surface"] == "xdg_desktop_portal_save_file"
+          assert proof["owner_window_supplied"] is False
+          assert proof["open_allows_multiple"] is True
+          assert proof["suggested_name"] == "zsui-native-proof.txt"
+          assert proof["open_cancelled"] is True
+          assert proof["save_cancelled"] is True
+          assert proof["open_screenshot_captured"] is True
+          assert proof["save_screenshot_captured"] is True
+          assert proof["errors"] == []
+          assert (root / "native-open-panel.png").stat().st_size >= 1024
+          assert (root / "native-save-panel.png").stat().st_size >= 1024
+          PY
+
+      - name: Run owner-bound Linux Notepad XDG file-dialog proof
+        run: |
+          dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
+            export XDG_CURRENT_DESKTOP=GNOME
+            export GTK_USE_PORTAL=1
+            root=target/native-proof/ubuntu-24.04-x86_64
+
+            capture_owner_dialog() {
+              title="$1"
+              screenshot="$2"
+              dialog=
+              for attempt in $(seq 1 150); do
+                dialog=$(xdotool search --onlyvisible --name "$title" 2>/dev/null | head -n 1 || true)
+                if [ -n "$dialog" ]; then
+                  break
+                fi
+                if ! kill -0 "$proof_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.1
+              done
+              if [ -z "$dialog" ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound Linux file dialog did not become visible: $title" >&2
+                exit 1
+              fi
+              owner=$(xdotool search --onlyvisible --pid "$proof_pid" --name "ZSUI Notepad" 2>/dev/null | head -n 1 || true)
+              if [ -z "$owner" ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the Linux Notepad owner window is missing" >&2
+                exit 1
+              fi
+              owner_hex=$(printf "0x%x" "$owner")
+              transient=$(xprop -id "$dialog" WM_TRANSIENT_FOR 2>/dev/null || true)
+              if ! printf "%s" "$transient" | grep -Fqi "$owner_hex"; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the XDG file dialog is not transient for the ZSUI Notepad window: $transient" >&2
+                exit 1
+              fi
+              xdotool windowactivate --sync "$dialog" 2>/dev/null || true
+              sleep 0.25
+              if ! import -window "$dialog" "$screenshot" 2>/dev/null \
+                || [ ! -s "$screenshot" ] \
+                || [ "$(stat --format=%s "$screenshot")" -lt 1024 ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound XDG file dialog did not produce a valid capture" >&2
+                exit 1
+              fi
+              xdotool key --window "$dialog" Escape
+            }
+
+            ./target/release/examples/zsui_notepad \
+              --file-dialog-proof \
+              --width 960 \
+              --height 640 \
+              --output "$root" &
+            proof_pid=$!
+            capture_owner_dialog \
+              "Open text document" \
+              "$root/notepad-owner-open-panel.png"
+            capture_owner_dialog \
+              "Save text document" \
+              "$root/notepad-owner-save-panel.png"
+            wait "$proof_pid"
+          '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/ubuntu-24.04-x86_64")
+          proof = json.loads((root / "notepad-file-dialog-owner.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["scenario"] == "notepad-file-dialog-owner"
+          assert proof["errors"] == []
+          assert proof["runtime"]["native_view_app_command_count"] >= 2
+          assert proof["runtime"]["native_view_unhandled_click_count"] == 0
+          assert (root / "notepad-owner-open-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-owner-save-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-file-dialog-owner.png").stat().st_size >= 1024
+          PY
+
+      - name: Run owner-bound GTK4 Notepad file-dialog proof
+        run: |
+          dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
+            export GTK_USE_PORTAL=0
+            root=target/native-proof/ubuntu-24.04-x86_64-gtk4
+
+            capture_owner_dialog() {
+              title="$1"
+              screenshot="$2"
+              dialog=
+              for attempt in $(seq 1 150); do
+                dialog=$(xdotool search --onlyvisible --name "$title" 2>/dev/null | head -n 1 || true)
+                if [ -n "$dialog" ]; then
+                  break
+                fi
+                if ! kill -0 "$proof_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.1
+              done
+              if [ -z "$dialog" ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound GTK4 file dialog did not become visible: $title" >&2
+                exit 1
+              fi
+              owner=$(xdotool search --onlyvisible --pid "$proof_pid" --name "ZSUI Notepad" 2>/dev/null | grep -v "^$dialog$" | head -n 1 || true)
+              if [ -z "$owner" ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the GTK4 Notepad owner window is missing" >&2
+                exit 1
+              fi
+              owner_hex=$(printf "0x%x" "$owner")
+              transient=$(xprop -id "$dialog" WM_TRANSIENT_FOR 2>/dev/null || true)
+              if ! printf "%s" "$transient" | grep -Fqi "$owner_hex"; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the GTK4 file dialog is not transient for the ZSUI Notepad window: $transient" >&2
+                exit 1
+              fi
+              xdotool windowactivate --sync "$dialog" 2>/dev/null || true
+              sleep 0.25
+              if ! import -window "$dialog" "$screenshot" 2>/dev/null \
+                || [ ! -s "$screenshot" ] \
+                || [ "$(stat --format=%s "$screenshot")" -lt 1024 ]; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound GTK4 file dialog did not produce a valid capture" >&2
+                exit 1
+              fi
+              xdotool key --window "$dialog" Escape
+            }
+
+            ./target/release/examples/zsui_notepad_gtk \
+              --file-dialog-proof \
+              --width 960 \
+              --height 640 \
+              --output "$root" &
+            proof_pid=$!
+            capture_owner_dialog \
+              "Open text document" \
+              "$root/notepad-owner-open-panel.png"
+            capture_owner_dialog \
+              "Save text document" \
+              "$root/notepad-owner-save-panel.png"
+            wait "$proof_pid"
+          '
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("target/native-proof/ubuntu-24.04-x86_64-gtk4")
+          proof = json.loads((root / "notepad-file-dialog-owner.json").read_text(encoding="utf-8"))
+          assert proof["schema"] == "zsui.native-proof/v1"
+          assert proof["platform"] == "linux"
+          assert proof["backend"] == "gtk4"
+          assert proof["scenario"] == "notepad-file-dialog-owner"
+          assert proof["errors"] == []
+          assert proof["runtime"]["native_view_app_command_count"] >= 2
+          assert proof["runtime"]["native_view_unhandled_click_count"] == 0
+          assert (root / "notepad-owner-open-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-owner-save-panel.png").stat().st_size >= 1024
+          assert (root / "notepad-file-dialog-owner.png").stat().st_size >= 1024
           PY
 
       - name: Verify optional Linux renderer boundaries

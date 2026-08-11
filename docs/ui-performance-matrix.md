@@ -4,6 +4,13 @@ ZSUI 的性能基线固定为四种独立构建，并只允许同一档位横向
 `zsui-viewer` 是不同产物；Viewer 的文件监听、文档校验和全组件覆盖不得计入
 正式应用的框架成本。
 
+`.github/workflows/ui-performance-matrix.yml` 在固定的 `macos-15` 和
+`ubuntu-24.04` Runner 上构建同一组 20 个 release 产物。两个任务都启动真实窗口，
+为每个档位记录二进制大小、首次及暖启动、首帧、空窗口/完整页面/隐藏后/峰值内存、
+静止与 60 Hz 重绘 CPU，并上传 20 张最终窗口截图和结构化报告。Linux 从递归进程树
+的 `smaps_rollup` 记录 RSS、PSS 和 Private RSS；macOS 记录递归 RSS 与 `vmmap`
+physical footprint，并将系统不提供的 PSS/Private RSS 明确保留为 `null`。
+
 ## 固定工作负载
 
 | 配置 | 固定内容 | ZSUI 产物边界 |
@@ -111,6 +118,20 @@ Windows 没有提供与 Linux `/proc/<pid>/smaps` 等价的 PSS 计数，因此�
 工作集。Tauri 的 `*` 表示二进制大小不包含系统安装的 WebView2 运行时，内存则
 包含完整 WebView2 进程树。
 
+## macOS 与 Linux 阻断矩阵
+
+目标机数字不固化到文档中冒充跨机器常量。每次影响框架、示例、对照实现或矩阵
+工具的提交都会重新生成：
+
+- `ui-performance-matrix-macos-15-arm64/report.json` 与 20 张 macOS 窗口图；
+- `ui-performance-matrix-ubuntu-24.04-x86_64/report.json` 与 20 张 X11 窗口图。
+
+任务严格校验 5 个框架 × 4 个档位、非零启动/首帧/内存/二进制指标、截图完整性，
+Linux 还要求 PSS 与 Private RSS。Tauri 指标包含系统 WebView 子进程；ZSUI Viewer
+始终单列，不能替代正式应用行。macOS 的 60 Hz ZSUI 驱动使用系统
+`NSRunningApplication` 可见性失效循环，Linux 使用 X11 configure/expose；其他框架
+使用各自进程内的固定重绘模式。
+
 ## 结论边界
 
 - ZSUI 正式应用没有因 Viewer 或 UiDocument 开发工具被迫增重：Common 页面 RSS
@@ -135,3 +156,14 @@ Windows 没有提供与 Linux `/proc/<pid>/smaps` 等价的 PSS 计数，因此�
 脚本构建 20 个独立 release 产物，递归采样进程树，并为每个页面保存截图。构建、
 截图和 JSON 报告默认写入 Git 工作区外的 `zsui-ui-benchmark-support`，避免把生成
 文件或对照框架运行时带入 ZSUI 包。
+
+macOS/Linux 使用相同的应用清单：
+
+```bash
+bash comparisons/scripts/build_unix_performance_matrix.sh
+python3 comparisons/scripts/measure_unix_performance_matrix.py \
+  --applications comparisons/performance-matrix-applications.json \
+  --output target/ui-performance-matrix/ubuntu-24.04-x86_64 \
+  --platform linux \
+  --runner ubuntu-24.04-x86_64
+```
