@@ -1445,7 +1445,7 @@ jobs:
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
           dbus-run-session -- xvfb-run -a bash -euo pipefail <<'GTK_PROOF'
           export NO_AT_BRIDGE=0
-          export GTK_A11Y=always
+          export GTK_A11Y=atspi
           export ZSUI_NATIVE_PROOF_DURATION_MS=12000
           root=target/native-proof/ubuntu-24.04-x86_64-gtk4
           ./target/release/examples/zsui_notepad_gtk \
@@ -1480,6 +1480,13 @@ jobs:
             --object-path /org/a11y/bus \
             --method org.freedesktop.DBus.Properties.Set \
             org.a11y.Status IsEnabled '<true>' \
+            >>"$root/atspi-status.log"
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Get \
+            org.a11y.Status IsEnabled \
             >>"$root/atspi-status.log"
           /usr/bin/python3 - <<'PY'
           import json
@@ -1563,9 +1570,14 @@ jobs:
         if: failure() && steps.linux-scenes.outcome == 'failure'
         run: |
           root=target/native-proof/ubuntu-24.04-x86_64
-          summary="$(grep -Eai 'error|failed|panic|capture|display|xvfb|gtk' "$root"/*.log | tail -30 | tr '\n' ' ' || true)"
+          gtk_root=target/native-proof/ubuntu-24.04-x86_64-gtk4
+          lite_root=target/native-proof/ubuntu-24.04-x86_64-lite
+          summary="$(grep -Eai 'error|failed|panic|capture|display|xvfb|gtk|at-spi|accessibility' \
+            "$root"/*.log "$gtk_root"/*.log "$lite_root"/*.log \
+            2>/dev/null | tail -30 | tr '\n' ' ' || true)"
           if test -z "$summary"; then
-            summary="$(tail -30 "$root"/*.log | tr '\n' ' ' || true)"
+            summary="$(tail -30 "$root"/*.log "$gtk_root"/*.log "$lite_root"/*.log \
+              2>/dev/null | tr '\n' ' ' || true)"
           fi
           echo "::error title=Linux proof scene failure::$summary"
 
@@ -1999,6 +2011,8 @@ jobs:
           assert runtime["screenshot_captured"] is True
           assert not runtime["screenshot_error"]
           assert runtime["window_menu_command_routed"] is True
+          gtk_log = (gtk_root / "notepad.log").read_text(encoding="utf-8")
+          assert "Unrecognized accessibility backend" not in gtk_log
           assert runtime["native_accessibility_backend"] == "gtk4_atspi"
           assert runtime["native_accessibility_node_count"] == 1
           assert any(
