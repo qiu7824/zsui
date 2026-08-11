@@ -34,6 +34,7 @@ pub(crate) struct LinuxGtkNativeWindowRunReport {
     pub proof_input_reports: Vec<crate::native::NativeViewInputDispatchReport>,
     pub menu_command_routed: bool,
     pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
+    pub accessibility_node_count: usize,
 }
 
 pub(crate) fn run_linux_gtk_native_window_event_loop(
@@ -51,6 +52,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             proof_input_reports: Vec::new(),
             menu_command_routed: false,
             process_memory: None,
+            accessibility_node_count: 0,
         });
     }
     let application = gtk::Application::builder()
@@ -69,6 +71,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let proof_input_reports = Rc::new(RefCell::new(Vec::new()));
     let menu_command_routed = Rc::new(RefCell::new(false));
     let process_memory = Rc::new(RefCell::new(None));
+    let accessibility_node_count = Rc::new(RefCell::new(0_usize));
 
     application.connect_activate({
         let specs = Rc::clone(&specs);
@@ -83,6 +86,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         let proof_input_reports = Rc::clone(&proof_input_reports);
         let menu_command_routed = Rc::clone(&menu_command_routed);
         let process_memory = Rc::clone(&process_memory);
+        let accessibility_node_count = Rc::clone(&accessibility_node_count);
         move |application| {
             if state.borrow().is_some() {
                 return;
@@ -175,10 +179,17 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                 let capture_path = Rc::clone(&capture_path);
                 let capture_result = Rc::clone(&capture_result);
                 let process_memory = Rc::clone(&process_memory);
+                let accessibility_node_count = Rc::clone(&accessibility_node_count);
                 gtk::glib::timeout_add_local_once(Duration::from_millis(delay.max(1)), move || {
                     *process_memory.borrow_mut() = crate::desktop_runtime::capture_process_memory(
                         "native_window_before_teardown",
                     );
+                    *accessibility_node_count.borrow_mut() = state
+                        .borrow()
+                        .as_ref()
+                        .and_then(|runtime| runtime._windows.view_hosts.values().next())
+                        .map(crate::linux_gtk_renderer::LinuxGtkDrawViewHost::accessibility_node_count)
+                        .unwrap_or(0);
                     if let Some(path) = capture_path.as_deref() {
                         let result = state
                             .borrow()
@@ -210,12 +221,14 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let created_window_count = *created_count.borrow();
     let menu_command_routed = *menu_command_routed.borrow();
     let process_memory = process_memory.borrow_mut().take();
+    let accessibility_node_count = *accessibility_node_count.borrow();
     Ok(LinuxGtkNativeWindowRunReport {
         created_window_count,
         native_view_capture,
         proof_input_reports,
         menu_command_routed,
         process_memory,
+        accessibility_node_count,
     })
 }
 

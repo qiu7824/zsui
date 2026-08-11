@@ -1026,6 +1026,12 @@ jobs:
                   assert runtime["native_view_unhandled_click_count"] == 0
               if stem == "notepad-interaction":
                   validate_notepad_text(runtime, "appkit")
+                  assert runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
+                  assert runtime["native_accessibility_node_count"] > 0
+                  assert any(
+                      event.startswith("appkit_accessibility_tree:nodes=")
+                      for event in runtime["events"]
+                  )
 
           viewer_root = root / "ui-viewer-scroll"
           viewer_png = viewer_root / "window.png"
@@ -1185,6 +1191,7 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libgtk-4-dev \
             libpango1.0-dev \
+            at-spi2-core \
             libx11-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
@@ -1198,7 +1205,8 @@ jobs:
             zenity \
             fonts-ubuntu \
             fonts-noto-cjk \
-            fonts-noto-color-emoji
+            fonts-noto-color-emoji \
+            python3-pyatspi
           fc-cache --force
           fc-match 'Ubuntu Sans:style=Regular'
           fc-match 'sans-serif:lang=zh-cn'
@@ -1238,7 +1246,7 @@ jobs:
             --locked \
             --bin zsui-viewer \
             --no-default-features \
-            --features ui-viewer,accessibility
+            --features ui-viewer,linux-direct-accessibility
           cargo build \
             --release \
             --locked \
@@ -1261,7 +1269,7 @@ jobs:
             --locked \
             --example zsui_notepad_gtk \
             --no-default-features \
-            --features notepad-demo-gtk \
+            --features notepad-demo-gtk,accessibility \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-gtk4/build.log
 
       - name: Summarize GTK4 build failure
@@ -1351,12 +1359,12 @@ jobs:
           if cargo tree \
             --locked \
             --no-default-features \
-            --features notepad-demo-gtk \
+            --features notepad-demo-gtk,accessibility \
             | grep -Eq ' (winit|softbuffer|accesskit_winit) v'; then
             cargo tree \
               --locked \
               --no-default-features \
-              --features notepad-demo-gtk
+              --features notepad-demo-gtk,accessibility
             echo "notepad-demo-gtk unexpectedly pulls the Winit/Softbuffer host" >&2
             exit 1
           fi
@@ -1435,13 +1443,114 @@ jobs:
               --height 640 \
               --output target/native-proof/ubuntu-24.04-x86_64 \
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/notepad.log
-          dbus-run-session -- xvfb-run -a \
-            ./target/release/examples/zsui_notepad_gtk \
-              --native-proof \
-              --width 960 \
-              --height 640 \
-              --output target/native-proof/ubuntu-24.04-x86_64-gtk4 \
-            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64-gtk4/notepad.log
+          dbus-run-session -- xvfb-run -a bash -euo pipefail <<'GTK_PROOF'
+          export NO_AT_BRIDGE=0
+          export GTK_A11Y=always
+          export ZSUI_NATIVE_PROOF_DURATION_MS=12000
+          root=target/native-proof/ubuntu-24.04-x86_64-gtk4
+          ./target/release/examples/zsui_notepad_gtk \
+            --native-proof \
+            --width 960 \
+            --height 640 \
+            --output "$root" \
+            >"$root/notepad.log" 2>&1 &
+          gtk_pid=$!
+          trap 'kill "$gtk_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 80); do
+            if gdbus introspect \
+              --session \
+              --dest org.a11y.Bus \
+              --object-path /org/a11y/bus \
+              >"$root/atspi-status.log" 2>&1; then
+              break
+            fi
+            kill -0 "$gtk_pid"
+            sleep 0.1
+          done
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<false>' \
+            >>"$root/atspi-status.log"
+          gdbus call \
+            --session \
+            --dest org.a11y.Bus \
+            --object-path /org/a11y/bus \
+            --method org.freedesktop.DBus.Properties.Set \
+            org.a11y.Status IsEnabled '<true>' \
+            >>"$root/atspi-status.log"
+          /usr/bin/python3 - <<'PY'
+          import json
+          import time
+          from pathlib import Path
+          import pyatspi
+
+          root = Path("target/native-proof/ubuntu-24.04-x86_64-gtk4")
+          deadline = time.monotonic() + 10.0
+          application = None
+          snapshot = []
+
+          def children(node):
+              for index in range(node.childCount):
+                  try:
+                      yield node.getChildAtIndex(index)
+                  except Exception:
+                      pass
+
+          def walk(node, limit=256):
+              queue = [node]
+              seen = 0
+              while queue and seen < limit:
+                  current = queue.pop(0)
+                  seen += 1
+                  yield current
+                  queue.extend(children(current))
+
+          while time.monotonic() < deadline and not snapshot:
+              desktop = pyatspi.Registry.getDesktop(0)
+              for candidate in children(desktop):
+                  try:
+                      nodes = list(walk(candidate))
+                      evidence = [
+                          {"name": node.name or "", "role": node.getRoleName()}
+                          for node in nodes
+                      ]
+                  except Exception:
+                      continue
+                  if any("ZSUI Notepad" in item["name"] for item in evidence):
+                      text_nodes = [
+                          item for item in evidence if "text" in item["role"].lower()
+                      ]
+                      if text_nodes:
+                          application = candidate
+                          snapshot = evidence
+                          break
+              if not snapshot:
+                  time.sleep(0.1)
+
+          if application is None:
+              raise SystemExit("AT-SPI did not expose the GTK4 ZSUI Notepad text box")
+          text_nodes = [item for item in snapshot if "text" in item["role"].lower()]
+          (root / "gtk-atspi.json").write_text(
+              json.dumps(
+                  {
+                      "schema": "zsui.gtk4-atspi-proof/v1",
+                      "backend": "gtk4_atspi",
+                      "node_count": len(snapshot),
+                      "text_nodes": text_nodes,
+                      "nodes": snapshot,
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+              ),
+              encoding="utf-8",
+          )
+          PY
+          wait "$gtk_pid"
+          trap - EXIT
+          GTK_PROOF
           dbus-run-session -- xvfb-run -a \
             ./target/release/examples/zsui_notepad_lite \
               --native-proof \
@@ -1890,11 +1999,23 @@ jobs:
           assert runtime["screenshot_captured"] is True
           assert not runtime["screenshot_error"]
           assert runtime["window_menu_command_routed"] is True
+          assert runtime["native_accessibility_backend"] == "gtk4_atspi"
+          assert runtime["native_accessibility_node_count"] == 1
+          assert any(
+              event == "native_accessibility_bridge:gtk4_atspi:nodes=1"
+              for event in runtime["events"]
+          )
           memory = runtime["process_memory_during_runtime"]
           assert memory["source"] == "linux_procfs_status_smaps_rollup"
           assert memory["sample_point"] == "native_window_before_teardown"
           assert memory["resident_bytes"] > 0
           validate_notepad_text(runtime, "gtk")
+          atspi = json.loads((gtk_root / "gtk-atspi.json").read_text(encoding="utf-8"))
+          assert atspi["schema"] == "zsui.gtk4-atspi-proof/v1"
+          assert atspi["backend"] == "gtk4_atspi"
+          assert atspi["node_count"] >= 3
+          assert atspi["text_nodes"]
+          assert all("text" in node["role"].lower() for node in atspi["text_nodes"])
 
       - name: Upload Linux proof
         if: always()
@@ -1974,13 +2095,13 @@ jobs:
             --locked \
             --example component_gallery \
             --no-default-features \
-            --features component-gallery-demo,accessibility
+            --features component-gallery-demo,linux-direct-accessibility
           cargo build \
             --release \
             --locked \
             --example zsui_notepad \
             --no-default-features \
-            --features notepad-demo,accessibility
+            --features notepad-demo,linux-direct-accessibility
 
       - name: Run real Wayland, AT-SPI and menu scenes
         id: wayland-scenes

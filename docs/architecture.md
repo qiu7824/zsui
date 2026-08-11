@@ -429,7 +429,10 @@ renderer features are additive in Cargo, so `linux-direct` remains authoritative
 when both are enabled; a lite-only build must omit `linux-direct`. `linux-system-icons`
 optionally adds freedesktop theme lookup plus
 GdkPixbuf decoding, and `linux-gtk` enables optional GTK4 compatibility
-bindings. Platform-native window, clipboard, file-dialog
+bindings. The shared `accessibility` feature does not pull a Linux window host;
+the Winit-based direct host adds its AccessKit/AT-SPI bridge only through
+`linux-direct-accessibility`, while GTK4 keeps its toolkit accessibility path
+without Winit or Softbuffer. Platform-native window, clipboard, file-dialog
 and menu adapters therefore do not enter builds that omit their backend
 feature. Window adapters own `NSWindow` or Wayland/X11 window instances behind
 strong `WindowId` values; clipboard adapters map `ClipboardData::Text`,

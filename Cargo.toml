@@ -58,7 +58,7 @@ windows-core = { version = "0.62.2", optional = true }
 
 [features]
 default = ["window", "button", "label"]
-accessibility = ["dep:accesskit", "dep:accesskit_winit", "dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants", "objc2-app-kit?/NSAccessibilityElement"]
+accessibility = ["dep:windows", "dep:windows-core", "gtk4?/v4_10", "objc2-app-kit?/NSAccessibility", "objc2-app-kit?/NSAccessibilityConstants", "objc2-app-kit?/NSAccessibilityElement"]
 window = ["windows-win32", "macos-appkit", "linux-direct"]
 button = ["widgets-base"]
 badge = ["widgets-base"]
@@ -141,6 +141,7 @@ windows-text-proof = ["windows-directwrite", "rust-text-proof"]
 macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
 linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-direct-accessibility = ["accessibility", "linux-direct-host", "dep:accesskit", "dep:accesskit_winit"]
 linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocairo"]
 linux-direct-lite = ["linux-direct-host", "rust-text", "dep:tiny-skia"]
 linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
@@ -158,6 +159,7 @@ full = [
     "hotkey",
     "localization",
     "linux-system-icons",
+    "linux-direct-accessibility",
     "mobile",
     "native-smoke",
     "product-adapter",

@@ -530,6 +530,22 @@ impl std::fmt::Debug for LinuxGtkDrawViewHost {
 }
 
 impl LinuxGtkDrawViewHost {
+    pub(crate) fn accessibility_node_count(&self) -> usize {
+        #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
+        {
+            return usize::from(
+                self.area.accessible_role() == gtk::AccessibleRole::TextBox
+                    && self
+                        .runtime
+                        .borrow()
+                        .focused_text_accessibility_snapshot()
+                        .is_some(),
+            );
+        }
+        #[cfg(not(all(feature = "accessibility", feature = "text-input-core")))]
+        0
+    }
+
     pub(crate) fn dispatch_proof_inputs(
         &self,
         inputs: &[crate::NativeViewSmokeInput],

@@ -93,6 +93,7 @@ $singleFeatures = @(
     "macos-appkit",
     "linux-direct",
     "linux-direct-host",
+    "linux-direct-accessibility",
     "linux-direct-lite",
     "linux-system-icons",
     "linux-gtk",
@@ -118,7 +119,8 @@ $featureSets = @(
     "notepad-demo-lite,style",
     "calculator,window",
     "component-gallery-demo",
-    "desktop-native,all-widgets,style,dark-mode"
+    "desktop-native,all-widgets,style,dark-mode",
+    "linux-direct,linux-direct-accessibility,all-widgets"
 )
 
 function Invoke-CargoFeatureCheck {

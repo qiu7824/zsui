@@ -46,14 +46,14 @@ pub(crate) enum LinuxMenuInputResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(feature = "accessibility")]
+#[cfg(feature = "linux-direct-accessibility")]
 pub(crate) enum LinuxMenuAccessibilityTarget {
     Root(usize),
     Row(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg(feature = "accessibility")]
+#[cfg(feature = "linux-direct-accessibility")]
 pub(crate) enum LinuxMenuAccessibilityRole {
     Menu,
     MenuItem,
@@ -62,7 +62,7 @@ pub(crate) enum LinuxMenuAccessibilityRole {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(feature = "accessibility")]
+#[cfg(feature = "linux-direct-accessibility")]
 pub(crate) struct LinuxMenuAccessibilityItem {
     pub target: Option<LinuxMenuAccessibilityTarget>,
     pub author_id: String,
@@ -76,7 +76,7 @@ pub(crate) struct LinuxMenuAccessibilityItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg(feature = "accessibility")]
+#[cfg(feature = "linux-direct-accessibility")]
 pub(crate) struct LinuxMenuAccessibilitySnapshot {
     pub bar_bounds: Rect,
     pub roots: Vec<LinuxMenuAccessibilityItem>,
@@ -141,7 +141,7 @@ impl LinuxDirectMenuSurface {
         &self.menu
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     pub(crate) fn accessibility_snapshot(&self) -> LinuxMenuAccessibilitySnapshot {
         let roots = self
             .roots
@@ -228,7 +228,7 @@ impl LinuxDirectMenuSurface {
         }
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     pub(crate) fn accessibility_focus_root(
         &mut self,
         root_index: usize,
@@ -244,7 +244,7 @@ impl LinuxDirectMenuSurface {
         true
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     pub(crate) fn accessibility_focus_row(&mut self, row_index: usize) -> bool {
         let enabled = self
             .popup_rows
@@ -258,7 +258,7 @@ impl LinuxDirectMenuSurface {
         true
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     pub(crate) fn accessibility_activate_root(
         &mut self,
         root_index: usize,
@@ -275,7 +275,7 @@ impl LinuxDirectMenuSurface {
         }
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     pub(crate) fn accessibility_activate_row(
         &mut self,
         row_index: usize,
@@ -839,7 +839,7 @@ fn menu_item_enabled(item: &MenuItemSpec) -> bool {
     }
 }
 
-#[cfg(feature = "accessibility")]
+#[cfg(feature = "linux-direct-accessibility")]
 fn menu_item_author_id(item: &MenuItemSpec, prefix: &str, index: usize) -> String {
     let declared = match item {
         MenuItemSpec::Command { id, .. } | MenuItemSpec::Submenu { id, .. } => id.as_deref(),
@@ -873,7 +873,6 @@ fn menu_font_description() -> pango::FontDescription {
 #[cfg(feature = "linux-direct")]
 impl LinuxMenuTextMetrics for pango::Context {
     fn measure_menu_text(&self, text: &str) -> (i32, i32) {
-        use pango::prelude::*;
         let layout = pango::Layout::new(self);
         layout.set_font_description(Some(&menu_font_description()));
         layout.set_text(text);
@@ -930,7 +929,6 @@ impl LinuxMenuCanvas for LinuxCairoMenuCanvas<'_> {
         color: Color,
         placement: LinuxMenuTextPlacement,
     ) {
-        use pango::prelude::*;
         let layout = pango::Layout::new(self.pango_context);
         layout.set_font_description(Some(&menu_font_description()));
         layout.set_text(text);

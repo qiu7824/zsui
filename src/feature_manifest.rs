@@ -580,7 +580,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["windows", "windows-core"],
             Vec::new(),
-            "optional native text accessibility adapters: Win32 UI Automation Edit/Value, AppKit text selectors and GTK4 textbox/value semantics",
+            "optional shared accessibility semantics plus Win32 UI Automation, AppKit NSAccessibility and GTK4 accessible properties",
         ),
         ZsuiCargoFeature::new(
             "image",
@@ -771,6 +771,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "shared Wayland/X11 window, input, IME, menu, portal and software-presentation host",
         ),
         ZsuiCargoFeature::new(
+            "linux-direct-accessibility",
+            Backend,
+            false,
+            vec!["accesskit", "accesskit_winit"],
+            vec!["accessibility", "linux-direct-host"],
+            "optional AccessKit AT-SPI bridge for the Winit-based Linux direct host",
+        ),
+        ZsuiCargoFeature::new(
             "linux-direct",
             Backend,
             false,
@@ -878,6 +886,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "hotkey",
                 "localization",
                 "linux-gtk",
+                "linux-direct-accessibility",
                 "linux-system-icons",
                 "mobile",
                 "native-smoke",
@@ -1031,6 +1040,10 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "all-widgets")
             .expect("all-widgets feature should be listed");
+        let linux_direct = manifest
+            .iter()
+            .find(|feature| feature.name == "linux-direct-accessibility")
+            .expect("Linux direct accessibility feature should be listed");
         let full = manifest
             .iter()
             .find(|feature| feature.name == "full")
@@ -1042,7 +1055,16 @@ mod tests {
             vec!["windows", "windows-core"]
         );
         assert!(!all_widgets.enables.contains(&"accessibility"));
+        assert_eq!(
+            linux_direct.optional_dependency_names,
+            vec!["accesskit", "accesskit_winit"]
+        );
+        assert_eq!(
+            linux_direct.enables,
+            vec!["accessibility", "linux-direct-host"]
+        );
         assert!(full.enables.contains(&"accessibility"));
+        assert!(full.enables.contains(&"linux-direct-accessibility"));
     }
 
     #[test]

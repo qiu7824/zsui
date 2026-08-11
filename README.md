@@ -231,8 +231,9 @@ fn volume_control(value: f32) -> ViewNode<Msg> {
 }
 ```
 
-启用 `accessibility` 后，同一范围和步长会直接投影为 UIA、AppKit
-Accessibility 与 AccessKit 的可调原生 RangeValue 语义；辅助技术设置数值或执行
+启用 `accessibility` 后，同一范围和步长会直接投影为 UIA 与 AppKit
+Accessibility 语义；Linux Direct 另外启用 `linux-direct-accessibility` 后投影为
+AccessKit 的可调原生 RangeValue 语义。辅助技术设置数值或执行
 增减动作时，仍通过同一 `VolumeChanged` 消息更新应用状态。
 
 保持按下状态的 ToggleButton 也是独立可选组件；状态由应用显式持有，点击或
@@ -249,7 +250,8 @@ fn pin_button(checked: bool) -> ViewNode<Msg> {
 }
 ```
 
-启用 `accessibility` 后，这个显式布尔状态同时进入三平台原生无障碍树：
+启用 `accessibility`（Linux Direct 使用 `linux-direct-accessibility`）后，这个显式
+布尔状态同时进入三平台原生无障碍树：
 Windows 保持 `Button` 控件类型并仅暴露有状态的 `TogglePattern`，AppKit 以
 按钮值和 `accessibilityPerformPress` 表达，Linux Direct 则投影为 AccessKit
 `toggled` 状态与 `Click` 动作。辅助技术触发后仍回到同一 `PinChanged` 消息，
@@ -271,7 +273,8 @@ fn amount_control(value: Option<f64>) -> ViewNode<Msg> {
 }
 ```
 
-启用 `accessibility` 后，有值的 NumberBox 在 Windows 暴露 Spinner 与可写
+启用 `accessibility`（Linux Direct 使用 `linux-direct-accessibility`）后，有值的
+NumberBox 在 Windows 暴露 Spinner 与可写
 RangeValue，同时保留 Edit 的 Value/TextPattern；AppKit 使用 Incrementor 数值及增减
 选择器，Linux Direct 使用 AccessKit SpinButton 数值动作。设置值会先按显示精度归一，
 再通过原有 `AmountChanged` 消息回写，屏幕朗读值不会与可见文本分离。
@@ -629,11 +632,12 @@ ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
 `password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`auto-suggest`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
-开启；原生文本无障碍桥接也只在显式开启 `accessibility` 时进入编译，Win32 使用
-UI Automation Edit/Value/TextPattern，macOS 使用 AppKit Accessibility，`linux-gtk`
-兼容后端使用 GTK4 Accessibility；默认 `linux-direct` 通过 AccessKit 投影到 AT-SPI，
-并由真实 Weston Wayland Runner 验证菜单与辅助功能事件。`linux-direct-lite` 复用同一
-宿主桥接，但仍需独立补齐 Wayland/AT-SPI 运行证据。
+开启；原生文本无障碍桥接也只在显式开启时进入编译。`accessibility` 提供共享语义、
+Win32 UI Automation Edit/Value/TextPattern、AppKit Accessibility 和 GTK4
+Accessibility；`linux-direct-accessibility` 才额外编译 AccessKit/AccessKit-Winit 并
+投影到 AT-SPI，因此 GTK4 应用不会为辅助功能误打包 Winit/Softbuffer。
+Direct 路径由真实 Weston Wayland Runner 验证菜单与辅助功能事件；GTK4 路径由独立
+ApplicationWindow/AT-SPI 探针验证。`linux-direct-lite` 也可显式组合该 Direct 桥接。
 这些路径均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择
 时才会打包全部能力。
 
@@ -854,7 +858,7 @@ Windows Calculator 对比方法，并区分工作集、私有工作集与私有�
 | --- | --- | --- |
 | Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
 | macOS | 原生运行与 CI 证据 | 统一入口进入 NSApplication/NSWindow；AppKit 最终 NSView 截图、输入、布局报告及 NSStatusItem 状态栏菜单已由 macos-15 Runner 验证 |
-| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用共享的 ZSUI Rust 文字上下文与 tiny-skia；X11 最终表面及 Wayland/AT-SPI/菜单已有目标机证据，统一上下文后的 Lite 目标数据待重跑 |
+| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用共享的 ZSUI Rust 文字上下文与 tiny-skia；同一 Notepad 源码还由真实 GTK4 ApplicationWindow/DrawingArea 启动并导出 GSK 最终截图；X11、Wayland/AT-SPI、GTK4/AT-SPI 与菜单均有目标机证据 |
 | Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
 
 平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，
@@ -898,7 +902,7 @@ Linux/macOS 桌面目标。
 ## 当前边界
 
 - Windows 仍需更完整的 UI Automation、暗色、系统高对比度实时切换和高级输入证据
-- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value/TextPattern（文档范围、选择、命中、成形矩形、查找、范围移动和滚动入视口）、AppKit 文本范围选择器和 GTK4 文本框语义，Windows 已有真实 HWND/UI Automation CI 探针，但 UIA 富文本属性/嵌入对象范围与 AppKit/GTK4 辅助技术目标机证据仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
+- 通用文本编辑器仍需继续收口；三平台原生成形宽度与双向插入点已统一驱动绘制/命中/选择/换行/滚动，上下视觉行导航保持目标 x，Left/Right 已按成形主光标的视觉 x 顺序移动；可选 `accessibility` 已接入 Win32 UIA Edit/Value/TextPattern（文档范围、选择、命中、成形矩形、查找、范围移动和滚动入视口）、AppKit 文本范围选择器和 GTK4 文本框语义，并分别具备 HWND/UI Automation、NSAccessibility 与 GTK4/AT-SPI 目标机证据；UIA 富文本属性和嵌入对象范围仍待完成；`ZsTextDocument` 已提供平台无关的文本编解码、脏状态和事务式保存生命周期
 - DatePicker、TreeView、DataGrid 与 ContentDialog 的第一阶段运行面仍缺完整无障碍、高级交互和 AppKit/GTK4 目标机证据；嵌入式浏览器控件不在 v0.2 产品范围内
 - macOS 与 Linux 已有真实目标机运行和最终表面截图；发布前仍需补充真实中文输入法
   候选窗、系统辅助技术和更多桌面环境的人工验收。Android 仍需真实设备证据

@@ -172,7 +172,9 @@ acceptance application does not depend on it.
 `window` umbrella with `linux-direct-lite`. It is an acceptance profile, not a
 second Linux application implementation.
 `notepad-demo-gtk` does the same for the `linux-gtk` backend and therefore does
-not pull the Winit/Softbuffer Linux host into that executable.
+not pull the Winit/Softbuffer Linux host into that executable. Combining it
+with `accessibility` keeps GTK4's own textbox properties and AT-SPI bridge;
+AccessKit-Winit remains isolated behind `linux-direct-accessibility`.
 
 ## Code-volume and runtime comparison
 

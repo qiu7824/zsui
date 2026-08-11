@@ -70,7 +70,7 @@ mod linux_direct;
     target_os = "linux",
     not(target_env = "ohos"),
     feature = "linux-direct-host",
-    feature = "accessibility"
+    feature = "linux-direct-accessibility"
 ))]
 mod linux_direct_accessibility;
 #[cfg(all(

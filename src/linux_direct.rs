@@ -344,7 +344,7 @@ impl LinuxDirectApp {
             if let Some(menu) = window.menu_surface.as_mut() {
                 menu.open_for_capture(&window.draw_text_context);
             }
-            #[cfg(feature = "accessibility")]
+            #[cfg(feature = "linux-direct-accessibility")]
             window.sync_accessibility();
         }
         window.window.request_redraw();
@@ -411,7 +411,7 @@ impl LinuxDirectApp {
         }
         self.process_memory =
             crate::NativeProofProcessMemoryEvidence::capture_at("native_window_before_teardown");
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         {
             self.accessibility_bridge_created = !self.windows.is_empty();
             self.accessibility_node_count = self
@@ -469,7 +469,7 @@ impl LinuxDirectApp {
                 next = next.min_some(Some(candidate));
             }
         }
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         if !self.windows.is_empty() {
             next = next.min_some(Some(now + Duration::from_millis(50)));
         }
@@ -519,7 +519,7 @@ impl ApplicationHandler for LinuxDirectApp {
         let Some(window) = self.windows.get_mut(&window_id) else {
             return;
         };
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         window.process_accessibility_event(&event);
         match event {
             WindowEvent::CloseRequested => {
@@ -561,7 +561,7 @@ impl ApplicationHandler for LinuxDirectApp {
                 }
                 if menu_changed {
                     window.window.request_redraw();
-                    #[cfg(feature = "accessibility")]
+                    #[cfg(feature = "linux-direct-accessibility")]
                     window.sync_accessibility();
                 }
                 if !menu_captures {
@@ -617,7 +617,7 @@ impl ApplicationHandler for LinuxDirectApp {
                         }
                         crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
                             window.window.request_redraw();
-                            #[cfg(feature = "accessibility")]
+                            #[cfg(feature = "linux-direct-accessibility")]
                             window.sync_accessibility();
                         }
                         crate::linux_direct_menu::LinuxMenuInputResult::Command(command) => {
@@ -670,7 +670,7 @@ impl ApplicationHandler for LinuxDirectApp {
                     }
                     crate::linux_direct_menu::LinuxMenuInputResult::Redraw => {
                         window.window.request_redraw();
-                        #[cfg(feature = "accessibility")]
+                        #[cfg(feature = "linux-direct-accessibility")]
                         window.sync_accessibility();
                     }
                     crate::linux_direct_menu::LinuxMenuInputResult::Ignored => {
@@ -734,7 +734,7 @@ impl ApplicationHandler for LinuxDirectApp {
             }
         }
         for window in self.windows.values_mut() {
-            #[cfg(feature = "accessibility")]
+            #[cfg(feature = "linux-direct-accessibility")]
             window.dispatch_accessibility_actions(event_loop);
             if window.next_tick.is_some_and(|deadline| now >= deadline) {
                 let report = window.runtime.refresh_transient_view();
@@ -772,7 +772,7 @@ struct LinuxDirectWindow {
     next_tick: Option<Instant>,
     menu_surface: Option<crate::linux_direct_menu::LinuxDirectMenuSurface>,
     menu_surface_command_count: usize,
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     accessibility: crate::linux_direct_accessibility::LinuxDirectAccessibility,
 }
 
@@ -798,7 +798,7 @@ impl LinuxDirectWindow {
         text_context: LinuxDirectTextContext,
         retain_frame: bool,
     ) -> Self {
-        #[cfg(not(feature = "accessibility"))]
+        #[cfg(not(feature = "linux-direct-accessibility"))]
         let _ = (event_loop, initial_height);
         let scale_factor = window.scale_factor().max(0.1);
         let theme = window.theme().unwrap_or(WinitTheme::Light);
@@ -807,11 +807,11 @@ impl LinuxDirectWindow {
         if let Some(menu) = menu_surface.as_mut() {
             menu.layout(initial_width.max(1) as i32, &text_context);
         }
-        #[cfg(all(feature = "accessibility", feature = "tabs"))]
+        #[cfg(all(feature = "linux-direct-accessibility", feature = "tabs"))]
         let tab_snapshots = runtime.tab_accessibility_snapshots(&plan);
-        #[cfg(all(feature = "accessibility", not(feature = "tabs")))]
+        #[cfg(all(feature = "linux-direct-accessibility", not(feature = "tabs")))]
         let tab_snapshots = ();
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         let accessibility = crate::linux_direct_accessibility::LinuxDirectAccessibility::new(
             event_loop,
             &window,
@@ -857,7 +857,7 @@ impl LinuxDirectWindow {
             next_tick: None,
             menu_surface,
             menu_surface_command_count: 0,
-            #[cfg(feature = "accessibility")]
+            #[cfg(feature = "linux-direct-accessibility")]
             accessibility,
         }
     }
@@ -898,7 +898,7 @@ impl LinuxDirectWindow {
             self.plan = plan;
         }
         self.sync_text_input();
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         self.sync_accessibility();
         self.schedule_tick();
     }
@@ -1132,18 +1132,18 @@ impl LinuxDirectWindow {
             event_loop.exit();
         }
         self.sync_text_input();
-        #[cfg(feature = "accessibility")]
+        #[cfg(feature = "linux-direct-accessibility")]
         self.sync_accessibility();
         self.schedule_tick();
         report
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     fn process_accessibility_event(&mut self, event: &WindowEvent) {
         self.accessibility.process_event(&self.window, event);
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     fn sync_accessibility(&mut self) {
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
         let content_offset_y = self.menu_content_offset_y();
@@ -1173,7 +1173,7 @@ impl LinuxDirectWindow {
         );
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     fn dispatch_accessibility_actions(&mut self, event_loop: &ActiveEventLoop) {
         use crate::linux_direct_accessibility::LinuxAccessibilityTarget;
         use crate::linux_direct_menu::{LinuxMenuAccessibilityTarget, LinuxMenuInputResult};
@@ -1275,12 +1275,12 @@ impl LinuxDirectWindow {
         }
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     const fn accessibility_node_count(&self) -> usize {
         self.accessibility.node_count()
     }
 
-    #[cfg(feature = "accessibility")]
+    #[cfg(feature = "linux-direct-accessibility")]
     const fn accessibility_action_count(&self) -> usize {
         self.accessibility.action_count()
     }
