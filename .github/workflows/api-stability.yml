@@ -1,0 +1,66 @@
+name: Stable API and Rustdoc
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "docs/api-stability.md"
+      - "scripts/check-rustdoc-coverage.ps1"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/api-stability.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "docs/api-stability.md"
+      - "scripts/check-rustdoc-coverage.ps1"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/api-stability.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rustdoc:
+    name: Rustdoc coverage >= 70%
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install native documentation dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev libdbus-1-dev
+      - name: Enforce documented stable API
+        shell: pwsh
+        run: ./scripts/check-rustdoc-coverage.ps1 -MinimumPercent 70 -Locked
+
+  semver:
+    name: Stable API compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native API dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-4-dev libdbus-1-dev
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - name: Check the v0.2 public API baseline
+        shell: bash
+        run: |
+          if git rev-parse --verify --quiet refs/tags/v0.2.0; then
+            cargo semver-checks check-release --all-features --baseline-rev v0.2.0
+          else
+            echo "v0.2.0 is the initial stable baseline; compatibility starts after the tag is published."
+          fi

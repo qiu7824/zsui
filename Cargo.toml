@@ -196,6 +196,11 @@ name = "basic"
 path = "examples/basic.rs"
 
 [[example]]
+name = "stable_api"
+path = "examples/stable_api.rs"
+required-features = ["window", "button", "label"]
+
+[[example]]
 name = "text_geometry_proof"
 path = "examples/text_geometry_proof.rs"
 required-features = ["windows-text-proof"]

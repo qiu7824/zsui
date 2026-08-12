@@ -175,34 +175,41 @@ controls; the optional GTK4 compatibility host remains a separate backend.
 
 ## Quick Start
 
-```rust
-use zsui::{app, Command, MemoryHost, TraySpec, Window};
-
-let mut host = MemoryHost::new();
-let runtime = app("Example")
-    .window(Window::new("Example").size(900, 620))
-    .tray(
-        TraySpec::new()
-            .tooltip("Example")
-            .item("Open", Command::ShowMainWindow)
-            .separator()
-            .item("Quit", Command::Quit),
-    )
-    .global_hotkey("Alt+V", Command::OpenQuickPanel)
-    .run_with_host(&mut host)?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-Create a real native OS window with one entry point:
-
 ```rust,no_run
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-fn main() -> zsui::ZsuiResult<()> {
-    zsui::native_window("Example").size(900, 620).run()?;
-    Ok(())
+use zsui::prelude::{button, column, text, window, Dp, Element, UpdateContext};
+
+#[derive(Clone)]
+enum Message { Increment }
+struct State { count: u32 }
+
+fn view(state: &State) -> Element<Message> {
+    column([
+        text(format!("Count: {}", state.count)),
+        button("Increment").on_click(Message::Increment),
+    ])
+    .gap(Dp::new(12.0))
+    .padding(Dp::new(20.0))
+}
+
+fn update(state: &mut State, message: Message, _cx: &mut UpdateContext<'_>) {
+    match message { Message::Increment => state.count += 1 }
+}
+
+fn main() -> Result<(), zsui::stable::Error> {
+    window("ZSUI Stable API")
+        .size(480, 320)
+        .stateful(State { count: 0 }, view, update)
+        .run()
 }
 ```
+
+`zsui::stable` and `zsui::prelude` follow the 0.2 patch-line compatibility
+policy. CI enforces at least 70% visible Rustdoc coverage; the current stable
+surface measures 100%. Historical crate-root APIs remain callable for source
+compatibility and backend development but are outside that stability promise.
+See [API stability](docs/api-stability.md).
 
 The final application crate selects the Windows PE subsystem. User-facing
 release binaries should retain the crate attribute above so launching them does

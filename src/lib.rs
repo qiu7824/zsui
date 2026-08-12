@@ -1,64 +1,107 @@
-//! ZSUI public framework surface.
+//! ZSUI is a Rust-first native desktop UI framework.
 //!
-//! ZSUI is a Rust-first native system UI framework shape. It is not yet a full
-//! self-drawing widget kit: applications declare windows, tray/status menus,
-//! shortcuts, settings pages, reusable navigation/card shell layouts and
-//! commands in Rust, while platform hosts map those declarations to Win32,
-//! AppKit or GTK/libadwaita backends.
+//! Applications can share one typed state, message, view and update loop while
+//! private platform hosts lower it to Win32, AppKit or Linux. Start with
+//! [`stable`] or [`prelude`] when source compatibility across 0.2 patch releases
+//! is required.
 
+/// Semver-stable application-authoring surface for the ZSUI 0.2 release line.
+pub mod stable;
+
+/// Convenient imports for the semver-stable application-authoring surface.
+pub mod prelude {
+    pub use crate::stable::*;
+}
+
+#[doc(hidden)]
 pub mod accessibility;
+#[doc(hidden)]
 pub mod agent_context;
+#[doc(hidden)]
 pub mod android_activity_host;
+#[doc(hidden)]
 pub mod app;
+#[doc(hidden)]
 pub mod app_command;
 #[cfg(feature = "auto-suggest")]
+#[doc(hidden)]
 pub mod auto_suggest;
 #[path = "platform/backend_profile.rs"]
 mod backend_profile;
 #[cfg(feature = "badge")]
+#[doc(hidden)]
 pub mod badge;
 #[cfg(feature = "breadcrumb")]
+#[doc(hidden)]
 pub mod breadcrumb;
 #[cfg(feature = "calculator")]
+#[doc(hidden)]
 pub mod calculator;
 #[cfg(feature = "canvas")]
+#[doc(hidden)]
 pub mod canvas;
+#[doc(hidden)]
 pub mod capability;
+#[doc(hidden)]
 pub mod clipboard;
 #[cfg(feature = "color-picker")]
+#[doc(hidden)]
 pub mod color_picker;
 #[cfg(feature = "command-palette")]
+#[doc(hidden)]
 pub mod command_palette;
+#[doc(hidden)]
 pub mod command_protocol;
+#[doc(hidden)]
 pub mod component_catalog;
+#[doc(hidden)]
 pub mod component_protocol;
+#[doc(hidden)]
 pub mod components;
 #[cfg(feature = "dialog")]
+#[doc(hidden)]
 pub mod content_dialog;
+#[doc(hidden)]
 pub mod control_protocol;
+#[doc(hidden)]
 pub mod core;
 #[cfg(feature = "date-picker")]
+#[doc(hidden)]
 pub mod date;
 #[path = "platform/desktop_runtime/mod.rs"]
 mod desktop_runtime;
+#[doc(hidden)]
 pub mod desktop_services;
 #[cfg(feature = "document-shell")]
+#[doc(hidden)]
 pub mod document_shell;
+#[doc(hidden)]
 pub mod event_protocol;
+#[doc(hidden)]
 pub mod feature_manifest;
 #[cfg(feature = "flyout")]
+#[doc(hidden)]
 pub mod flyout;
+#[doc(hidden)]
 pub mod framework_goals;
+#[doc(hidden)]
 pub mod geometry;
 #[cfg(feature = "grid-view")]
+#[doc(hidden)]
 pub mod grid_view;
+#[doc(hidden)]
 pub mod host;
+#[doc(hidden)]
 pub mod host_protocol;
+#[doc(hidden)]
 pub mod hotkey;
+#[doc(hidden)]
 pub mod icon;
 #[cfg(feature = "image-preview")]
+#[doc(hidden)]
 pub mod image_preview;
 #[cfg(feature = "info-bar")]
+#[doc(hidden)]
 pub mod info_bar;
 #[cfg(all(
     target_os = "linux",
@@ -93,28 +136,38 @@ mod linux_direct_lite;
 ))]
 mod linux_direct_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+#[doc(hidden)]
 pub mod linux_gtk_menu;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 mod linux_gtk_renderer;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
+#[doc(hidden)]
 pub mod linux_gtk_services;
 #[cfg(feature = "localization")]
+#[doc(hidden)]
 pub mod localization;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+#[doc(hidden)]
 pub mod macos_appkit_menu;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 mod macos_appkit_renderer;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
+#[doc(hidden)]
 pub mod macos_appkit_services;
 #[cfg(all(target_os = "macos", feature = "macos-appkit"))]
 mod macos_appkit_status_item;
+#[doc(hidden)]
 pub mod menu;
 #[cfg(feature = "menu-flyout")]
+#[doc(hidden)]
 pub mod menu_flyout;
+#[doc(hidden)]
 pub mod mobile_host;
+#[doc(hidden)]
 pub mod native;
 #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
 mod native_accessibility;
+#[doc(hidden)]
 pub mod native_adapter_manifest;
 #[cfg(any(
     test,
@@ -144,9 +197,13 @@ mod native_draw_support;
     )
 ))]
 mod native_file_dialog;
+#[doc(hidden)]
 pub mod native_host_actions;
+#[doc(hidden)]
 pub mod native_host_launch;
+#[doc(hidden)]
 pub mod native_hosts;
+#[doc(hidden)]
 pub mod native_icons;
 mod native_input_visuals;
 #[cfg(any(
@@ -158,14 +215,18 @@ mod native_input_visuals;
 mod native_menu;
 #[cfg(all(feature = "accessibility", feature = "menu-flyout"))]
 mod native_menu_accessibility;
+#[doc(hidden)]
 pub mod native_proof;
+#[doc(hidden)]
 pub mod native_smoke;
 #[cfg(all(feature = "accessibility", feature = "tabs"))]
 mod native_tab_accessibility;
 mod native_text_edit;
 #[cfg(feature = "paged-list")]
+#[doc(hidden)]
 pub mod paged_list;
 #[cfg(feature = "password-box")]
+#[doc(hidden)]
 pub mod password_box;
 #[path = "platform/component_profile/mod.rs"]
 mod platform_component_profile;
@@ -184,60 +245,88 @@ mod platform_menu_accelerator;
 mod platform_style;
 #[path = "platform/text_shaper_boundary.rs"]
 mod platform_text_shaper;
+#[doc(hidden)]
 pub mod product_adapter;
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
+#[doc(hidden)]
 pub mod progress;
+#[doc(hidden)]
 pub mod render_protocol;
 #[cfg(feature = "rust-text")]
+#[doc(hidden)]
 pub mod rust_text_renderer;
 #[cfg(feature = "rust-text-proof")]
+#[doc(hidden)]
 pub use rust_text_renderer::{
     compare_text_bgra_pixels, compare_text_geometry, text_bgra_difference_image,
     text_geometry_overlay_svg, ZsTextGeometryDiff, ZsTextGlyphProof, ZsTextLineProof,
     ZsTextPixelDiff, ZsTextProof,
 };
 #[cfg(feature = "rust-text")]
+#[doc(hidden)]
 pub use rust_text_renderer::{
     ZsRustTextEngine, ZsRustTextLayout, ZsTextCacheStats, ZsTextGlyphLayout, ZsTextLineLayout,
     ZsTextLineMetricPolicy, ZsTextPixelRect, ZsTextRasterMode, ZsTextRasterProfile,
 };
+#[doc(hidden)]
 pub mod settings;
+#[doc(hidden)]
 pub mod shell_layout;
 #[cfg(feature = "split-view")]
+#[doc(hidden)]
 pub mod split_view;
+#[doc(hidden)]
 pub mod style;
 #[cfg(feature = "table")]
+#[doc(hidden)]
 pub mod table;
 #[cfg(feature = "teaching-tip")]
+#[doc(hidden)]
 pub mod teaching_tip;
 #[cfg(feature = "time-picker")]
+#[doc(hidden)]
 pub mod time;
+#[doc(hidden)]
 pub mod timer_protocol;
 #[cfg(feature = "toast")]
+#[doc(hidden)]
 pub mod toast;
 #[cfg(feature = "tooltip")]
+#[doc(hidden)]
 pub mod tooltip;
+#[doc(hidden)]
 pub mod tray;
 #[cfg(feature = "tree")]
+#[doc(hidden)]
 pub mod tree;
 #[cfg(feature = "ui-document")]
+#[doc(hidden)]
 pub mod ui_document;
 #[cfg(feature = "ui-document-runtime")]
+#[doc(hidden)]
 pub mod ui_document_runtime;
+#[doc(hidden)]
 pub mod ui_surface_protocol;
 #[cfg(feature = "ui-viewer")]
+#[doc(hidden)]
 pub mod ui_viewer;
 #[cfg(feature = "video")]
+#[doc(hidden)]
 pub mod video;
+#[doc(hidden)]
 pub mod view;
+#[doc(hidden)]
 pub mod widget_render;
+#[doc(hidden)]
 pub mod window;
 #[cfg(all(windows, feature = "windows-directwrite"))]
 #[path = "platform/windows/text/directwrite.rs"]
 mod windows_directwrite;
 #[cfg(all(windows, feature = "windows-text-proof"))]
+#[doc(hidden)]
 pub use windows_directwrite::{directwrite_text_bgra, directwrite_text_proof};
 #[cfg(all(windows, feature = "windows-gdi"))]
+#[doc(hidden)]
 pub mod windows_gdi_renderer;
 #[cfg(all(
     windows,
@@ -267,18 +356,23 @@ mod windows_tab_uia;
 mod windows_uia;
 #[cfg(all(windows, feature = "windows-win32"))]
 #[path = "platform/windows/mod.rs"]
+#[doc(hidden)]
 pub mod windows_win32_host;
 #[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
 #[path = "platform/windows/text/edit_host.rs"]
+#[doc(hidden)]
 pub mod windows_win32_text_editor;
 #[cfg(feature = "workbench")]
+#[doc(hidden)]
 pub mod workbench;
 
+#[doc(hidden)]
 pub use accessibility::{
     ParseZsAccessibilityRoleError, ZsAccessibilityActionTarget, ZsAccessibilityLiveRegion,
     ZsAccessibilityNode, ZsAccessibilityRangeInteraction, ZsAccessibilityRangeValue,
     ZsAccessibilityRole, ZsAccessibilitySpec,
 };
+#[doc(hidden)]
 pub use agent_context::{
     zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
     zsui_framework_boundary_rules, zsui_framework_layers, zsui_native_runtime_gate_plans,
@@ -287,79 +381,102 @@ pub use agent_context::{
     ZsuiNativeRuntimeGateCompletion, ZsuiNativeRuntimeGatePlan, ZsuiReuseBootstrapPlan,
     ZsuiReuseReadinessReport, ZSUI_AGENT_CONTEXT_VERSION, ZSUI_FRAMEWORK_NAME,
 };
+#[doc(hidden)]
 pub use android_activity_host::{
     android_activity_bridge_callbacks, android_activity_bridge_contract,
     android_activity_bridge_entry_points, android_activity_capability_bindings,
     android_activity_device_smoke_artifacts, android_activity_host_scaffold,
     android_activity_lifecycle_bindings, android_activity_required_permissions,
 };
+#[doc(hidden)]
 pub use app::{
     app, audit_app_declaration, zsui_declaration_audit_surface_names, AppBuilder, ZsuiApp,
     ZsuiAppDeclarationReport, ZsuiAppRuntime, ZsuiDeclarationIssue, ZsuiDeclarationIssueLevel,
     ZSUI_DECLARATION_AUDIT_SURFACES,
 };
+#[doc(hidden)]
 pub use app_command::{
     app_command_name, AppCommandDispatchReport, AppCommandExecutor, SharedAppCommandExecutor,
 };
 #[cfg(feature = "auto-suggest")]
+#[doc(hidden)]
 pub use auto_suggest::{
     ZsAutoSuggestState, ZsAutoSuggestSubmission, ZsAutoSuggestTextChange,
     ZsAutoSuggestTextChangeReason, ZsAutoSuggestion, ZsAutoSuggestionId,
 };
 #[cfg(feature = "badge")]
+#[doc(hidden)]
 pub use badge::{ZsBadgeContent, ZsBadgeTone};
 #[cfg(feature = "breadcrumb")]
+#[doc(hidden)]
 pub use breadcrumb::{
     ZsBreadcrumbFocusTarget, ZsBreadcrumbId, ZsBreadcrumbItem, ZsBreadcrumbState,
 };
 #[cfg(feature = "calculator")]
+#[doc(hidden)]
 pub use calculator::{
     ZsCalculatorAction, ZsCalculatorBinaryOperator, ZsCalculatorButtonKind,
     ZsCalculatorButtonRegion, ZsCalculatorEngine, ZsCalculatorHistoryEntry,
     ZsCalculatorInteraction, ZsCalculatorLayout, ZsCalculatorShellSpec,
 };
 #[cfg(feature = "canvas")]
+#[doc(hidden)]
 pub use canvas::{
     zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase,
     ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
 };
+#[doc(hidden)]
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
+#[doc(hidden)]
 pub use clipboard::ClipboardData;
 #[cfg(feature = "color-picker")]
+#[doc(hidden)]
 pub use color_picker::{ZsColorChannel, ZsColorPickerState, ZsHsvColor};
 #[cfg(feature = "command-palette")]
+#[doc(hidden)]
 pub use command_palette::{ZsCommandPaletteItem, ZsCommandPaletteItemId, ZsCommandPaletteState};
+#[doc(hidden)]
 pub use command_protocol::{
     CommandId, CommandPayload, CommandQueue, CommandScope, SharedUiCommandExecutor, UiCommand,
     UiCommandDispatchReport, UiCommandExecutor,
 };
+#[doc(hidden)]
 pub use component_catalog::{
     zsui_component_catalog, zsui_component_catalog_summary, ZsuiComponentCatalogSummary,
     ZsuiComponentCategory, ZsuiComponentDescriptor, ZsuiComponentStatus, ZSUI_COMPONENT_CATALOG,
 };
+#[doc(hidden)]
 pub use component_protocol::Component;
 #[cfg(feature = "label")]
+#[doc(hidden)]
 pub use components::Label;
+#[doc(hidden)]
 pub use components::{UiNode, UiNodeKind, UiStackDirection};
 #[cfg(feature = "tabs")]
+#[doc(hidden)]
 pub use components::{ZsTabId, ZsTabSpec};
 #[cfg(feature = "dialog")]
+#[doc(hidden)]
 pub use content_dialog::{
     ZsContentDialogButton, ZsContentDialogResult, ZsContentDialogSpec, ZsContentDialogState,
 };
+#[doc(hidden)]
 pub use control_protocol::{
     NativeControlFamily, NativeControlMapper, NativeControlMapperOperation,
     NativeSettingsControlHost, SettingsComponentKind, SettingsControlHostOperation,
     SettingsControlSpec, REQUIRED_NATIVE_CONTROL_MAPPER_OPERATIONS,
     REQUIRED_SETTINGS_CONTROL_HOST_OPERATIONS,
 };
+#[doc(hidden)]
 pub use core::{
     AppEvent, Command, DialogButtonLabels, DialogButtons, DialogLevel, DialogResponse,
     FileDialogFilter, FileDialogSpec, HotkeyId, NativeDialogSpec, TrayId, WindowId, ZsuiError,
     ZsuiResult,
 };
 #[cfg(feature = "date-picker")]
+#[doc(hidden)]
 pub use date::{days_in_month, is_leap_year, ZsDate};
+#[doc(hidden)]
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
     DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
@@ -368,32 +485,41 @@ pub use desktop_services::{
     ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
+#[doc(hidden)]
 pub use document_shell::{
     ZsDocumentShellCommand, ZsDocumentShellCommandRegion, ZsDocumentShellInteraction,
     ZsDocumentShellLayout, ZsDocumentShellSpec, ZsTextCursorStatus, ZsTextDocument,
     ZsTextDocumentEncoding,
 };
+#[doc(hidden)]
 pub use event_protocol::{
     ComponentPhase, KeyState, LifecycleEvent, LifecycleState, MouseButton, UiEvent,
 };
+#[doc(hidden)]
 pub use feature_manifest::{
     zsui_default_feature_names, zsui_feature_manifest, zsui_optional_dependency_feature_names,
     ZsuiCargoFeature, ZsuiFeatureCategory,
 };
 #[cfg(feature = "flyout")]
+#[doc(hidden)]
 pub use flyout::{
     zs_flyout_native_draw_plan, zs_flyout_render_plan, ZsFlyoutDismissReason, ZsFlyoutPlacement,
     ZsFlyoutPlatformStyle, ZsFlyoutRenderPlan, ZsFlyoutSpec, ZsFlyoutState,
 };
+#[doc(hidden)]
 pub use framework_goals::{zsui_rust_first_goal_names, zsui_rust_first_goals, ZsuiRustFirstGoal};
+#[doc(hidden)]
 pub use geometry::{
     clamp_window_pos_to_rect, dpi_compensated_size, ComponentId, Dp, Dpi, DpiCompensationPlan,
     DpiCompensationState, LayoutInput, LayoutNode, LayoutOutput, LayoutProtocol, Point, Px, Rect,
     SharedUiProtocol, Size, UiLength, UiRect, SHARED_NON_HOST_UI_PROTOCOLS,
 };
 #[cfg(feature = "grid-view")]
+#[doc(hidden)]
 pub use grid_view::{ZsGridViewItem, ZsGridViewItemId, ZsGridViewState};
+#[doc(hidden)]
 pub use host::{MemoryHost, PlatformHost, TrayRecord, WindowRecord, ZsuiHost};
+#[doc(hidden)]
 pub use host_protocol::{
     clipboard_monitor_poll_result_for_sequence, native_paste_target_activation_snapshot,
     native_window_identity_snapshot, poll_clipboard_monitor, ClipboardHost,
@@ -421,28 +547,37 @@ pub use host_protocol::{
     REQUIRED_NATIVE_TRANSIENT_WINDOW_HOST_OPERATIONS,
     REQUIRED_NATIVE_WINDOW_IDENTITY_HOST_OPERATIONS,
 };
+#[doc(hidden)]
 pub use hotkey::HotkeySpec;
+#[doc(hidden)]
 pub use icon::ZsIcon;
 #[cfg(feature = "icon")]
+#[doc(hidden)]
 pub use icon::ZsIconSize;
 #[cfg(feature = "image-preview")]
+#[doc(hidden)]
 pub use image_preview::{
     zs_image_native_draw_command, zs_image_render_geometry, ZsImageFit, ZsImagePreviewConfig,
     ZsImagePreviewSnapshot, ZsImagePreviewState, ZsImageRenderGeometry,
 };
 #[cfg(feature = "info-bar")]
+#[doc(hidden)]
 pub use info_bar::{
     ZsInfoBarControl, ZsInfoBarEvent, ZsInfoBarSeverity, ZsInfoBarSpec, ZsInfoBarState,
 };
 #[cfg(feature = "localization")]
+#[doc(hidden)]
 pub use localization::{ZsLocale, ZsLocalizer, ZsMessageArgs, ZsMessageValue, ZsTextDirection};
+#[doc(hidden)]
 pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 #[cfg(feature = "menu-flyout")]
+#[doc(hidden)]
 pub use menu_flyout::{
     zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutMetrics,
     ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan, ZsMenuFlyoutRowKind,
     ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
 };
+#[doc(hidden)]
 pub use mobile_host::{
     mobile_runtime_bridge_callback_symbol_names, mobile_runtime_bridge_contract,
     mobile_runtime_bridge_contract_artifact_file_names,
@@ -486,6 +621,7 @@ pub use mobile_host::{
     MobileRuntimeDeviceSmokeTrace, MobileRuntimeDeviceSmokeTraceKind, MobileRuntimeHostScaffold,
     MobileRuntimeLifecycleBinding, MobileRuntimePermission,
 };
+#[doc(hidden)]
 pub use native::{
     native_window, run_native_window, run_native_window_smoke, typed_native_window,
     NativeTextInputScriptEvidence, NativeTextNavigationEvidence, NativeViewCaptureEvidence,
@@ -495,6 +631,7 @@ pub use native::{
     NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
     TypedNativeWindowBuilder, ZsPointerButton, ZsPointerModifiers,
 };
+#[doc(hidden)]
 pub use native_adapter_manifest::{
     native_ui_adapter_parity_report, native_ui_backend_capability_matrix,
     native_ui_backend_capability_matrix_for_platform, native_ui_backend_for_current_target,
@@ -507,6 +644,7 @@ pub use native_adapter_manifest::{
     NativeUiPlatformReadinessReport, NativeUiToolkit, REQUIRED_NATIVE_UI_ADAPTER_CAPABILITIES,
     SUPPORTED_NATIVE_UI_BACKENDS, SUPPORTED_NATIVE_UI_PLATFORMS, SUPPORTED_NATIVE_UI_TOOLKITS,
 };
+#[doc(hidden)]
 pub use native_host_actions::{
     command_ids as native_command_ids, dispatch_settings_action, main_menu_command_for_id,
     main_tray_action_plan, main_tray_menu_plan, menu_ids as native_menu_ids,
@@ -524,10 +662,12 @@ pub use native_host_actions::{
     REQUIRED_NATIVE_HOST_SETTINGS_GROUP_ACTIONS, REQUIRED_NATIVE_HOST_SETTINGS_PLATFORM_ACTIONS,
     REQUIRED_NATIVE_HOST_STATUS_MENU_ACTIONS, REQUIRED_NATIVE_HOST_UI_ACTIONS,
 };
+#[doc(hidden)]
 pub use native_host_launch::{
     native_host_launch_plan_for_current_target, native_host_launch_plan_for_platform,
     NativeHostLaunchMode, NativeHostLaunchPlan,
 };
+#[doc(hidden)]
 pub use native_hosts::{
     native_status_menu_command_from_menu, required_native_runtime_driver_operation_names,
     required_native_settings_item_update_host_operation_names,
@@ -566,18 +706,22 @@ pub use native_hosts::{
         any(feature = "linux-direct-host", feature = "linux-gtk")
     )
 ))]
+#[doc(hidden)]
 pub use native_icons::{
     bundled_fluent_icon_svg, FLUENT_SYSTEM_ICONS_LICENSE, FLUENT_SYSTEM_ICONS_NOTICE,
 };
+#[doc(hidden)]
 pub use native_icons::{
     native_icon_candidates, resolve_native_icon, NativeIconLookup, NativeIconSource,
     NativeIconSourceKind, WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY,
 };
+#[doc(hidden)]
 pub use native_proof::{
     NativeProofDocument, NativeProofProcessMemoryEvidence, NativeProofRunnerEvidence,
     NativeProofWidgetEvidence, NativeProofWindowEvidence, NATIVE_PROOF_SCHEMA,
     NATIVE_PROOF_SCHEMA_VERSION,
 };
+#[doc(hidden)]
 pub use native_smoke::{
     native_host_smoke_artifact_names, native_host_smoke_artifact_requirements,
     native_host_smoke_command_names, native_host_smoke_plan,
@@ -591,17 +735,21 @@ pub use native_smoke::{
     NativeHostSmokeWriteReport,
 };
 #[cfg(feature = "paged-list")]
+#[doc(hidden)]
 pub use paged_list::{
     paged_list, Page, PageIndex, PageLoadError, PageRequest, PagedDataSource, PagedItem,
     PagedListAnchor, PagedListConfig, PagedListSnapshot, PagedListState, PagedListSyncReconcile,
 };
 #[cfg(feature = "password-box")]
+#[doc(hidden)]
 pub use password_box::{
     mask_password, zs_password_box_native_draw_plan, zs_password_box_render_plan, ZsPassword,
     ZsPasswordBoxMetrics, ZsPasswordBoxPlatformStyle, ZsPasswordBoxRenderPlan,
     ZsPasswordRevealMode,
 };
+#[doc(hidden)]
 pub use platform_style::ZsPlatformStyle;
+#[doc(hidden)]
 pub use product_adapter::{
     product_adapter_reuse_checklist, product_adapter_runtime_smoke_example_names,
     required_product_adapter_surface_names, required_product_adapter_task_names,
@@ -616,17 +764,22 @@ pub use product_adapter::{
     REQUIRED_PRODUCT_ADAPTER_TASKS, ZSUI_REUSABLE_RUNTIME_HARNESS_STAGES,
 };
 #[cfg(any(feature = "progress", feature = "progress-ring"))]
+#[doc(hidden)]
 pub use progress::ProgressRange;
 #[cfg(feature = "progress-ring")]
+#[doc(hidden)]
 pub use progress::{
     zs_progress_ring_metrics, zs_progress_ring_native_draw_plan, zs_progress_ring_render_plan,
     ZsProgressRingMetrics, ZsProgressRingMode, ZsProgressRingPlatformStyle,
     ZsProgressRingRenderPlan, ZsProgressRingSize, ZsProgressRingSpec,
 };
 #[cfg(feature = "progress")]
+#[doc(hidden)]
 pub use progress::{ZsProgressBarMode, ZsProgressBarSpec, ZsProgressBarStatus};
 #[cfg(feature = "password-box")]
+#[doc(hidden)]
 pub use render_protocol::NativeDrawSecureTextCommand;
+#[doc(hidden)]
 pub use render_protocol::{
     required_native_draw_command_operation_names, Color, ColorRole, HorizontalAlign,
     NativeDrawCommand, NativeDrawCommandOperation, NativeDrawCommandSink, NativeDrawFill,
@@ -639,7 +792,9 @@ pub use render_protocol::{
     REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
     REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
+#[doc(hidden)]
 pub use settings::{SettingsItemKind, SettingsItemSpec, SettingsPageSpec, SettingsValue};
+#[doc(hidden)]
 pub use shell_layout::{
     ZsActionAreaSpec, ZsActionButtonKind, ZsActionButtonSpec, ZsContentRowSpec, ZsGroupCardSpec,
     ZsNavItemSpec, ZsNavigationLayoutMetrics, ZsNavigationLayoutPlan, ZsNavigationLayoutRegion,
@@ -651,10 +806,12 @@ pub use shell_layout::{
     ZsShellPointerDownTarget, ZsShellPointerMoveTransition, ZsShellRowAccessory, ZsShellRuntime,
 };
 #[cfg(feature = "split-view")]
+#[doc(hidden)]
 pub use split_view::{
     zs_split_view_layout, ZsSplitViewDisplayMode, ZsSplitViewLayout, ZsSplitViewPanePlacement,
     ZsSplitViewResolvedMode, ZsSplitViewSpec,
 };
+#[doc(hidden)]
 pub use style::{
     ControlMetricToken, RadiusToken, SpacingToken, ThemeColorToken, TypographyToken,
     ZsuiColorTokens, ZsuiControlMetrics, ZsuiRadiusTokens, ZsuiSpacingTokens, ZsuiTheme,
@@ -664,105 +821,148 @@ pub use style::{
     ZSUI_FLUENT_STANDARD_CONTROL_HEIGHT, ZSUI_FLUENT_STANDARD_ICON_SIZE, ZSUI_FLUENT_TOUCH_TARGET,
 };
 #[cfg(feature = "table")]
+#[doc(hidden)]
 pub use table::{
     ZsTableColumn, ZsTableColumnId, ZsTableColumnWidth, ZsTableRow, ZsTableRowId, ZsTableSort,
     ZsTableSortDirection, ZsTableViewState,
 };
 #[cfg(feature = "teaching-tip")]
+#[doc(hidden)]
 pub use teaching_tip::{
     ZsTeachingTipControl, ZsTeachingTipDismissReason, ZsTeachingTipPlacement,
     ZsTeachingTipResponse, ZsTeachingTipResult, ZsTeachingTipSpec, ZsTeachingTipState,
 };
 #[cfg(feature = "time-picker")]
+#[doc(hidden)]
 pub use time::{ZsClockFormat, ZsMinuteIncrement, ZsTime};
+#[doc(hidden)]
 pub use timer_protocol::{
     main_timer_task_for_id, settings_timer_task_for_id, MainTimerIds, MainTimerTask,
     SettingsTimerIds, SettingsTimerTask,
 };
 #[cfg(feature = "toast")]
+#[doc(hidden)]
 pub use toast::{
     ZsToastControl, ZsToastDismissReason, ZsToastDuration, ZsToastId, ZsToastResponse,
     ZsToastResult, ZsToastSpec, ZsToastState,
 };
 #[cfg(feature = "tooltip")]
+#[doc(hidden)]
 pub use tooltip::{
     zs_tooltip_native_draw_plan, zs_tooltip_render_plan, ZsTooltipMetrics, ZsTooltipPlacement,
     ZsTooltipPlatformStyle, ZsTooltipRenderPlan, ZsTooltipSpec,
 };
+#[doc(hidden)]
 pub use tray::TraySpec;
 #[cfg(feature = "tree")]
+#[doc(hidden)]
 pub use tree::{ZsTreeExpansionChange, ZsTreeNode, ZsTreeNodeId, ZsTreeRowState, ZsTreeViewState};
+#[doc(hidden)]
 pub use ui_surface_protocol::{UiHostSurface, REQUIRED_UI_HOST_SURFACES};
 #[cfg(feature = "video")]
+#[doc(hidden)]
 pub use video::{
     zs_video_native_draw_command, zs_video_render_geometry, ZsVideoFit, ZsVideoPlaybackState,
     ZsVideoRenderGeometry, ZsVideoSnapshot, ZsVideoSource, ZsVideoSurfaceConfig,
 };
 #[cfg(feature = "auto-suggest")]
+#[doc(hidden)]
 pub use view::auto_suggest_box;
 #[cfg(feature = "badge")]
+#[doc(hidden)]
 pub use view::badge;
 #[cfg(feature = "breadcrumb")]
+#[doc(hidden)]
 pub use view::breadcrumb_bar;
 #[cfg(feature = "canvas")]
+#[doc(hidden)]
 pub use view::canvas;
 #[cfg(feature = "checkbox")]
+#[doc(hidden)]
 pub use view::checkbox;
 #[cfg(feature = "color-picker")]
+#[doc(hidden)]
 pub use view::color_picker;
 #[cfg(feature = "combo")]
+#[doc(hidden)]
 pub use view::combo_box;
 #[cfg(feature = "command-palette")]
+#[doc(hidden)]
 pub use view::command_palette;
 #[cfg(feature = "dialog")]
+#[doc(hidden)]
 pub use view::content_dialog;
 #[cfg(feature = "table")]
+#[doc(hidden)]
 pub use view::data_grid;
 #[cfg(feature = "date-picker")]
+#[doc(hidden)]
 pub use view::date_picker;
 #[cfg(feature = "flyout")]
+#[doc(hidden)]
 pub use view::flyout;
 #[cfg(feature = "grid")]
+#[doc(hidden)]
 pub use view::grid;
 #[cfg(feature = "grid-view")]
+#[doc(hidden)]
 pub use view::grid_view;
 #[cfg(feature = "icon")]
+#[doc(hidden)]
 pub use view::icon;
 #[cfg(feature = "info-bar")]
+#[doc(hidden)]
 pub use view::info_bar;
 #[cfg(feature = "list")]
+#[doc(hidden)]
 pub use view::list;
 #[cfg(feature = "menu-flyout")]
+#[doc(hidden)]
 pub use view::menu_flyout;
 #[cfg(feature = "number-box")]
+#[doc(hidden)]
 pub use view::number_box;
 #[cfg(feature = "password-box")]
+#[doc(hidden)]
 pub use view::password_box;
 #[cfg(feature = "progress-ring")]
+#[doc(hidden)]
 pub use view::progress_ring;
 #[cfg(feature = "radio")]
+#[doc(hidden)]
 pub use view::radio_button;
 #[cfg(feature = "shell")]
+#[doc(hidden)]
 pub use view::settings_card;
 #[cfg(feature = "split-view")]
+#[doc(hidden)]
 pub use view::split_view;
 #[cfg(feature = "teaching-tip")]
+#[doc(hidden)]
 pub use view::teaching_tip;
 #[cfg(feature = "textbox")]
+#[doc(hidden)]
 pub use view::text_editor;
 #[cfg(feature = "textbox")]
+#[doc(hidden)]
 pub use view::textbox;
 #[cfg(feature = "time-picker")]
+#[doc(hidden)]
 pub use view::time_picker;
 #[cfg(feature = "toast")]
+#[doc(hidden)]
 pub use view::toast_presenter;
 #[cfg(feature = "toggle")]
+#[doc(hidden)]
 pub use view::toggle;
 #[cfg(feature = "toggle-button")]
+#[doc(hidden)]
 pub use view::toggle_button;
 #[cfg(feature = "tree")]
+#[doc(hidden)]
 pub use view::tree_view;
 #[cfg(feature = "video")]
+#[doc(hidden)]
 pub use view::video;
 #[cfg(any(
     feature = "textbox",
@@ -777,17 +977,23 @@ pub use view::video;
 #[doc(hidden)]
 pub use view::ViewMessageMapper;
 #[cfg(feature = "tooltip")]
+#[doc(hidden)]
 pub use view::ViewTooltipTarget;
 #[cfg(feature = "date-picker")]
+#[doc(hidden)]
 pub use view::ZsDatePickerState;
 #[cfg(feature = "time-picker")]
+#[doc(hidden)]
 pub use view::ZsTimePickerState;
 #[cfg(feature = "button")]
+#[doc(hidden)]
 pub use view::{
     button, icon_button, navigation_item, primary_button, toolbar_button, ZsButtonPresentation,
 };
 #[cfg(feature = "calculator")]
+#[doc(hidden)]
 pub use view::{calculator_view, ZsCalculatorViewIds};
+#[doc(hidden)]
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
     LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,
@@ -795,39 +1001,53 @@ pub use view::{
     ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
 #[cfg(feature = "button")]
+#[doc(hidden)]
 pub use view::{command_bar, ZsCommandBarSpec};
 #[cfg(feature = "workbench")]
+#[doc(hidden)]
 pub use view::{composer, inspector_panel, message_timeline, workbench, workbench_shell};
 #[cfg(feature = "image-preview")]
+#[doc(hidden)]
 pub use view::{image, image_preview};
 #[cfg(feature = "progress")]
+#[doc(hidden)]
 pub use view::{indeterminate_progress_bar, progress_bar, progress_bar_from_spec};
 #[cfg(feature = "virtual-list")]
+#[doc(hidden)]
 pub use view::{
     items_repeater, items_repeater_viewport, items_repeater_viewport_with_metrics, virtual_list,
     virtual_list_viewport,
 };
 #[cfg(feature = "label")]
+#[doc(hidden)]
 pub use view::{navigation_view, section, ZsNavigationViewSpec};
 #[cfg(feature = "scroll")]
+#[doc(hidden)]
 pub use view::{scroll, ZsScrollbarLayout};
 #[cfg(feature = "slider")]
+#[doc(hidden)]
 pub use view::{slider, SliderRange};
 #[cfg(feature = "label")]
+#[doc(hidden)]
 pub use view::{styled_text, text};
 #[cfg(feature = "tabs")]
+#[doc(hidden)]
 pub use view::{tab_view, ZsTabItem, ZsTabViewState};
 #[cfg(feature = "virtual-list")]
+#[doc(hidden)]
 pub use view::{
     VirtualListRange, VirtualListScrollDirection, VirtualListViewport, ZsItemsRepeaterItemMetric,
     ZsItemsRepeaterRange, ZsItemsRepeaterScrollDirection, ZsItemsRepeaterScrollbarLayout,
     ZsItemsRepeaterViewport,
 };
 #[cfg(feature = "grid")]
+#[doc(hidden)]
 pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTrack};
 #[cfg(feature = "number-box")]
+#[doc(hidden)]
 pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
 #[cfg(feature = "textbox")]
+#[doc(hidden)]
 pub use view::{ZsTextEditCommand, ZsTextEditCommandRequest, ZsTextSelection};
 #[cfg(any(
     feature = "auto-suggest",
@@ -837,20 +1057,24 @@ pub use view::{ZsTextEditCommand, ZsTextEditCommandRequest, ZsTextSelection};
     feature = "date-picker",
     feature = "time-picker"
 ))]
+#[doc(hidden)]
 pub use widget_render::ZsPopupPlacement;
 #[cfg(feature = "auto-suggest")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_auto_suggest_header_native_draw_plan, zs_auto_suggest_popup_native_draw_plan,
     zs_auto_suggest_render_plan, zs_auto_suggest_render_plan_in_viewport, ZsAutoSuggestMetrics,
     ZsAutoSuggestPlatformStyle, ZsAutoSuggestRenderPlan, ZS_AUTO_SUGGEST_MAX_VISIBLE_ITEMS,
 };
 #[cfg(feature = "breadcrumb")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_breadcrumb_native_draw_plan, zs_breadcrumb_popup_native_draw_plan,
     zs_breadcrumb_render_plan, ZsBreadcrumbItemRenderPlan, ZsBreadcrumbMetrics,
     ZsBreadcrumbOverflowRowRenderPlan, ZsBreadcrumbPlatformStyle, ZsBreadcrumbRenderPlan,
 };
 #[cfg(feature = "color-picker")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_color_picker_header_native_draw_plan, zs_color_picker_popup_native_draw_plan,
     zs_color_picker_render_plan, zs_color_picker_render_plan_in_viewport,
@@ -858,6 +1082,7 @@ pub use widget_render::{
     ZsColorPickerRenderPlan,
 };
 #[cfg(feature = "combo")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_combo_box_header_native_draw_plan, zs_combo_box_popup_native_draw_plan,
     zs_combo_box_render_plan, zs_combo_box_render_plan_in_viewport,
@@ -865,18 +1090,21 @@ pub use widget_render::{
     ZsComboBoxRenderPlan, ZS_COMBO_BOX_MAX_VISIBLE_OPTIONS,
 };
 #[cfg(feature = "command-palette")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_command_palette_native_draw_plan, zs_command_palette_render_plan, ZsCommandPaletteMetrics,
     ZsCommandPalettePlatformStyle, ZsCommandPaletteRenderPlan, ZsCommandPaletteRowRenderPlan,
     ZS_COMMAND_PALETTE_MAX_VISIBLE_ITEMS,
 };
 #[cfg(feature = "dialog")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_content_dialog_native_draw_plan, zs_content_dialog_render_plan,
     ZsContentDialogButtonRenderPlan, ZsContentDialogMetrics, ZsContentDialogPlatformStyle,
     ZsContentDialogRenderPlan,
 };
 #[cfg(feature = "date-picker")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_date_picker_header_native_draw_plan, zs_date_picker_popup_native_draw_plan,
     zs_date_picker_render_plan, zs_date_picker_render_plan_in_viewport,
@@ -884,95 +1112,114 @@ pub use widget_render::{
     ZsDatePickerDayCell, ZsDatePickerRenderPlan,
 };
 #[cfg(feature = "grid-view")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_grid_view_native_draw_plan, zs_grid_view_render_plan, ZsGridViewItemRenderPlan,
     ZsGridViewMetrics, ZsGridViewPlatformStyle, ZsGridViewRenderPlan,
 };
 #[cfg(feature = "info-bar")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_info_bar_native_draw_plan, zs_info_bar_render_plan, ZsInfoBarMetrics,
     ZsInfoBarPlatformStyle, ZsInfoBarRenderPlan,
 };
 #[cfg(feature = "button")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_navigation_item_native_draw_plan, zs_navigation_item_render_plan, ZsNavigationItemMetrics,
     ZsNavigationItemRenderPlan,
 };
 #[cfg(feature = "number-box")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_number_box_native_draw_plan, zs_number_box_render_plan, ZsNumberBoxMetrics,
     ZsNumberBoxPlatformStyle, ZsNumberBoxRenderPlan,
 };
 #[cfg(feature = "progress")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_progress_bar_native_draw_plan, zs_progress_bar_render_plan,
     zs_progress_bar_render_plan_for_platform, zs_progress_bar_render_plan_for_spec,
     ZsProgressBarRenderPlan,
 };
 #[cfg(feature = "radio")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_radio_native_draw_plan, zs_radio_render_plan, zs_radio_render_plan_for_platform,
     ZsRadioRenderPlan,
 };
 #[cfg(feature = "slider")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_slider_native_draw_plan, zs_slider_render_plan, zs_slider_render_plan_for_platform,
     ZsSliderRenderPlan,
 };
 #[cfg(feature = "tabs")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_tab_view_native_draw_plan, zs_tab_view_native_draw_plan_for_tabs, zs_tab_view_render_plan,
     zs_tab_view_render_plan_for_tabs, ZsTabHeaderRenderPlan, ZsTabPlatformStyle, ZsTabViewMetrics,
     ZsTabViewRenderPlan,
 };
 #[cfg(feature = "table")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_table_native_draw_plan, zs_table_render_plan, ZsTableCellRenderPlan,
     ZsTableColumnRenderPlan, ZsTableMetrics, ZsTablePlatformStyle, ZsTableRenderPlan,
     ZsTableRowRenderPlan,
 };
 #[cfg(feature = "teaching-tip")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_teaching_tip_native_draw_plan, zs_teaching_tip_render_plan, ZsTeachingTipMetrics,
     ZsTeachingTipPlatformStyle, ZsTeachingTipRenderPlan,
 };
 #[cfg(feature = "time-picker")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_time_picker_header_native_draw_plan, zs_time_picker_popup_native_draw_plan,
     zs_time_picker_render_plan, zs_time_picker_render_plan_in_viewport, ZsTimePickerChoice,
     ZsTimePickerMetrics, ZsTimePickerPlatformStyle, ZsTimePickerRenderPlan, ZsTimePickerSegment,
 };
 #[cfg(feature = "toast")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_toast_native_draw_plan, zs_toast_render_plan, ZsToastMetrics, ZsToastPlatformStyle,
     ZsToastRenderPlan,
 };
 #[cfg(feature = "toggle-button")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_toggle_button_native_draw_plan, zs_toggle_button_render_plan, ZsToggleButtonMetrics,
     ZsToggleButtonPlatformStyle, ZsToggleButtonRenderPlan,
 };
+#[doc(hidden)]
 pub use widget_render::{
     zs_toggle_native_draw_plan, zs_toggle_render_plan, zs_toggle_render_plan_for_platform,
     ZsToggleRenderPlan,
 };
 #[cfg(feature = "tree")]
+#[doc(hidden)]
 pub use widget_render::{
     zs_tree_view_native_draw_plan, zs_tree_view_render_plan, ZsTreePlatformStyle,
     ZsTreeRowRenderPlan, ZsTreeViewMetrics, ZsTreeViewRenderPlan,
 };
+#[doc(hidden)]
 pub use widget_render::{
     ZsBaseControlMetrics, ZsBaseControlPlatformStyle, ZsProgressBarIndeterminateMetrics,
     ZsProgressBarSegmentMetrics,
 };
+#[doc(hidden)]
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(all(windows, feature = "windows-gdi"))]
+#[doc(hidden)]
 pub use windows_gdi_renderer::{
     windows_no_flicker_paint_strategy, WindowsBufferedPaint, WindowsGdiDrawSink, WindowsGdiPalette,
     WindowsGdiRenderer, WindowsGdiStyleResolver, WindowsGdiTextLayout,
     WindowsNoFlickerPaintStrategy,
 };
 #[cfg(all(windows, feature = "windows-win32"))]
+#[doc(hidden)]
 pub use windows_win32_host::{
     clear_windows_win32_window_draw_plan, clear_windows_win32_window_draw_plans,
     clear_windows_win32_window_view_input_route, clear_windows_win32_window_view_input_routes,
@@ -1004,8 +1251,10 @@ pub use windows_win32_host::{
     ZSUI_WIN32_STATUS_MENU_TRACK_FLAGS, ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
 };
 #[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
+#[doc(hidden)]
 pub use windows_win32_text_editor::WindowsWin32OwnedTextEditor;
 #[cfg(feature = "workbench")]
+#[doc(hidden)]
 pub use workbench::{
     zs_workbench_event_for_region, zs_workbench_layout, zs_workbench_native_draw_plan,
     ZsComposerSpec, ZsInspectorPanelSpec, ZsMessageTimelineSpec, ZsWorkbenchActionSpec,

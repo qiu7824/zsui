@@ -600,6 +600,43 @@ let response = NativeDesktopDialogService::new().show_native_dialog(
 `ContentDialog` 资源绘制分层内容区和命令区、等宽操作列及 Accent 默认按钮，macOS
 与 Linux 则分别使用各自的平台组件配置。
 
+## 稳定 API
+
+长期维护的应用从 `zsui::prelude` 或 `zsui::stable` 导入。这个门面只暴露不透明的
+`Element<Msg>`、逻辑布局单位、原生窗口和强类型状态更新循环；渲染计划、平台句柄、
+证明驱动器与后端适配器不进入稳定接口。
+
+```rust,no_run
+use zsui::prelude::{button, column, text, window, Dp, Element, UpdateContext};
+
+#[derive(Clone)]
+enum Msg { Increment }
+struct State { count: u32 }
+
+fn view(state: &State) -> Element<Msg> {
+    column([
+        text(format!("计数：{}", state.count)),
+        button("增加").on_click(Msg::Increment),
+    ])
+    .gap(Dp::new(12.0))
+    .padding(Dp::new(20.0))
+}
+
+fn update(state: &mut State, msg: Msg, _cx: &mut UpdateContext<'_>) {
+    match msg { Msg::Increment => state.count += 1 }
+}
+
+window("ZSUI 稳定 API")
+    .size(480, 320)
+    .stateful(State { count: 0 }, view, update)
+    .run()?;
+# Ok::<(), zsui::stable::Error>(())
+```
+
+稳定接口在 `0.2.x` 内遵守兼容承诺，Rustdoc 公开项覆盖率由 CI 强制不低于 70%；
+当前实测为 100%。历史根模块继续用于源码兼容与后端开发，但不属于该稳定承诺。
+完整规则见[API 稳定性](docs/api-stability.md)。
+
 ## 按需编译
 
 从 crates.io 使用：
