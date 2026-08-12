@@ -69,24 +69,17 @@ case "hide":
     guard let application = NSRunningApplication(processIdentifier: processId) else {
         fail("no NSRunningApplication exists for PID \(processId)")
     }
-    _ = application.unhide()
     _ = application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-    for _ in 0..<40 where !application.isActive {
-        usleep(50_000)
-    }
-    guard application.isActive else {
-        fail("NSRunningApplication did not become active before hide")
-    }
     guard application.hide() else {
         fail("NSRunningApplication rejected hide")
     }
     for _ in 0..<40 {
-        if application.isHidden {
+        if visibleWindows(processIds: [Int(processId)]).isEmpty {
             exit(0)
         }
         usleep(50_000)
     }
-    fail("NSRunningApplication.hide did not reach the hidden state")
+    fail("NSRunningApplication.hide left an on-screen application window")
 case "churn":
     guard
         arguments.count == 4,

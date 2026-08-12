@@ -432,7 +432,7 @@ def hide_application(launch: Launch, platform: str, probe: pathlib.Path | None) 
             check=False,
         )
     else:
-        result = run([str(probe), "hide", str(launch.process.pid)], timeout=5, check=False)
+        result = run([str(probe), "hide", str(launch.process.pid)], timeout=10, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"could not hide process {launch.process.pid}: {result.stderr}")
 
