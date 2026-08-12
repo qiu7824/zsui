@@ -35,6 +35,8 @@ jobs:
       - shell: pwsh
         run: ./scripts/check-desktop-proof.ps1
       - shell: pwsh
+        run: ./scripts/check-ime-screen-reader-matrix.ps1
+      - shell: pwsh
         run: ./scripts/check-feature-matrix.ps1 -Locked
 
   full-windows:

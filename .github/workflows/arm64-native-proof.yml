@@ -1,0 +1,189 @@
+name: ARM64 Native Runtime Proof
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/arm64-native-proof.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/arm64-native-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-native-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-arm64:
+    name: Windows 11 ARM64 Win32 Runtime Proof
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    env:
+      TZ: UTC
+      ZSUI_NATIVE_PROOF_OS_FAMILY: windows-11-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Assert native ARM64 runner
+        shell: pwsh
+        run: |
+          $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          if ($architecture -ne [Runtime.InteropServices.Architecture]::Arm64) {
+            throw "expected a native Windows ARM64 runner, got $architecture"
+          }
+          if ((rustc -vV) -notmatch "host: aarch64-pc-windows-msvc") {
+            throw "Rust did not install the native Windows ARM64 host toolchain"
+          }
+      - name: Build native Win32 proof application
+        shell: pwsh
+        run: |
+          cargo build `
+            --release `
+            --locked `
+            --example zsui_notepad `
+            --no-default-features `
+            --features notepad-demo,accessibility,native-smoke
+          $bytes = [IO.File]::ReadAllBytes("target/release/examples/zsui_notepad.exe")
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0xAA64) {
+            throw ("expected PE ARM64 machine 0xAA64, got 0x{0:X4}" -f $machine)
+          }
+      - name: Run real Win32 ARM64 window, input, IME and capture
+        shell: pwsh
+        run: |
+          $root = "target/native-proof/windows-11-arm64"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          ./target/release/examples/zsui_notepad.exe `
+            --native-proof `
+            --width 960 `
+            --height 640 `
+            --output $root
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $proof = Get-Content "$root/notepad-interaction.json" -Raw | ConvertFrom-Json
+          if (
+            $proof.platform -ne "windows" -or
+            $proof.backend -ne "win32" -or
+            $proof.architecture -ne "arm64" -or
+            $proof.capture_backend -ne "win32_wm_printclient_dib_png" -or
+            $proof.errors.Count -ne 0 -or
+            $proof.runtime.created_window_count -lt 1 -or
+            -not $proof.runtime.screenshot_captured -or
+            $proof.runtime.native_accessibility_backend -ne "win32_uia" -or
+            $proof.runtime.native_accessibility_node_count -lt 1 -or
+            $proof.runtime.native_view_text_input_count -lt 1 -or
+            $proof.runtime.native_view_ime_commit_count -lt 1 -or
+            $proof.runtime.native_view_message_count -lt 1
+          ) {
+            throw "Windows ARM64 native runtime proof is incomplete"
+          }
+          $signature = [byte[]](137, 80, 78, 71, 13, 10, 26, 10)
+          $png = [IO.File]::ReadAllBytes("$root/notepad-interaction.png")
+          if ($png.Length -le 8 -or (Compare-Object $signature $png[0..7])) {
+            throw "Windows ARM64 final-surface capture is not a PNG"
+          }
+      - name: Upload Windows ARM64 proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-windows-11-arm64-native-proof
+          path: target/native-proof/windows-11-arm64
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-arm64:
+    name: Ubuntu 24.04 ARM64 Linux Runtime Proof
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      TZ: UTC
+      ZSUI_NATIVE_PROOF_OS_FAMILY: ubuntu-24.04-arm64
+    steps:
+      - uses: actions/checkout@v7
+      - name: Assert native ARM64 runner
+        run: test "$(uname -m)" = "aarch64"
+      - name: Install native X11, font and portal runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libdbus-1-dev \
+            libgtk-4-dev \
+            libpango1.0-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            xvfb \
+            xauth \
+            dbus-x11 \
+            fonts-ubuntu \
+            fonts-noto-cjk
+          fc-cache --force
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build native Linux ARM64 proof application
+        run: |
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-unknown-linux-gnu"
+          cargo build \
+            --release \
+            --locked \
+            --example zsui_notepad \
+            --no-default-features \
+            --features notepad-demo,linux-direct-accessibility,native-smoke
+          file target/release/examples/zsui_notepad | tee target/linux-arm64-binary.txt
+          grep -q "ARM aarch64" target/linux-arm64-binary.txt
+      - name: Run real Linux ARM64 window, input, IME and capture
+        run: |
+          root=target/native-proof/ubuntu-24.04-arm64
+          mkdir -p "$root"
+          dbus-run-session -- xvfb-run -a \
+            ./target/release/examples/zsui_notepad \
+              --native-proof \
+              --width 960 \
+              --height 640 \
+              --output "$root"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("target/native-proof/ubuntu-24.04-arm64")
+          proof = json.loads((root / "notepad-interaction.json").read_text(encoding="utf-8"))
+          runtime = proof["runtime"]
+          assert proof["platform"] == "linux"
+          assert proof["backend"] == "linux-direct"
+          assert proof["architecture"] == "arm64"
+          assert proof["display_server"] == "x11"
+          assert proof["capture_backend"] == "winit_softbuffer_pango_cairo"
+          assert proof["errors"] == []
+          assert runtime["created_window_count"] >= 1
+          assert runtime["screenshot_captured"] is True
+          assert runtime["native_accessibility_backend"] == "accesskit_atspi"
+          assert runtime["native_accessibility_node_count"] >= 1
+          assert runtime["native_view_text_input_count"] >= 1
+          assert runtime["native_view_ime_commit_count"] >= 1
+          assert runtime["native_view_message_count"] >= 1
+          assert (root / "notepad-interaction.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+          PY
+      - name: Upload Linux ARM64 proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zsui-ubuntu-24.04-arm64-native-proof
+          path: |
+            target/native-proof/ubuntu-24.04-arm64
+            target/linux-arm64-binary.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,62 @@
+{
+  "schema": "zsui.ime-screen-reader-matrix/v1",
+  "release": "0.2.0",
+  "platforms": [
+    {
+      "platform": "windows",
+      "ime": {
+        "native_contract": "Win32 IMM32 composition lifecycle and candidate caret anchor",
+        "automated_workflow": ".github/workflows/native-proof.yml",
+        "automated_step": "Run Win32 Notepad IME proof",
+        "required_events": ["preedit", "commit", "cancel", "caret_anchor"]
+      },
+      "accessibility": {
+        "native_contract": "UI Automation fragment root with ValuePattern and TextPattern",
+        "automated_client": "System.Windows.Automation",
+        "automated_probe": "scripts/check-windows-text-accessibility.ps1",
+        "manual_reader": "Narrator and NVDA"
+      }
+    },
+    {
+      "platform": "macos",
+      "ime": {
+        "native_contract": "NSTextInputClient marked text, commit, cancellation and firstRectForCharacterRange",
+        "automated_workflow": ".github/workflows/native-proof.yml",
+        "automated_step": "Run real AppKit proof scenes",
+        "required_events": ["preedit", "commit", "cancel", "caret_anchor"]
+      },
+      "accessibility": {
+        "native_contract": "NSAccessibility element tree, roles, values, focus and actions",
+        "automated_client": "AppKit NSAccessibility runtime probe",
+        "automated_probe": ".github/workflows/native-proof.yml",
+        "manual_reader": "VoiceOver"
+      }
+    },
+    {
+      "platform": "linux",
+      "ime": {
+        "native_contract": "Wayland text-input/winit IME preedit, commit, cancellation and cursor area",
+        "automated_workflow": ".github/workflows/native-proof.yml",
+        "automated_step": "Run real Wayland, AT-SPI and menu scenes",
+        "required_events": ["preedit", "commit", "cancel", "caret_anchor"]
+      },
+      "accessibility": {
+        "native_contract": "AccessKit AT-SPI object tree, roles, states, focus and actions",
+        "automated_client": "external python3-pyatspi client",
+        "automated_probe": ".github/workflows/native-proof.yml",
+        "manual_reader": "Orca"
+      }
+    }
+  ],
+  "release_manual_gate": {
+    "required": true,
+    "evidence_template": "docs/quality/manual-assistive-technology-checklist.md",
+    "covers": [
+      "real candidate window placement and selection",
+      "screen reader spoken order and labels",
+      "focus recovery after dialogs and overlays",
+      "high contrast or increased contrast",
+      "mixed CJK, bidirectional and combining text navigation"
+    ]
+  }
+}
