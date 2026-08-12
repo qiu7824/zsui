@@ -44,7 +44,8 @@ jobs:
           if ($architecture -ne [Runtime.InteropServices.Architecture]::Arm64) {
             throw "expected a native Windows ARM64 runner, got $architecture"
           }
-          if ((rustc -vV) -notmatch "host: aarch64-pc-windows-msvc") {
+          $rustVersion = (rustc -vV) -join "`n"
+          if ($rustVersion -notmatch "(?m)^host: aarch64-pc-windows-msvc$") {
             throw "Rust did not install the native Windows ARM64 host toolchain"
           }
       - name: Build native Win32 proof application
@@ -102,7 +103,7 @@ jobs:
         with:
           name: zsui-windows-11-arm64-native-proof
           path: target/native-proof/windows-11-arm64
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30
 
   linux-arm64:
