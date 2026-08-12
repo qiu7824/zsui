@@ -29,7 +29,7 @@ use objc2_foundation::{
     NSSize, NSString, NSURL,
 };
 #[cfg(feature = "native-smoke")]
-use objc2_foundation::{NSDictionary, NSTimer};
+use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -146,8 +146,24 @@ impl ZsuiAppKitRuntimeDelegate {
                     }
                 }
             }
-            *self.ivars().proof_input_reports.borrow_mut() =
-                handler.dispatch_proof_inputs(&self.ivars().proof_inputs);
+            let proof_inputs = &self.ivars().proof_inputs;
+            let reports = if std::env::var_os("ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR").is_some() {
+                let mut reports = Vec::new();
+                for input in proof_inputs {
+                    reports.extend(handler.dispatch_proof_inputs(std::slice::from_ref(input)));
+                    // Owner-bound file-panel proofs return from the typed
+                    // command before their AppKit sheet capture runs. Pumping
+                    // between inputs releases the view runtime borrow, lets the
+                    // sheet render and close, and prevents the following click
+                    // from being dispatched while the first sheet is attached.
+                    NSRunLoop::currentRunLoop()
+                        .runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.5));
+                }
+                reports
+            } else {
+                handler.dispatch_proof_inputs(proof_inputs)
+            };
+            *self.ivars().proof_input_reports.borrow_mut() = reports;
         }
         if let Some(path) = self.ivars().capture_path.as_deref() {
             let result = self
@@ -1127,15 +1143,22 @@ fn appkit_run_file_panel(
     panel.beginSheetModalForWindow_completionHandler(owner, &completion);
 
     #[cfg(feature = "native-smoke")]
-    if let Some(screenshot) = owner_proof_path.as_deref() {
-        // Capture and close the attached sheet synchronously on AppKit's
-        // owning thread. A delayed callback can be starved by the nested typed
-        // update that opened the sheet, whereas the panel's content view is
-        // already laid out by the capture helper and needs no second schedule.
-        let capture_result = appkit_capture_file_panel_png(panel, screenshot);
-        owner.endSheet_returnCode(panel, NSModalResponseCancel);
-        panel.orderOut(None);
-        capture_result.map_err(|error| ZsuiError::host("macos_owner_file_dialog_proof", error))?;
+    if let Some(screenshot) = owner_proof_path {
+        let proof_panel = panel.retain();
+        let proof_owner = owner.retain();
+        let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+            let _ = appkit_capture_file_panel_png(&proof_panel, &screenshot);
+            proof_owner.endSheet_returnCode(&proof_panel, NSModalResponseCancel);
+            proof_panel.orderOut(None);
+        });
+        let capture_timer = unsafe {
+            NSTimer::timerWithTimeInterval_repeats_block(0.25, false, &capture_and_cancel)
+        };
+        unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSDefaultRunLoopMode) };
+        // The proof command reports cancellation immediately so the typed
+        // update can release its runtime borrow. The AppKit run loop above is
+        // pumped between proof inputs and performs the real sheet capture and
+        // cancellation after the view callback has unwound.
         return Ok(NSModalResponseCancel);
     }
 
