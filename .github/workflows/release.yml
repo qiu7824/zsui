@@ -1,0 +1,313 @@
+name: Signed Installers and Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version without leading v"
+        required: true
+        type: string
+      publish:
+        description: "Create or update the GitHub release"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.architecture }} installer
+    strategy:
+      matrix:
+        include:
+          - runner: windows-2025
+            architecture: x86_64
+            pe_machine: 0x8664
+            installer_architecture: x64compatible
+          - runner: windows-11-arm
+            architecture: aarch64
+            pe_machine: 0xAA64
+            installer_architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Normalize and verify version
+        shell: pwsh
+        run: |
+          $version = $env:VERSION.TrimStart("v")
+          "VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          $cargo = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+          if ($cargo.packages[0].version -ne $version) {
+            throw "Cargo version does not match release version $version"
+          }
+      - name: Build portable GUI application
+        shell: pwsh
+        run: |
+          cargo build --release --locked --example component_gallery --no-default-features --features component-gallery-demo
+          ./scripts/check-windows-gui-subsystem.ps1 -Executable target/release/examples/component_gallery.exe
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $bytes = [IO.File]::ReadAllBytes("target/release/examples/component_gallery.exe")
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne ${{ matrix.pe_machine }}) {
+            throw ("unexpected PE machine 0x{0:X4}" -f $machine)
+          }
+          Copy-Item target/release/examples/component_gallery.exe "dist/ZSUI-Component-Gallery-v$env:VERSION-windows-${{ matrix.architecture }}.exe"
+      - name: Authenticode-sign application
+        if: env.WINDOWS_CERTIFICATE_BASE64 != ''
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "zsui-signing.pfx"
+          [IO.File]::WriteAllBytes($certificate, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificate /p $env:WINDOWS_CERTIFICATE_PASSWORD "dist/ZSUI-Component-Gallery-v$env:VERSION-windows-${{ matrix.architecture }}.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build native installer
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc `
+            "/DMyAppVersion=$env:VERSION" `
+            "/DMyAppExe=$((Resolve-Path "dist/ZSUI-Component-Gallery-v$env:VERSION-windows-${{ matrix.architecture }}.exe").Path)" `
+            "/DMyOutputDir=$((Resolve-Path dist).Path)" `
+            "/DMyArchitecture=${{ matrix.architecture }}" `
+            "/DMyArchitecturesAllowed=${{ matrix.installer_architecture }}" `
+            packaging/windows/component-gallery.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Authenticode-sign installer
+        if: env.WINDOWS_CERTIFICATE_BASE64 != ''
+        shell: pwsh
+        run: |
+          $certificate = Join-Path $env:RUNNER_TEMP "zsui-signing.pfx"
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $certificate /p $env:WINDOWS_CERTIFICATE_PASSWORD "dist/ZSUI-Component-Gallery-v$env:VERSION-windows-${{ matrix.architecture }}-setup.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record signature state
+        shell: pwsh
+        run: |
+          $signed = -not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_BASE64)
+          @{ platform = "windows"; architecture = "${{ matrix.architecture }}"; authenticode = $signed } |
+            ConvertTo-Json | Set-Content dist/windows-${{ matrix.architecture }}-signing.json -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows-${{ matrix.architecture }}
+          path: dist
+          if-no-files-found: error
+
+  macos:
+    name: macOS 15 ARM64 disk image
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+      APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+      APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Normalize and verify version
+        shell: bash
+        run: |
+          version="${VERSION#v}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          test "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')" = "$version"
+          test "$(uname -m)" = "arm64"
+      - name: Build AppKit application bundle
+        run: |
+          cargo build --release --locked --example component_gallery --no-default-features --features component-gallery-demo
+          app="dist/ZSUI Component Gallery.app"
+          mkdir -p "$app/Contents/MacOS"
+          cp target/release/examples/component_gallery "$app/Contents/MacOS/ZSUI Component Gallery"
+          cp packaging/macos/Info.plist "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$app/Contents/Info.plist"
+      - name: Developer ID-sign application
+        if: env.APPLE_CERTIFICATE_BASE64 != '' && env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          certificate="$RUNNER_TEMP/zsui-signing.p12"
+          keychain="$RUNNER_TEMP/zsui-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p temporary "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p temporary "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temporary "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          codesign --force --deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "dist/ZSUI Component Gallery.app"
+          codesign --verify --deep --strict --verbose=2 "dist/ZSUI Component Gallery.app"
+      - name: Create and sign disk image
+        run: |
+          image="dist/ZSUI-Component-Gallery-v$VERSION-macos-arm64.dmg"
+          hdiutil create -volname "ZSUI Component Gallery" -srcfolder "dist/ZSUI Component Gallery.app" -ov -format UDZO "$image"
+          if [ -n "$APPLE_CERTIFICATE_BASE64" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$image"
+          fi
+      - name: Notarize and staple disk image
+        if: env.APPLE_NOTARY_KEY_BASE64 != '' && env.APPLE_NOTARY_KEY_ID != '' && env.APPLE_NOTARY_ISSUER_ID != ''
+        run: |
+          key="$RUNNER_TEMP/AuthKey_$APPLE_NOTARY_KEY_ID.p8"
+          printf '%s' "$APPLE_NOTARY_KEY_BASE64" | base64 --decode > "$key"
+          image="dist/ZSUI-Component-Gallery-v$VERSION-macos-arm64.dmg"
+          xcrun notarytool submit "$image" --key "$key" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" --wait
+          xcrun stapler staple "$image"
+          xcrun stapler validate "$image"
+      - name: Record signature state
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path("dist/macos-arm64-signing.json").write_text(json.dumps({
+              "platform": "macos",
+              "architecture": "arm64",
+              "developer_id": bool(os.environ.get("APPLE_CERTIFICATE_BASE64") and os.environ.get("APPLE_SIGNING_IDENTITY")),
+              "notarized": bool(os.environ.get("APPLE_NOTARY_KEY_BASE64") and os.environ.get("APPLE_NOTARY_KEY_ID") and os.environ.get("APPLE_NOTARY_ISSUER_ID")),
+          }, indent=2), encoding="utf-8")
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*-signing.json
+          if-no-files-found: error
+
+  linux:
+    name: Linux ${{ matrix.architecture }} packages
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            architecture: x86_64
+            deb_architecture: amd64
+          - runner: ubuntu-24.04-arm
+            architecture: aarch64
+            deb_architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libdbus-1-dev libgtk-4-dev libpango1.0-dev libgdk-pixbuf-2.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Normalize and verify version
+        run: |
+          version="${VERSION#v}"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          test "$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')" = "$version"
+          test "$(uname -m)" = "${{ matrix.architecture }}"
+      - name: Build native Linux application
+        run: cargo build --release --locked --example component_gallery --no-default-features --features component-gallery-demo
+      - name: Build portable archive and Debian package
+        run: |
+          mkdir -p dist portable
+          install -m 755 target/release/examples/component_gallery portable/zsui-component-gallery
+          tar -C portable -czf "dist/ZSUI-Component-Gallery-v$VERSION-linux-${{ matrix.architecture }}.tar.gz" zsui-component-gallery
+
+          root="$RUNNER_TEMP/zsui-component-gallery-deb"
+          mkdir -p "$root/DEBIAN" "$root/usr/bin" "$root/usr/share/applications" "$root/usr/share/icons/hicolor/scalable/apps"
+          install -m 755 target/release/examples/component_gallery "$root/usr/bin/zsui-component-gallery"
+          install -m 644 packaging/linux/zsui-component-gallery.desktop "$root/usr/share/applications/zsui-component-gallery.desktop"
+          install -m 644 assets/fluent-system-icons/regular/app.svg "$root/usr/share/icons/hicolor/scalable/apps/zsui-component-gallery.svg"
+          cat > "$root/DEBIAN/control" <<CONTROL
+          Package: zsui-component-gallery
+          Version: $VERSION
+          Section: devel
+          Priority: optional
+          Architecture: ${{ matrix.deb_architecture }}
+          Depends: libfontconfig1, libpango-1.0-0, libcairo2, libgdk-pixbuf-2.0-0, libx11-6, libxkbcommon0, libwayland-client0
+          Maintainer: ZSUI <782461893@qq.com>
+          Description: Native ZSUI component gallery
+           Win32, AppKit and Linux component proof application built from one Rust UI declaration.
+          CONTROL
+          dpkg-deb --root-owner-group --build "$root" "dist/ZSUI-Component-Gallery-v$VERSION-linux-${{ matrix.architecture }}.deb"
+          dpkg-deb --info "dist/ZSUI-Component-Gallery-v$VERSION-linux-${{ matrix.architecture }}.deb"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux-${{ matrix.architecture }}
+          path: dist
+          if-no-files-found: error
+
+  publish:
+    name: Attest and publish release
+    needs: [windows, macos, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Enforce release workflow gates
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./scripts/check-release-workflow-gates.ps1 -Repository $env:GITHUB_REPOSITORY -Commit $env:GITHUB_SHA -Token $env:GITHUB_TOKEN
+      - name: Generate and validate update manifest
+        shell: pwsh
+        run: |
+          $version = $env:VERSION.TrimStart("v")
+          "VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          ./scripts/new-update-manifest.ps1 -Version $version -InputDirectory dist -OutputPath dist/update-manifest.json
+          ./scripts/check-update-manifest.ps1 -ManifestPath dist/update-manifest.json -ExpectedVersion $version
+          Get-ChildItem dist -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content dist/SHA256SUMS -Encoding utf8NoBOM
+      - name: Generate signed GitHub/Sigstore provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.deb
+            dist/*.tar.gz
+            dist/update-manifest.json
+            dist/SHA256SUMS
+      - name: Publish GitHub release
+        if: github.event_name == 'push' || inputs.publish
+        shell: bash
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --verify-tag \
+              --title "ZSUI $tag" \
+              --notes-file docs/releases/v0.2.0.md
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: zsui-${{ env.VERSION }}-signed-release
+          path: dist
+          if-no-files-found: error
+          retention-days: 90

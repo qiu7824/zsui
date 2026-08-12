@@ -1475,6 +1475,35 @@ history remain authoritative for implementation status.
 
 ## Verification and delivery
 
+- The v0.2 stable application-authoring boundary is `zsui::stable` and its
+  `zsui::prelude` re-export. It owns opaque `Element<Msg>`, logical `Dp`,
+  explicit `WidgetId`, native `WindowBuilder`/`RunnableWindow` and the typed
+  state/update context. Historical crate-root modules and flattened exports
+  remain callable for compatibility and backend development but are hidden
+  from stable Rustdoc and do not enter the 0.2 patch-line compatibility
+  promise. Stable Rustdoc denies missing docs, CI measures the all-feature
+  visible surface with rustdoc itself, enforces at least 70%, and uses the
+  `v0.2.0` tag as the cargo-semver-checks baseline after publication.
+- Windows and Linux ARM64 proof must run on GitHub's native
+  `windows-11-arm` and `ubuntu-24.04-arm` standard runners. A build alone is
+  insufficient: the target process must create a real native window, complete
+  input/IME routing, expose its accessibility backend, export the final surface
+  PNG and report `aarch64` without emulation.
+- IME/accessibility automation and human assistive-technology experience are
+  separate evidence layers. Native proof checks Win32 IMM32/UIA, AppKit
+  NSTextInputClient/NSAccessibility and Wayland IME/AT-SPI. A stable release
+  still records real candidate-window placement and Narrator/NVDA, VoiceOver
+  and Orca spoken/focus behavior with the checked-in manual checklist; proof
+  scripts must not claim spoken output they did not observe.
+- Distribution stays outside the framework dependency graph. The release
+  workflow produces a Windows portable GUI EXE and installer, macOS DMG, Linux
+  DEB and portable archive, an exact SHA-256 update manifest and GitHub/Sigstore
+  provenance. Authenticode and Developer ID/notarization are conditional on
+  repository secrets. Product updaters pin origin, schema, semantic version,
+  exact target/hash/provenance and OS publisher before transactional install
+  and rollback; HTTP, archive and updater dependencies never enter ordinary
+  ZSUI applications unless a product independently chooses them.
+
 - The optional `clipboard` feature now carries both UTF-8 text and validated
   RGBA image data through `ClipboardData` and `NativeClipboardService`.
   `ClipboardData::image_rgba` rejects zero dimensions, arithmetic overflow and

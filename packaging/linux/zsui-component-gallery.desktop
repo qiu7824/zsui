@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ZSUI Component Gallery
+Name[zh_CN]=ZSUI 组件库
+Comment=Native ZSUI component gallery
+Comment[zh_CN]=原生 ZSUI 组件预览
+Exec=zsui-component-gallery
+Icon=zsui-component-gallery
+Terminal=false
+Categories=Development;Utility;
