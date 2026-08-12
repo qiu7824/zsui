@@ -45,6 +45,7 @@ block2 = { version = "0.6", optional = true }
 libc = { version = "0.2", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAlert", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSButton", "NSCell", "NSColor", "NSColorSpace", "NSControl", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStatusBar", "NSStatusItem", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
+objc2-core-graphics = { version = "0.3", optional = true, default-features = false, features = ["std", "CGGeometry", "CGImage", "CGWindow"] }
 objc2-foundation = { version = "0.3", optional = true }
 
 [target.'cfg(all(target_os = "linux", not(target_env = "ohos")))'.dependencies]
@@ -131,7 +132,7 @@ image = ["dep:png"]
 icon = ["widgets-base"]
 image-preview = ["image", "widgets-base"]
 video = ["widgets-base"]
-native-smoke = ["image"]
+native-smoke = ["image", "dep:objc2-core-graphics"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
 notepad-demo-gtk = ["linux-gtk", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]

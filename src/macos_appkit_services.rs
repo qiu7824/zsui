@@ -13,6 +13,8 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::runtime::ProtocolObject;
 #[cfg(feature = "native-smoke")]
+use objc2::AnyThread;
+#[cfg(feature = "native-smoke")]
 use objc2::Message;
 use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
@@ -24,6 +26,11 @@ use objc2_app_kit::{
 };
 #[cfg(feature = "native-smoke")]
 use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRepPropertyKey, NSModalPanelRunLoopMode};
+#[cfg(feature = "native-smoke")]
+#[allow(deprecated)]
+use objc2_core_graphics::{
+    CGRectNull, CGWindowImageOption, CGWindowListCreateImage, CGWindowListOption,
+};
 use objc2_foundation::{
     NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
     NSSize, NSString, NSURL,
@@ -904,6 +911,38 @@ fn appkit_capture_file_panel_png(panel: &NSSavePanel, path: &Path) -> Result<(),
             "AppKit could not allocate an NSBitmapImageRep for the file panel".to_string()
         })?;
     view.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
+    appkit_write_bitmap_png(&bitmap, path)
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_capture_file_panel_compositor_png(
+    panel: &NSSavePanel,
+    path: &Path,
+) -> Result<(), String> {
+    let window_number = panel.windowNumber();
+    if window_number <= 0 {
+        return Err("the AppKit file panel has no compositor window number".to_string());
+    }
+    #[allow(deprecated)]
+    let image = CGWindowListCreateImage(
+        unsafe { CGRectNull },
+        CGWindowListOption::OptionIncludingWindow,
+        window_number as u32,
+        CGWindowImageOption::BoundsIgnoreFraming | CGWindowImageOption::BestResolution,
+    )
+    .ok_or_else(|| "Core Graphics could not capture the AppKit file-panel window".to_string())?;
+    let bitmap = objc2_app_kit::NSBitmapImageRep::initWithCGImage(
+        objc2_app_kit::NSBitmapImageRep::alloc(),
+        &image,
+    );
+    appkit_write_bitmap_png(&bitmap, path)
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_write_bitmap_png(
+    bitmap: &objc2_app_kit::NSBitmapImageRep,
+    path: &Path,
+) -> Result<(), String> {
     let properties = NSDictionary::<NSBitmapImageRepPropertyKey, AnyObject>::new();
     let data = unsafe {
         bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &properties)
@@ -1147,7 +1186,7 @@ fn appkit_run_file_panel(
         let proof_panel = panel.retain();
         let proof_owner = owner.retain();
         let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
-            let _ = appkit_capture_file_panel_png(&proof_panel, &screenshot);
+            let _ = appkit_capture_file_panel_compositor_png(&proof_panel, &screenshot);
             proof_owner.endSheet_returnCode(&proof_panel, NSModalResponseCancel);
             proof_panel.orderOut(None);
         });
