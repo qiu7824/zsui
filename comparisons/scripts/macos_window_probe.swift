@@ -69,7 +69,15 @@ case "hide":
     guard let application = NSRunningApplication(processIdentifier: processId) else {
         fail("no NSRunningApplication exists for PID \(processId)")
     }
-    if !application.hide() { fail("NSRunningApplication.hide failed") }
+    _ = application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+    for _ in 0..<20 {
+        _ = application.hide()
+        if application.isHidden {
+            exit(0)
+        }
+        usleep(50_000)
+    }
+    fail("NSRunningApplication.hide did not reach the hidden state")
 case "churn":
     guard
         arguments.count == 4,

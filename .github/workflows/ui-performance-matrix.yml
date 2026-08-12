@@ -82,6 +82,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json
+          import struct
           from pathlib import Path
 
           root = Path("target/ui-performance-matrix/macos-15-arm64")
@@ -104,7 +105,10 @@ jobs:
                   assert item["idle_cpu"]["machine_percent"] >= 0
                   assert item["repaint_cpu"]["machine_percent"] >= 0
                   assert item["screenshot_captured"] is True
-                  assert Path(item["screenshot"]).stat().st_size >= 1024
+                  screenshot = Path(item["screenshot"]).read_bytes()
+                  assert screenshot[:8] == b"\x89PNG\r\n\x1a\n"
+                  width, height = struct.unpack(">II", screenshot[16:24])
+                  assert width >= 950 and height >= 650
           PY
 
       - name: Upload macOS matrix
@@ -190,6 +194,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json
+          import struct
           from pathlib import Path
 
           root = Path("target/ui-performance-matrix/ubuntu-24.04-x86_64")
@@ -212,7 +217,10 @@ jobs:
                   assert item["idle_cpu"]["machine_percent"] >= 0
                   assert item["repaint_cpu"]["machine_percent"] >= 0
                   assert item["screenshot_captured"] is True
-                  assert Path(item["screenshot"]).stat().st_size >= 1024
+                  screenshot = Path(item["screenshot"]).read_bytes()
+                  assert screenshot[:8] == b"\x89PNG\r\n\x1a\n"
+                  width, height = struct.unpack(">II", screenshot[16:24])
+                  assert width >= 950 and height >= 650
           PY
 
       - name: Upload Linux matrix

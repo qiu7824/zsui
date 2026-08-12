@@ -1,39 +1,107 @@
 {
-  "schema_version": 1,
-  "required_artifacts": [
-    "startup.png",
-    "dark-theme.png",
-    "file-dialog.png",
-    "text-input.png",
-    "menu.png",
-    "interaction-report.json"
-  ],
+  "schema_version": 2,
+  "release": "0.2.0",
   "required_interactions": [
     "window_lifecycle",
-    "typed_button_message",
-    "text_edit_copy_paste",
-    "cjk_ime_stable",
+    "final_surface_capture",
+    "typed_messages",
+    "text_input",
+    "selection",
     "scroll",
-    "tab_focus",
-    "file_open_save",
-    "system_theme_change",
-    "resize_without_artifacts"
+    "keyboard",
+    "native_menu"
   ],
   "platforms": [
     {
       "id": "windows",
       "backend": "windows-win32",
-      "status": "in_progress"
+      "report_backend": "win32",
+      "status": "complete",
+      "artifacts": [
+        "startup.png",
+        "dark-theme.png",
+        "text-input.png",
+        "notepad-interaction.png",
+        "notepad-interaction.json",
+        "content-dialog.png",
+        "content-dialog.json",
+        "native-system-dialog.png",
+        "native-system-dialog.json"
+      ],
+      "interaction_report": "notepad-interaction.json",
+      "ci_evidence": {
+        "workflow": ".github/workflows/native-proof.yml",
+        "run_url": "https://github.com/qiu7824/zsui/actions/runs/31531355051",
+        "conclusion": "pending",
+        "jobs": ["Win32 Viewer and Component Proof"],
+        "steps": [
+          "Run native Win32 RGBA clipboard proof",
+          "Run native Win32 localized dialog proof",
+          "Run native Win32 file-dialog proof",
+          "Run owner-bound Win32 Notepad file-dialog proof",
+          "Run real Win32 Viewer reload proof",
+          "Run Win32 named component proofs",
+          "Run Win32 Notepad IME proof"
+        ]
+      }
     },
     {
       "id": "macos",
       "backend": "macos-appkit",
-      "status": "in_progress"
+      "report_backend": "appkit",
+      "status": "complete",
+      "artifacts": [
+        "gallery-inputs-light.png",
+        "gallery-inputs-light.json",
+        "notepad-interaction.png",
+        "notepad-interaction.json"
+      ],
+      "interaction_report": "notepad-interaction.json",
+      "ci_evidence": {
+        "workflow": ".github/workflows/native-proof.yml",
+        "run_url": "https://github.com/qiu7824/zsui/actions/runs/31531355051",
+        "conclusion": "pending",
+        "jobs": ["AppKit Runtime Proof"],
+        "steps": [
+          "Run native AppKit localized dialog proof",
+          "Run native AppKit file-panel proof",
+          "Run owner-bound AppKit Notepad file-panel proof",
+          "Run real AppKit proof scenes",
+          "Run real AppKit Viewer proof",
+          "Validate AppKit artifacts"
+        ]
+      }
     },
     {
       "id": "linux",
       "backend": "linux-direct",
-      "status": "in_progress"
+      "report_backend": "linux-direct",
+      "status": "complete",
+      "artifacts": [
+        "gallery-inputs-light.png",
+        "gallery-inputs-light.json",
+        "notepad-interaction.png",
+        "notepad-interaction.json"
+      ],
+      "interaction_report": "notepad-interaction.json",
+      "ci_evidence": {
+        "workflow": ".github/workflows/native-proof.yml",
+        "run_url": "https://github.com/qiu7824/zsui/actions/runs/31531355051",
+        "conclusion": "pending",
+        "jobs": [
+          "Linux Native Runtime Proof",
+          "Wayland Runtime, AT-SPI and Menu Proof"
+        ],
+        "steps": [
+          "Run native Linux localized dialog proof",
+          "Run native Linux XDG file-dialog proof",
+          "Run owner-bound Linux Notepad XDG file-dialog proof",
+          "Run real Linux proof scenes",
+          "Run real Linux Viewer proof",
+          "Run real Wayland, AT-SPI and menu scenes",
+          "Validate Wayland, AT-SPI and menu artifacts"
+        ]
+      }
     }
   ]
 }

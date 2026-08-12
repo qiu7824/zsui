@@ -12,6 +12,7 @@ import re
 import shutil
 import signal
 import statistics
+import struct
 import subprocess
 import tempfile
 import time
@@ -330,6 +331,17 @@ def wait_for_window(
     raise RuntimeError(f"process {process.pid} did not present a non-empty native window")
 
 
+def valid_png_window_capture(output: pathlib.Path, minimum_width: int, minimum_height: int) -> bool:
+    try:
+        data = output.read_bytes()
+    except OSError:
+        return False
+    if len(data) < 24 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return False
+    width, height = struct.unpack(">II", data[16:24])
+    return width >= minimum_width and height >= minimum_height
+
+
 def capture_window(window: dict[str, Any], platform: str, output: pathlib.Path) -> bool:
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
@@ -346,7 +358,11 @@ def capture_window(window: dict[str, Any], platform: str, output: pathlib.Path) 
             timeout=15,
             check=False,
         )
-    return result.returncode == 0 and output.exists() and output.stat().st_size >= 1024
+    return result.returncode == 0 and valid_png_window_capture(
+        output,
+        max(320, int(window["width"]) - 16),
+        max(240, int(window["height"]) - 48),
+    )
 
 
 def stop_process(process: subprocess.Popen[bytes], platform: str) -> None:
