@@ -5,11 +5,7 @@ use std::{
     rc::Rc,
 };
 #[cfg(feature = "native-smoke")]
-use std::{
-    ffi::c_void,
-    ptr::NonNull,
-    time::{Duration, Instant},
-};
+use std::{ffi::c_void, ptr::NonNull};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -33,7 +29,7 @@ use objc2_foundation::{
     NSSize, NSString, NSURL,
 };
 #[cfg(feature = "native-smoke")]
-use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSRunLoopCommonModes, NSTimer};
+use objc2_foundation::{NSDictionary, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -1121,7 +1117,7 @@ fn appkit_run_file_panel(
     #[cfg(not(feature = "native-smoke"))]
     let _ = kind;
     #[cfg(feature = "native-smoke")]
-    let owner_proof_capture = appkit_schedule_owner_file_panel_proof(panel, owner, kind)?;
+    let owner_proof_path = appkit_owner_file_panel_proof_path(kind)?;
 
     let response = Rc::new(Cell::new(None));
     let completed_response = Rc::clone(&response);
@@ -1130,38 +1126,24 @@ fn appkit_run_file_panel(
     });
     panel.beginSheetModalForWindow_completionHandler(owner, &completion);
 
-    let run_loop = NSRunLoop::currentRunLoop();
     #[cfg(feature = "native-smoke")]
-    let proof_deadline = owner_proof_capture
-        .as_ref()
-        .map(|_| Instant::now() + Duration::from_secs(10));
+    if let Some(screenshot) = owner_proof_path.as_deref() {
+        // Capture and close the attached sheet synchronously on AppKit's
+        // owning thread. A delayed callback can be starved by the nested typed
+        // update that opened the sheet, whereas the panel's content view is
+        // already laid out by the capture helper and needs no second schedule.
+        let capture_result = appkit_capture_file_panel_png(panel, screenshot);
+        owner.endSheet_returnCode(panel, NSModalResponseCancel);
+        panel.orderOut(None);
+        capture_result.map_err(|error| ZsuiError::host("macos_owner_file_dialog_proof", error))?;
+        return Ok(NSModalResponseCancel);
+    }
+
+    let run_loop = NSRunLoop::currentRunLoop();
     while response.get().is_none() {
         run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
-        #[cfg(feature = "native-smoke")]
-        if proof_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
-            owner.endSheet_returnCode(panel, NSModalResponseCancel);
-            panel.orderOut(None);
-            return Err(ZsuiError::host(
-                "macos_owner_file_dialog_proof",
-                "the owner-bound AppKit file-panel proof timed out",
-            ));
-        }
     }
     panel.orderOut(None);
-
-    #[cfg(feature = "native-smoke")]
-    if let Some(capture_result) = owner_proof_capture {
-        capture_result
-            .borrow_mut()
-            .take()
-            .ok_or_else(|| {
-                ZsuiError::host(
-                    "macos_owner_file_dialog_proof",
-                    "the AppKit owner-bound file-panel capture callback did not run",
-                )
-            })?
-            .map_err(|error| ZsuiError::host("macos_owner_file_dialog_proof", error))?;
-    }
 
     Ok(response
         .get()
@@ -1169,14 +1151,7 @@ fn appkit_run_file_panel(
 }
 
 #[cfg(feature = "native-smoke")]
-type AppKitFilePanelProofCapture = Rc<RefCell<Option<Result<(), String>>>>;
-
-#[cfg(feature = "native-smoke")]
-fn appkit_schedule_owner_file_panel_proof(
-    panel: &NSSavePanel,
-    owner: &NSWindow,
-    kind: AppKitFilePanelKind,
-) -> ZsuiResult<Option<AppKitFilePanelProofCapture>> {
+fn appkit_owner_file_panel_proof_path(kind: AppKitFilePanelKind) -> ZsuiResult<Option<PathBuf>> {
     let Some(output) = std::env::var_os("ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR") else {
         return Ok(None);
     };
@@ -1187,22 +1162,7 @@ fn appkit_schedule_owner_file_panel_proof(
             "ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR is empty",
         ));
     }
-    let screenshot = output.join(kind.owner_proof_file_name());
-    let capture_result = Rc::new(RefCell::new(None));
-    let completed_capture = Rc::clone(&capture_result);
-    let proof_panel = panel.retain();
-    let proof_owner = owner.retain();
-    let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
-        let result = appkit_capture_file_panel_png(&proof_panel, &screenshot);
-        *completed_capture.borrow_mut() = Some(result);
-        proof_owner.endSheet_returnCode(&proof_panel, NSModalResponseCancel);
-    });
-    let capture_timer =
-        unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.35, false, &capture_and_cancel) };
-    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSDefaultRunLoopMode) };
-    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSRunLoopCommonModes) };
-    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSModalPanelRunLoopMode) };
-    Ok(Some(capture_result))
+    Ok(Some(output.join(kind.owner_proof_file_name())))
 }
 
 fn appkit_main_thread_marker(operation: &'static str) -> ZsuiResult<MainThreadMarker> {
