@@ -8,6 +8,7 @@ import json
 import math
 import os
 import pathlib
+import plistlib
 import re
 import shutil
 import signal
@@ -50,6 +51,45 @@ FRAMEWORKS = {
     "slint": "Slint",
     "tauri": "Tauri 2 / system WebView",
 }
+
+
+def bundle_macos_application(
+    application: dict[str, Any], bundle_root: pathlib.Path
+) -> None:
+    """Place a raw benchmark executable in a real application bundle.
+
+    NSRunningApplication intentionally refuses to hide some executable-only
+    processes. The matrix measures desktop applications, so its macOS launch
+    shape must include the same bundle identity and activation policy expected
+    of a distributed app.
+    """
+    source = pathlib.Path(application["executable"])
+    name = f"{application['framework']}-{application['profile']}"
+    bundle = bundle_root / f"{name}.app"
+    executable_directory = bundle / "Contents" / "MacOS"
+    executable = executable_directory / name
+    if bundle.exists():
+        shutil.rmtree(bundle)
+    executable_directory.mkdir(parents=True)
+    shutil.copy2(source, executable)
+    executable.chmod(executable.stat().st_mode | 0o111)
+    info = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleDisplayName": name,
+        "CFBundleExecutable": name,
+        "CFBundleIdentifier": f"io.github.qiu7824.zsui.performance.{application['framework']}.{application['profile']}",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": name,
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": "0.2.0",
+        "CFBundleVersion": "1",
+        "LSMinimumSystemVersion": "12.0",
+        "NSHighResolutionCapable": True,
+    }
+    with (bundle / "Contents" / "Info.plist").open("wb") as stream:
+        plistlib.dump(info, stream, sort_keys=True)
+    application["executable"] = str(executable)
+    application["macos_bundle"] = str(bundle)
 
 
 def run(command: list[str], *, timeout: float = 20, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -679,6 +719,12 @@ def main() -> None:
         application["working_directory"] = str(
             pathlib.Path(application.get("working_directory", ".")).resolve()
         )
+
+    if arguments.platform == "macos":
+        bundle_root = arguments.output.parent.resolve() / "macos-apps"
+        bundle_root.mkdir(parents=True, exist_ok=True)
+        for application in applications:
+            bundle_macos_application(application, bundle_root)
 
     arguments.output.mkdir(parents=True, exist_ok=True)
     implementations = {framework: {} for framework in FRAMEWORKS}

@@ -5,7 +5,11 @@ use std::{
     rc::Rc,
 };
 #[cfg(feature = "native-smoke")]
-use std::{ffi::c_void, ptr::NonNull};
+use std::{
+    ffi::c_void,
+    ptr::NonNull,
+    time::{Duration, Instant},
+};
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -1127,8 +1131,21 @@ fn appkit_run_file_panel(
     panel.beginSheetModalForWindow_completionHandler(owner, &completion);
 
     let run_loop = NSRunLoop::currentRunLoop();
+    #[cfg(feature = "native-smoke")]
+    let proof_deadline = owner_proof_capture
+        .as_ref()
+        .map(|_| Instant::now() + Duration::from_secs(10));
     while response.get().is_none() {
         run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
+        #[cfg(feature = "native-smoke")]
+        if proof_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            owner.endSheet_returnCode(panel, NSModalResponseCancel);
+            panel.orderOut(None);
+            return Err(ZsuiError::host(
+                "macos_owner_file_dialog_proof",
+                "the owner-bound AppKit file-panel proof timed out",
+            ));
+        }
     }
     panel.orderOut(None);
 
@@ -1184,6 +1201,7 @@ fn appkit_schedule_owner_file_panel_proof(
         unsafe { NSTimer::timerWithTimeInterval_repeats_block(0.35, false, &capture_and_cancel) };
     unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSDefaultRunLoopMode) };
     unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSRunLoopCommonModes) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&capture_timer, NSModalPanelRunLoopMode) };
     Ok(Some(capture_result))
 }
 
