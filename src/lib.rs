@@ -137,7 +137,11 @@ mod native_draw_support;
     test,
     all(windows, feature = "windows-win32"),
     all(target_os = "macos", feature = "macos-appkit"),
-    all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk")
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        any(feature = "linux-direct-host", feature = "linux-gtk")
+    )
 ))]
 mod native_file_dialog;
 pub mod native_host_actions;
