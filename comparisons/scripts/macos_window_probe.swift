@@ -69,9 +69,18 @@ case "hide":
     guard let application = NSRunningApplication(processIdentifier: processId) else {
         fail("no NSRunningApplication exists for PID \(processId)")
     }
+    _ = application.unhide()
     _ = application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-    for _ in 0..<20 {
-        _ = application.hide()
+    for _ in 0..<40 where !application.isActive {
+        usleep(50_000)
+    }
+    guard application.isActive else {
+        fail("NSRunningApplication did not become active before hide")
+    }
+    guard application.hide() else {
+        fail("NSRunningApplication rejected hide")
+    }
+    for _ in 0..<40 {
         if application.isHidden {
             exit(0)
         }

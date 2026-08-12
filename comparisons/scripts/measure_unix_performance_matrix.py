@@ -606,7 +606,7 @@ def measure_application(
         "hidden_memory": hidden_memory,
         "idle_cpu": idle_cpu,
         "repaint_cpu": repaint_cpu,
-        "screenshot_captured": screenshot.exists() and screenshot.stat().st_size >= 1024,
+        "screenshot_captured": valid_png_window_capture(screenshot, 950, 650),
         "screenshot": str(screenshot),
     }
 
