@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct WindowsWin32ViewInputRoute {
     shared_runtime: crate::native::NativeViewInputRuntime,
+    _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
     shared_text_drag_active: bool,
     #[cfg(feature = "canvas")]
     shared_canvas_pointer_drag_active: bool,
@@ -137,6 +138,7 @@ impl WindowsWin32ViewInputRoute {
             resource_policy: shared_runtime.resource_policy(),
             view_suspended: shared_runtime.is_view_suspended(),
             shared_runtime,
+            _invalidation_binding: None,
             shared_text_drag_active: false,
             #[cfg(feature = "canvas")]
             shared_canvas_pointer_drag_active: false,
@@ -176,6 +178,15 @@ impl WindowsWin32ViewInputRoute {
     pub fn ui_command_executor(mut self, executor: SharedUiCommandExecutor) -> Self {
         self.shared_runtime.set_ui_command_executor(executor);
         self
+    }
+
+    fn bind_invalidation_target(&mut self, hwnd: HWND) {
+        let hwnd = hwnd as isize;
+        self._invalidation_binding = self
+            .shared_runtime
+            .bind_invalidation_target(move || unsafe {
+                let _ = PostMessageW(hwnd as HWND, ZSUI_WIN32_INVALIDATE_VIEW_MESSAGE, 0, 0);
+            });
     }
 }
 
@@ -457,6 +468,7 @@ pub fn set_windows_win32_window_view_input_route(
     if let Some((bounds, dpi)) = windows_win32_shell_surface(hwnd) {
         route.set_surface(bounds, dpi);
     }
+    route.bind_invalidation_target(hwnd);
     let draw_plan = route.take_pending_draw_plan();
     let poll_interval_ms = route.background_poll_interval_ms();
     let hwnd_value = hwnd as isize;
@@ -1146,6 +1158,12 @@ fn windows_win32_window_focused_target(hwnd: HWND) -> Option<crate::ViewHitTarge
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
         .and_then(|record| record.route.focused_target())
+}
+
+pub fn refresh_windows_win32_window_invalidated_view(
+    hwnd: HWND,
+) -> Option<WindowsWin32ViewInputDispatchReport> {
+    dispatch_windows_win32_window_view_input(hwnd, |route| route.refresh_invalidated_view())
 }
 
 fn windows_win32_window_ime_caret_rect(hwnd: HWND) -> Option<crate::Rect> {

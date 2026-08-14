@@ -121,6 +121,159 @@ pub fn native_window(title: impl Into<String>) -> NativeWindowBuilder {
     NativeWindowBuilder::new(title)
 }
 
+/// A cloneable, thread-safe request handle for rebuilding one retained UI.
+///
+/// Applications can mutate app-owned shared state on a worker thread and then
+/// call [`UiInvalidationHandle::request_rebuild`]. The selected native host
+/// wakes its event loop, rebuilds the stateful View once on the UI thread and
+/// schedules a repaint. Repeated requests are coalesced until the UI thread
+/// consumes them, so an idle application does not need a polling widget or a
+/// continuously running timer. Each handle belongs to one stateful window.
+#[derive(Clone, Default)]
+pub struct UiInvalidationHandle {
+    inner: std::sync::Arc<UiInvalidationState>,
+}
+
+type UiInvalidationTarget = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
+
+#[derive(Default)]
+struct UiInvalidationState {
+    pending: std::sync::atomic::AtomicBool,
+    next_binding: std::sync::atomic::AtomicU64,
+    target: std::sync::Mutex<Option<(u64, UiInvalidationTarget)>>,
+}
+
+impl std::fmt::Debug for UiInvalidationHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UiInvalidationHandle")
+            .field(
+                "pending",
+                &self
+                    .inner
+                    .pending
+                    .load(std::sync::atomic::Ordering::Acquire),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for UiInvalidationHandle {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for UiInvalidationHandle {}
+
+impl UiInvalidationHandle {
+    /// Creates an unbound invalidation handle.
+    ///
+    /// A request made before the native window starts remains pending and is
+    /// delivered when the event loop binds the window.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Requests one stateful View rebuild and repaint.
+    ///
+    /// Returns `true` when this call changes the handle from idle to pending,
+    /// or `false` when an earlier request is already waiting. This method is
+    /// safe to call from any thread and never performs UI work on the caller.
+    pub fn request_rebuild(&self) -> bool {
+        if self
+            .inner
+            .pending
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return false;
+        }
+        let target = self
+            .inner
+            .target
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|(_, target)| target.clone());
+        if let Some(target) = target {
+            target();
+        }
+        true
+    }
+
+    pub(crate) fn take_request(&self) -> bool {
+        self.inner
+            .pending
+            .swap(false, std::sync::atomic::Ordering::AcqRel)
+    }
+
+    pub(crate) fn bind(&self, target: impl Fn() + Send + Sync + 'static) -> UiInvalidationBinding {
+        let id = self
+            .inner
+            .next_binding
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        let target: UiInvalidationTarget = std::sync::Arc::new(target);
+        {
+            let mut slot = self
+                .inner
+                .target
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *slot = Some((id, target.clone()));
+        }
+        if self
+            .inner
+            .pending
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            target();
+        }
+        UiInvalidationBinding {
+            lease: std::sync::Arc::new(UiInvalidationBindingLease {
+                handle: self.clone(),
+                id,
+            }),
+        }
+    }
+
+    fn unbind(&self, id: u64) {
+        let mut target = self
+            .inner
+            .target
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if target.as_ref().is_some_and(|(current, _)| *current == id) {
+            *target = None;
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct UiInvalidationBinding {
+    #[allow(dead_code)]
+    lease: std::sync::Arc<UiInvalidationBindingLease>,
+}
+
+impl std::fmt::Debug for UiInvalidationBinding {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("UiInvalidationBinding")
+            .finish_non_exhaustive()
+    }
+}
+
+struct UiInvalidationBindingLease {
+    handle: UiInvalidationHandle,
+    id: u64,
+}
+
+impl Drop for UiInvalidationBindingLease {
+    fn drop(&mut self) {
+        self.handle.unbind(self.id);
+    }
+}
+
 /// Starts the opt-in typestate builder. Content must be attached before
 /// `build`, `run` or `run_smoke` becomes available.
 ///
@@ -1466,6 +1619,7 @@ pub(crate) struct NativeViewInputRuntime {
     interaction_plan: Option<ViewInteractionPlan>,
     ui_command_view: Option<ViewNode<UiCommand>>,
     live_view: Option<SharedLiveViewRuntime>,
+    invalidation_handle: Option<UiInvalidationHandle>,
     resource_policy: NativeWindowResourcePolicy,
     view_suspended: bool,
     animation_epoch: Option<std::time::Instant>,
@@ -1826,6 +1980,7 @@ impl NativeViewInputRuntime {
             interaction_plan,
             ui_command_view,
             live_view,
+            invalidation_handle: None,
             resource_policy,
             view_suspended: false,
             animation_epoch: Some(std::time::Instant::now()),
@@ -2016,6 +2171,9 @@ impl NativeViewInputRuntime {
         }
         let runtime = self.live_view.clone()?;
         let update = runtime.resume();
+        if let Some(handle) = &self.invalidation_handle {
+            handle.take_request();
+        }
         self.view_suspended = false;
         self.animation_epoch = Some(std::time::Instant::now());
         self.interaction_plan = Some(runtime.interaction_plan());
@@ -2027,6 +2185,77 @@ impl NativeViewInputRuntime {
         }
         let plan = self.stabilize_native_text_layout(runtime.draw_plan());
         Some(self.compose_input_visuals(plan))
+    }
+
+    pub(crate) fn set_invalidation_handle(&mut self, handle: Option<UiInvalidationHandle>) {
+        self.invalidation_handle = handle;
+    }
+
+    pub(crate) fn bind_invalidation_target(
+        &self,
+        target: impl Fn() + Send + Sync + 'static,
+    ) -> Option<UiInvalidationBinding> {
+        self.live_view.as_ref()?;
+        self.invalidation_handle
+            .as_ref()
+            .map(|handle| handle.bind(target))
+    }
+
+    /// Consumes one externally requested rebuild on the native UI thread.
+    pub(crate) fn refresh_invalidated_view(&mut self) -> NativeViewInputDispatchReport {
+        if self.view_suspended {
+            return NativeViewInputDispatchReport::default();
+        }
+        let Some(handle) = self.invalidation_handle.clone() else {
+            return NativeViewInputDispatchReport::default();
+        };
+        if !handle.take_request() {
+            return NativeViewInputDispatchReport::default();
+        }
+        let Some(runtime) = self.live_view.clone() else {
+            return NativeViewInputDispatchReport::default();
+        };
+
+        let previous_interaction_plan = self.current_interaction_plan();
+        let update = runtime.refresh();
+        let stabilized_plan = update
+            .redraw
+            .then(|| self.stabilize_native_text_layout(runtime.draw_plan()));
+        // Installing native measurements can relayout the rebuilt View, so
+        // all state reconciliation must use the final measured geometry.
+        self.interaction_plan = Some(runtime.interaction_plan());
+        let mut report = NativeViewInputDispatchReport {
+            handled: update.redraw,
+            message_count: update.message_count,
+            app_command_count: update.commands.len(),
+            ui_command_count: update.ui_commands.len(),
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        self.pending_app_commands.extend(update.commands);
+        self.pending_ui_commands.extend(update.ui_commands);
+        report.quit_requested = update.quit_requested;
+        self.reconcile_live_view_state(previous_interaction_plan.as_ref(), &mut report);
+        #[cfg(feature = "toast")]
+        {
+            report.handled |= self.sync_toast_runtime(std::time::Instant::now());
+        }
+        report.hit_target_count = self.hit_target_count();
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        self.populate_text_report(&mut report);
+        if update.redraw || report.handled {
+            report.redraw_plan = stabilized_plan
+                .map(|plan| self.compose_input_visuals(plan))
+                .or_else(|| self.current_composed_draw_plan());
+        }
+        report
     }
     pub(crate) fn set_text_shaping_backend(
         &mut self,
@@ -9030,6 +9259,7 @@ pub struct NativeWindowBuilder {
     view_layout_node_count: usize,
     shell_runtime: Option<ZsShellRuntime>,
     live_view_runtime: Option<SharedLiveViewRuntime>,
+    invalidation_handle: Option<UiInvalidationHandle>,
     resource_policy: NativeWindowResourcePolicy,
     window_close_request_command: Option<Command>,
     app_command_executor: Option<SharedAppCommandExecutor>,
@@ -9046,6 +9276,7 @@ impl PartialEq for NativeWindowBuilder {
             && self.view_layout_node_count == other.view_layout_node_count
             && self.shell_runtime == other.shell_runtime
             && self.live_view_runtime == other.live_view_runtime
+            && self.invalidation_handle == other.invalidation_handle
             && self.resource_policy == other.resource_policy
             && self.window_close_request_command == other.window_close_request_command
             && self.app_command_executor == other.app_command_executor
@@ -9065,6 +9296,7 @@ impl NativeWindowBuilder {
             view_layout_node_count: 0,
             shell_runtime: None,
             live_view_runtime: None,
+            invalidation_handle: None,
             resource_policy: NativeWindowResourcePolicy::default(),
             window_close_request_command: None,
             app_command_executor: None,
@@ -9119,6 +9351,18 @@ impl NativeWindowBuilder {
 
     pub fn resource_policy(mut self, policy: NativeWindowResourcePolicy) -> Self {
         self.resource_policy = policy;
+        self
+    }
+
+    /// Connects a thread-safe, non-visual rebuild request handle to this
+    /// window's stateful View runtime.
+    ///
+    /// Native hosts translate a pending request into one event-loop wake and
+    /// repaint. The handle adds no timer and does not need a View node. Attach
+    /// one distinct handle per stateful window; fixed Views and DrawPlans are
+    /// rejected when the builder is finalized.
+    pub fn invalidation_handle(mut self, handle: UiInvalidationHandle) -> Self {
+        self.invalidation_handle = Some(handle);
         self
     }
 
@@ -9338,13 +9582,16 @@ impl NativeWindowBuilder {
     #[cfg(feature = "workbench")]
     pub fn workbench(self, spec: impl Into<ZsWorkbenchSpec>) -> Self {
         let spec = spec.into();
-        let surface = Rect {
-            x: 0,
-            y: 0,
-            width: self.window.width as i32,
-            height: self.window.height as i32,
-        };
-        self.draw_plan(spec.native_draw_plan(surface, Dpi::standard()))
+        self.stateful_view(
+            spec,
+            |spec| {
+                crate::view::workbench::<crate::ZsWorkbenchInteractionEvent>(spec.clone())
+                    .on_workbench_interaction_with(|interaction| Some(interaction))
+            },
+            |spec, interaction, _cx| {
+                crate::workbench::zs_workbench_apply_interaction(spec, &interaction);
+            },
+        )
     }
 
     pub fn window_spec(&self) -> &WindowSpec {
@@ -9392,6 +9639,12 @@ impl NativeWindowBuilder {
     }
 
     pub fn build(self) -> ZsuiResult<ZsuiApp> {
+        if self.invalidation_handle.is_some() && self.live_view_runtime.is_none() {
+            return Err(ZsuiError::invalid_spec(
+                "invalidation_handle",
+                "a non-visual invalidation handle requires stateful_view/stateful content; a fixed View or DrawPlan cannot be rebuilt",
+            ));
+        }
         app(self.app_name).window(self.window).build()
     }
 
@@ -9430,7 +9683,7 @@ impl NativeWindowBuilder {
     }
 
     fn native_view_input_runtime(&self) -> NativeViewInputRuntime {
-        NativeViewInputRuntime::new(
+        let mut runtime = NativeViewInputRuntime::new(
             Rect {
                 x: 0,
                 y: 0,
@@ -9444,7 +9697,9 @@ impl NativeWindowBuilder {
             self.window_close_request_command.clone(),
             self.app_command_executor.clone(),
             self.ui_command_executor.clone(),
-        )
+        );
+        runtime.set_invalidation_handle(self.invalidation_handle.clone());
+        runtime
     }
 }
 
@@ -9503,6 +9758,12 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
 
     pub fn release_view_when_hidden(mut self) -> Self {
         self.inner = self.inner.release_view_when_hidden();
+        self
+    }
+
+    /// Attaches a coalescing, non-visual rebuild request handle.
+    pub fn invalidation_handle(mut self, handle: UiInvalidationHandle) -> Self {
+        self.inner = self.inner.invalidation_handle(handle);
         self
     }
 
@@ -9627,7 +9888,7 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
     #[cfg(feature = "workbench")]
     pub fn workbench(
         self,
-        spec: ZsWorkbenchSpec,
+        spec: impl Into<ZsWorkbenchSpec>,
     ) -> TypedNativeWindowBuilder<NativeWindowContentReady> {
         TypedNativeWindowBuilder::ready(self.inner.workbench(spec))
     }
@@ -9929,6 +10190,83 @@ mod tests {
         assert_eq!(app.windows[0].width, 800);
         assert_eq!(app.windows[0].min_width, Some(480));
         assert!(app.windows[0].always_on_top);
+    }
+
+    #[test]
+    fn invalidation_handle_coalesces_a_request_made_before_binding() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let handle = UiInvalidationHandle::new();
+        assert!(handle.request_rebuild());
+        assert!(!handle.request_rebuild());
+
+        let wake_count = Arc::new(AtomicUsize::new(0));
+        let wake_count_for_target = Arc::clone(&wake_count);
+        let _binding = handle.bind(move || {
+            wake_count_for_target.fetch_add(1, Ordering::SeqCst);
+        });
+
+        assert_eq!(wake_count.load(Ordering::SeqCst), 1);
+        assert!(handle.take_request());
+        assert!(!handle.take_request());
+    }
+
+    #[test]
+    fn invalidation_handle_rebinding_ignores_old_leases_and_unbinds_on_last_release() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+
+        let handle = UiInvalidationHandle::new();
+        let first_count = Arc::new(AtomicUsize::new(0));
+        let first_count_for_target = Arc::clone(&first_count);
+        let first_binding = handle.bind(move || {
+            first_count_for_target.fetch_add(1, Ordering::SeqCst);
+        });
+
+        assert!(handle.request_rebuild());
+        assert_eq!(first_count.load(Ordering::SeqCst), 1);
+        assert!(handle.take_request());
+
+        let second_count = Arc::new(AtomicUsize::new(0));
+        let second_count_for_target = Arc::clone(&second_count);
+        let second_binding = handle.bind(move || {
+            second_count_for_target.fetch_add(1, Ordering::SeqCst);
+        });
+        let second_binding_clone = second_binding.clone();
+        drop(first_binding);
+
+        assert!(handle.request_rebuild());
+        assert_eq!(first_count.load(Ordering::SeqCst), 1);
+        assert_eq!(second_count.load(Ordering::SeqCst), 1);
+        assert!(handle.take_request());
+
+        drop(second_binding);
+        assert!(handle.request_rebuild());
+        assert_eq!(second_count.load(Ordering::SeqCst), 2);
+        assert!(handle.take_request());
+
+        drop(second_binding_clone);
+        assert!(handle.request_rebuild());
+        assert_eq!(second_count.load(Ordering::SeqCst), 2);
+        assert!(handle.take_request());
+    }
+
+    #[test]
+    fn invalidation_handle_rejects_fixed_view_content() {
+        let result = native_window("Fixed invalidation")
+            .invalidation_handle(UiInvalidationHandle::new())
+            .view(crate::spacer::<()>())
+            .build();
+
+        assert!(matches!(
+            result,
+            Err(ZsuiError::InvalidSpec { field, .. }) if field == "invalidation_handle"
+        ));
     }
 
     #[cfg(feature = "label")]
@@ -10929,6 +11267,108 @@ mod tests {
                 command,
                 crate::NativeDrawCommand::StrokeRect { width: 2, .. }
             ))));
+    }
+
+    #[cfg(feature = "workbench")]
+    #[test]
+    fn native_window_workbench_preserves_interaction_state_across_external_refresh() {
+        let handle = UiInvalidationHandle::new();
+        let mut spec = crate::ZsWorkbenchSpec::new(
+            "Persistent workbench",
+            crate::ZsWorkbenchSidebarSpec::new("Workspace").primary_action(
+                crate::ZsWorkbenchActionSpec::new("new", "New", crate::ZsIcon::Add),
+            ),
+            crate::ZsWorkbenchComposerSpec::new("Write a message"),
+        );
+        for index in 0..24 {
+            spec = spec.message(
+                crate::ZsWorkbenchMessageSpec::new(
+                    format!("message-{index}"),
+                    crate::ZsWorkbenchMessageRole::Assistant,
+                )
+                .block(crate::ZsWorkbenchContentBlock::paragraph(
+                    "Scrollable workbench content remains in retained application state.",
+                )),
+            );
+        }
+        let builder = native_window("Persistent workbench")
+            .size(960, 640)
+            .invalidation_handle(handle.clone())
+            .workbench(spec);
+        let live = builder
+            .native_live_view_runtime()
+            .expect("workbench builder should install a live runtime")
+            .clone();
+        let mut input = builder.native_view_input_runtime();
+        input.refresh_native_text_measurements();
+
+        let interaction = live.interaction_plan();
+        let composer = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.kind == crate::ViewHitTargetKind::TextEditor)
+            .expect("workbench composer target");
+        let timeline = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .filter(|target| target.kind == crate::ViewHitTargetKind::Scroll)
+            .max_by_key(|target| {
+                i64::from(target.bounds.width).saturating_mul(i64::from(target.bounds.height))
+            })
+            .expect("workbench timeline target");
+        let timeline_scroll_widget = live
+            .widget_scroll_target(timeline.widget)
+            .expect("timeline should route wheel input to the workbench root");
+        let sidebar_toggle = interaction
+            .hit_targets
+            .iter()
+            .copied()
+            .filter(|target| target.kind == crate::ViewHitTargetKind::Button)
+            .min_by_key(|target| (target.bounds.y, target.bounds.x))
+            .expect("workbench sidebar toggle target");
+
+        assert!(
+            live.dispatch_event(&ViewEvent::TextChanged {
+                widget: composer.widget,
+                value: "retained draft".to_string(),
+            })
+            .redraw
+        );
+        assert!(
+            live.dispatch_event(&ViewEvent::ScrollBy {
+                widget: timeline_scroll_widget,
+                delta_y: crate::Dp::new(420.0),
+            })
+            .redraw
+        );
+        assert!(
+            live.dispatch_event(&ViewEvent::Click {
+                widget: sidebar_toggle.widget,
+            })
+            .redraw
+        );
+
+        input.refresh_native_text_measurements();
+        let expected_draw = live.draw_plan();
+        let expected_interaction = live.interaction_plan();
+        assert_eq!(
+            live.widget_text_value(composer.widget).as_deref(),
+            Some("retained draft")
+        );
+
+        assert!(handle.request_rebuild());
+        let report = input.refresh_invalidated_view();
+
+        assert!(report.handled);
+        assert!(report.redraw_plan.is_some());
+        assert_eq!(live.draw_plan(), expected_draw);
+        assert_eq!(live.interaction_plan(), expected_interaction);
+        assert_eq!(
+            live.widget_text_value(composer.widget).as_deref(),
+            Some("retained draft")
+        );
     }
 
     #[cfg(feature = "toggle-button")]

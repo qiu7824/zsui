@@ -2077,42 +2077,94 @@ fn clipped_rect(rect: Rect, clip: Option<Rect>) -> Option<Rect> {
         height,
     })
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ViewTextMeasurement {
-    text: String,
-    style: crate::SemanticTextStyle,
+const MAX_RETAINED_TEXT_MEASUREMENTS: usize = 4_096;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ViewTextMeasurementKey {
+    text_fingerprint_a: u64,
+    text_fingerprint_b: u64,
+    text_utf8_len: usize,
+    style_fingerprint: u64,
     max_width: i32,
-    size: crate::Size,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct ViewTextMeasurements {
-    entries: Vec<ViewTextMeasurement>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ViewTextMeasurementValue {
+    size: crate::Size,
+    last_used: u64,
 }
+
+#[derive(Clone)]
+pub(crate) struct ViewTextMeasurements {
+    fingerprint_a: std::collections::hash_map::RandomState,
+    fingerprint_b: std::collections::hash_map::RandomState,
+    entries:
+        std::collections::BTreeMap<ViewTextMeasurementKey, ViewTextMeasurementValue>,
+    next_use: u64,
+}
+
+impl Default for ViewTextMeasurements {
+    fn default() -> Self {
+        Self {
+            fingerprint_a: std::collections::hash_map::RandomState::new(),
+            fingerprint_b: std::collections::hash_map::RandomState::new(),
+            entries: std::collections::BTreeMap::new(),
+            next_use: 0,
+        }
+    }
+}
+
+impl fmt::Debug for ViewTextMeasurements {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ViewTextMeasurements")
+            .field("entry_count", &self.entries.len())
+            .finish()
+    }
+}
+
+impl PartialEq for ViewTextMeasurements {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries.len() == other.entries.len()
+            && self.entries.iter().zip(other.entries.iter()).all(
+                |((left_key, left_value), (right_key, right_value))| {
+                    left_key == right_key && left_value.size == right_value.size
+                },
+            )
+    }
+}
+
+impl Eq for ViewTextMeasurements {}
 
 impl ViewTextMeasurements {
     pub(crate) fn insert(
         &mut self,
-        text: impl Into<String>,
+        text: impl AsRef<str>,
         style: crate::SemanticTextStyle,
         max_width: i32,
         size: crate::Size,
     ) {
-        let text = text.into();
-        let max_width = max_width.max(0);
+        let key = self.key(text.as_ref(), style, max_width);
         let size = size.clamp_non_negative();
-        if let Some(entry) = self.entries.iter_mut().find(|entry| {
-            entry.text == text && entry.style == style && entry.max_width == max_width
-        }) {
-            entry.size = size;
-            return;
+        self.next_use = self.next_use.saturating_add(1);
+        self.entries.insert(
+            key,
+            ViewTextMeasurementValue {
+                size,
+                last_used: self.next_use,
+            },
+        );
+        while self.entries.len() > MAX_RETAINED_TEXT_MEASUREMENTS {
+            let oldest = self
+                .entries
+                .iter()
+                .min_by_key(|(_, value)| value.last_used)
+                .map(|(key, _)| *key);
+            let Some(oldest) = oldest else {
+                break;
+            };
+            self.entries.remove(&oldest);
         }
-        self.entries.push(ViewTextMeasurement {
-            text,
-            style,
-            max_width,
-            size,
-        });
     }
 
     pub(crate) fn measure(
@@ -2121,12 +2173,39 @@ impl ViewTextMeasurements {
         style: crate::SemanticTextStyle,
         max_width: i32,
     ) -> Option<crate::Size> {
-        let max_width = max_width.max(0);
         self.entries
-            .iter()
-            .find(|entry| {
-                entry.text == text && entry.style == style && entry.max_width == max_width
-            })
+            .get(&self.key(text, style, max_width))
             .map(|entry| entry.size)
     }
+
+    fn key(
+        &self,
+        text: &str,
+        style: crate::SemanticTextStyle,
+        max_width: i32,
+    ) -> ViewTextMeasurementKey {
+        use std::hash::{BuildHasher, Hasher};
+
+        let mut fingerprint_a = self.fingerprint_a.build_hasher();
+        fingerprint_a.write(text.as_bytes());
+        let mut fingerprint_b = self.fingerprint_b.build_hasher();
+        fingerprint_b.write(text.as_bytes());
+        ViewTextMeasurementKey {
+            text_fingerprint_a: fingerprint_a.finish(),
+            text_fingerprint_b: fingerprint_b.finish(),
+            text_utf8_len: text.len(),
+            style_fingerprint: semantic_text_style_fingerprint(style),
+            max_width: max_width.max(0),
+        }
+    }
+}
+
+fn semantic_text_style_fingerprint(style: crate::SemanticTextStyle) -> u64 {
+    let mut fingerprint = style.role as u64;
+    fingerprint = (fingerprint << 8) | style.color as u64;
+    fingerprint = (fingerprint << 8) | style.weight as u64;
+    fingerprint = (fingerprint << 8) | style.horizontal_align as u64;
+    fingerprint = (fingerprint << 8) | style.vertical_align as u64;
+    fingerprint = (fingerprint << 8) | style.wrap as u64;
+    (fingerprint << 1) | u64::from(style.ellipsis)
 }

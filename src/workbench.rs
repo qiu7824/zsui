@@ -138,6 +138,10 @@ impl ZsWorkbenchConversationGroupSpec {
 pub struct ZsWorkbenchSidebarSpec {
     pub title: String,
     pub collapsed: bool,
+    #[serde(default)]
+    pub force_expanded: bool,
+    #[serde(default)]
+    pub scroll_y: i32,
     pub primary_actions: Vec<ZsWorkbenchActionSpec>,
     pub groups: Vec<ZsWorkbenchConversationGroupSpec>,
     pub footer_actions: Vec<ZsWorkbenchActionSpec>,
@@ -148,6 +152,8 @@ impl ZsWorkbenchSidebarSpec {
         Self {
             title: title.into(),
             collapsed: false,
+            force_expanded: false,
+            scroll_y: 0,
             primary_actions: Vec::new(),
             groups: Vec::new(),
             footer_actions: Vec::new(),
@@ -156,6 +162,22 @@ impl ZsWorkbenchSidebarSpec {
 
     pub fn collapsed(mut self, collapsed: bool) -> Self {
         self.collapsed = collapsed;
+        if collapsed {
+            self.force_expanded = false;
+        }
+        self
+    }
+
+    pub fn force_expanded(mut self, force_expanded: bool) -> Self {
+        self.force_expanded = force_expanded;
+        if force_expanded {
+            self.collapsed = false;
+        }
+        self
+    }
+
+    pub fn scroll_y(mut self, scroll_y: i32) -> Self {
+        self.scroll_y = scroll_y.max(0);
         self
     }
 
@@ -418,6 +440,8 @@ pub struct ZsWorkbenchInspectorSpec {
     pub selected_tab_id: Option<String>,
     pub tabs: Vec<ZsWorkbenchActionSpec>,
     pub body: String,
+    #[serde(default)]
+    pub scroll_y: i32,
 }
 
 impl ZsWorkbenchInspectorSpec {
@@ -427,6 +451,7 @@ impl ZsWorkbenchInspectorSpec {
             selected_tab_id: None,
             tabs: Vec::new(),
             body: String::new(),
+            scroll_y: 0,
         }
     }
 
@@ -442,6 +467,11 @@ impl ZsWorkbenchInspectorSpec {
 
     pub fn body(mut self, body: impl Into<String>) -> Self {
         self.body = body.into();
+        self
+    }
+
+    pub fn scroll_y(mut self, scroll_y: i32) -> Self {
+        self.scroll_y = scroll_y.max(0);
         self
     }
 }
@@ -577,6 +607,22 @@ impl ZsWorkbenchSpec {
         zs_workbench_layout(self, surface, dpi)
     }
 
+    pub(crate) fn layout_with_text_measurements(
+        &self,
+        surface: Rect,
+        dpi: Dpi,
+        typography_scale: f32,
+        measurements: &crate::view::ViewTextMeasurements,
+    ) -> ZsWorkbenchLayoutPlan {
+        zs_workbench_layout_with_text_measurements(
+            self,
+            surface,
+            dpi,
+            typography_scale,
+            measurements,
+        )
+    }
+
     pub fn native_draw_plan(&self, surface: Rect, dpi: Dpi) -> NativeDrawPlan {
         let layout = self.layout(surface, dpi);
         zs_workbench_native_draw_plan(self, &layout)
@@ -602,6 +648,12 @@ impl From<ZsWorkbenchShellSpec> for ZsWorkbenchSpec {
 pub struct ZsWorkbenchLayoutMetrics {
     pub surface: Rect,
     pub sidebar: Rect,
+    #[serde(default)]
+    pub sidebar_collapsed: bool,
+    #[serde(default)]
+    pub sidebar_auto_collapsed: bool,
+    #[serde(default)]
+    pub sidebar_list_viewport: Option<Rect>,
     pub top_bar: Rect,
     pub timeline: Rect,
     pub composer_band: Rect,
@@ -613,6 +665,7 @@ pub struct ZsWorkbenchLayoutMetrics {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsWorkbenchRegionKind {
     SidebarToggle,
+    SidebarViewport,
     SidebarAction,
     Conversation,
     ToolbarAction,
@@ -622,6 +675,7 @@ pub enum ZsWorkbenchRegionKind {
     Submit,
     Stop,
     InspectorTab,
+    InspectorViewport,
     Timeline,
 }
 
@@ -659,9 +713,44 @@ pub struct ZsWorkbenchLayoutPlan {
     pub metrics: ZsWorkbenchLayoutMetrics,
     pub regions: Vec<ZsWorkbenchLayoutRegion>,
     pub messages: Vec<ZsWorkbenchMessageLayout>,
+    #[serde(default)]
+    pub sidebar_content_height: i32,
+    #[serde(default)]
+    pub sidebar_scroll_y: i32,
+    #[serde(default)]
+    pub sidebar_scroll_max: i32,
+    #[serde(default)]
+    pub sidebar_scrollbar: Option<ZsWorkbenchScrollbarGeometry>,
+    #[serde(default)]
+    pub composer_mode_label_bounds: Option<Rect>,
+    #[serde(default)]
+    pub composer_model_label_bounds: Option<Rect>,
+    #[serde(default)]
+    pub inspector_body_bounds: Option<Rect>,
+    #[serde(default)]
+    pub inspector_body_viewport: Option<Rect>,
+    #[serde(default)]
+    pub inspector_body_content_height: i32,
+    #[serde(default)]
+    pub inspector_scroll_y: i32,
+    #[serde(default)]
+    pub inspector_scroll_max: i32,
+    #[serde(default)]
+    pub inspector_scrollbar: Option<ZsWorkbenchScrollbarGeometry>,
     pub message_content_height: i32,
     pub message_scroll_y: i32,
     pub message_scroll_max: i32,
+}
+
+/// Shared scrollbar geometry for Workbench-owned scroll surfaces.
+///
+/// The track is the wheel hit surface and the thumb is the painted position
+/// indicator. Workbench does not currently expose thumb dragging as a public
+/// interaction contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ZsWorkbenchScrollbarGeometry {
+    pub track: Rect,
+    pub thumb: Rect,
 }
 
 impl ZsWorkbenchLayoutPlan {
@@ -676,6 +765,9 @@ impl ZsWorkbenchLayoutPlan {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ZsWorkbenchInteractionEvent {
     ToggleSidebar,
+    SetSidebarExpanded {
+        expanded: bool,
+    },
     InvokeSidebarAction {
         action_id: String,
     },
@@ -701,6 +793,12 @@ pub enum ZsWorkbenchInteractionEvent {
     ChangeComposerDraft {
         draft: String,
     },
+    ScrollSidebar {
+        offset_y: i32,
+    },
+    ScrollInspector {
+        offset_y: i32,
+    },
     ScrollMessages {
         offset_y: i32,
     },
@@ -716,7 +814,16 @@ pub fn zs_workbench_event_for_region(
     region: &ZsWorkbenchLayoutRegion,
 ) -> Option<ZsWorkbenchInteractionEvent> {
     match region.kind {
-        ZsWorkbenchRegionKind::SidebarToggle => Some(ZsWorkbenchInteractionEvent::ToggleSidebar),
+        ZsWorkbenchRegionKind::SidebarToggle => {
+            if region.id.ends_with(".expand") {
+                Some(ZsWorkbenchInteractionEvent::SetSidebarExpanded { expanded: true })
+            } else if region.id.ends_with(".collapse") {
+                Some(ZsWorkbenchInteractionEvent::SetSidebarExpanded { expanded: false })
+            } else {
+                Some(ZsWorkbenchInteractionEvent::ToggleSidebar)
+            }
+        }
+        ZsWorkbenchRegionKind::SidebarViewport => None,
         ZsWorkbenchRegionKind::SidebarAction => {
             Some(ZsWorkbenchInteractionEvent::InvokeSidebarAction {
                 action_id: region.id.clone(),
@@ -752,6 +859,7 @@ pub fn zs_workbench_event_for_region(
                 tab_id: region.id.clone(),
             })
         }
+        ZsWorkbenchRegionKind::InspectorViewport => None,
         ZsWorkbenchRegionKind::Timeline => None,
     }
 }
@@ -762,6 +870,7 @@ pub(crate) fn zs_workbench_region_widget_id(
 ) -> crate::WidgetId {
     let local_kind = match region.kind {
         ZsWorkbenchRegionKind::SidebarToggle => 1_u64,
+        ZsWorkbenchRegionKind::SidebarViewport => 12,
         ZsWorkbenchRegionKind::SidebarAction => 2,
         ZsWorkbenchRegionKind::Conversation => 3,
         ZsWorkbenchRegionKind::ToolbarAction => 4,
@@ -771,6 +880,7 @@ pub(crate) fn zs_workbench_region_widget_id(
         ZsWorkbenchRegionKind::Submit => 8,
         ZsWorkbenchRegionKind::Stop => 9,
         ZsWorkbenchRegionKind::InspectorTab => 10,
+        ZsWorkbenchRegionKind::InspectorViewport => 13,
         ZsWorkbenchRegionKind::Timeline => 11,
     };
     zs_workbench_named_widget_id(parent, local_kind, &region.id)
@@ -796,6 +906,12 @@ pub(crate) fn zs_workbench_apply_interaction(
     match event {
         ZsWorkbenchInteractionEvent::ToggleSidebar => {
             spec.sidebar.collapsed = !spec.sidebar.collapsed;
+            spec.sidebar.force_expanded = !spec.sidebar.collapsed;
+            true
+        }
+        ZsWorkbenchInteractionEvent::SetSidebarExpanded { expanded } => {
+            spec.sidebar.collapsed = !expanded;
+            spec.sidebar.force_expanded = *expanded;
             true
         }
         ZsWorkbenchInteractionEvent::SelectConversation { conversation_id } => {
@@ -829,6 +945,28 @@ pub(crate) fn zs_workbench_apply_interaction(
                 true
             }
         }
+        ZsWorkbenchInteractionEvent::ScrollSidebar { offset_y } => {
+            let next = (*offset_y).max(0);
+            if spec.sidebar.scroll_y == next {
+                false
+            } else {
+                spec.sidebar.scroll_y = next;
+                true
+            }
+        }
+        ZsWorkbenchInteractionEvent::ScrollInspector { offset_y } => spec
+            .inspector
+            .as_mut()
+            .map(|inspector| {
+                let next = (*offset_y).max(0);
+                if inspector.scroll_y == next {
+                    false
+                } else {
+                    inspector.scroll_y = next;
+                    true
+                }
+            })
+            .unwrap_or(false),
         ZsWorkbenchInteractionEvent::ScrollMessages { offset_y } => {
             let next = (*offset_y).max(0);
             if spec.message_scroll_y == next {
@@ -847,9 +985,35 @@ pub fn zs_workbench_layout(
     surface: Rect,
     dpi: Dpi,
 ) -> ZsWorkbenchLayoutPlan {
+    zs_workbench_layout_internal(spec, surface, dpi, 1.0, None)
+}
+
+pub(crate) fn zs_workbench_layout_with_text_measurements(
+    spec: &ZsWorkbenchSpec,
+    surface: Rect,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: &crate::view::ViewTextMeasurements,
+) -> ZsWorkbenchLayoutPlan {
+    zs_workbench_layout_internal(spec, surface, dpi, typography_scale, Some(measurements))
+}
+
+fn zs_workbench_layout_internal(
+    spec: &ZsWorkbenchSpec,
+    surface: Rect,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> ZsWorkbenchLayoutPlan {
     let profile = workbench_profile();
+    let expanded_sidebar_width = scale_dp(profile.sidebar_width, dpi);
+    let automatic_collapse_breakpoint = scale_dp(profile.inspector_breakpoint, dpi) * 3 / 4;
+    let sidebar_auto_collapsed = !spec.sidebar.collapsed
+        && !spec.sidebar.force_expanded
+        && surface.width.max(0) < automatic_collapse_breakpoint.max(expanded_sidebar_width);
+    let sidebar_collapsed = spec.sidebar.collapsed || sidebar_auto_collapsed;
     let sidebar_width = scale_dp(
-        if spec.sidebar.collapsed {
+        if sidebar_collapsed {
             profile.collapsed_sidebar_width
         } else {
             profile.sidebar_width
@@ -864,11 +1028,25 @@ pub fn zs_workbench_layout(
     } else {
         0
     };
-    let top_height = scale_dp(profile.top_bar_height, dpi).min(surface.height.max(0));
-    let composer_height = scale_dp(profile.composer_height, dpi).min(surface.height.max(0));
     let main_x = surface.x + sidebar_width;
     let main_width = (surface.width - sidebar_width - inspector_width).max(0);
     let main_right = main_x + main_width;
+    let content_horizontal_inset = scale_dp(profile.content_horizontal_inset, dpi);
+    let content_width = main_width
+        .saturating_sub(content_horizontal_inset.saturating_mul(2))
+        .min(scale_dp(profile.content_max_width, dpi))
+        .max(0);
+    let top_height = scale_dp(profile.top_bar_height, dpi).min(surface.height.max(0));
+    let composer_height = composer_band_height(
+        spec,
+        content_width,
+        dpi,
+        typography_scale,
+        measurements,
+        profile,
+        surface.height.max(0),
+        top_height,
+    );
     let inspector = (inspector_width > 0).then_some(Rect {
         x: main_right,
         y: surface.y,
@@ -893,11 +1071,6 @@ pub fn zs_workbench_layout(
         width: main_width,
         height: (surface.height - top_height - composer_height).max(0),
     };
-    let content_horizontal_inset = scale_dp(profile.content_horizontal_inset, dpi);
-    let content_width = main_width
-        .saturating_sub(content_horizontal_inset.saturating_mul(2))
-        .min(scale_dp(profile.content_max_width, dpi))
-        .max(0);
     let content = Rect {
         x: main_x + (main_width - content_width) / 2,
         y: timeline.y,
@@ -911,14 +1084,19 @@ pub fn zs_workbench_layout(
         width: content.width,
         height: (composer_band.height - composer_inset * 2).max(0),
     };
+    let sidebar = Rect {
+        x: surface.x,
+        y: surface.y,
+        width: sidebar_width,
+        height: surface.height,
+    };
+    let sidebar_list = sidebar_list_geometry(spec, sidebar, sidebar_collapsed, dpi);
     let metrics = ZsWorkbenchLayoutMetrics {
         surface,
-        sidebar: Rect {
-            x: surface.x,
-            y: surface.y,
-            width: sidebar_width,
-            height: surface.height,
-        },
+        sidebar,
+        sidebar_collapsed,
+        sidebar_auto_collapsed,
+        sidebar_list_viewport: (!sidebar_collapsed).then_some(sidebar_list.viewport),
         top_bar,
         timeline,
         composer_band,
@@ -926,12 +1104,48 @@ pub fn zs_workbench_layout(
         inspector,
         content,
     };
+    let composer_labels = composer_label_layout(spec, &metrics, dpi, measurements);
+    let inspector_body =
+        inspector_body_geometry(spec, &metrics, dpi, typography_scale, measurements);
+    let sidebar_scrollbar = workbench_scrollbar_geometry(
+        sidebar_list.viewport,
+        sidebar_list.content_height,
+        sidebar_list.scroll_y,
+        sidebar_list.scroll_max,
+        sidebar.x + sidebar.width - scale(6, dpi),
+        dpi,
+    );
+    let inspector_scrollbar = inspector_body.viewport.and_then(|viewport| {
+        let body = inspector_body.body?;
+        workbench_scrollbar_geometry(
+            viewport,
+            inspector_body.content_height,
+            inspector_body.scroll_y,
+            inspector_body.scroll_max,
+            body.x + body.width - scale(6, dpi),
+            dpi,
+        )
+    });
 
     let mut regions = Vec::new();
-    layout_sidebar_regions(spec, &metrics, dpi, &mut regions);
+    layout_sidebar_regions(spec, &metrics, &sidebar_list, dpi, &mut regions);
     layout_toolbar_regions(spec, &metrics, dpi, &mut regions);
-    layout_composer_regions(spec, &metrics, dpi, &mut regions);
-    layout_inspector_regions(spec, &metrics, dpi, &mut regions);
+    layout_composer_regions(
+        spec,
+        &metrics,
+        &composer_labels,
+        dpi,
+        measurements,
+        &mut regions,
+    );
+    layout_inspector_regions(
+        spec,
+        &metrics,
+        &inspector_body,
+        dpi,
+        measurements,
+        &mut regions,
+    );
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::Timeline,
         id: "timeline".to_string(),
@@ -944,25 +1158,34 @@ pub fn zs_workbench_layout(
     let message_heights: Vec<_> = spec
         .messages
         .iter()
-        .map(|message| message_height(message, content.width, dpi))
+        .map(|message| message_height(message, content.width, dpi, typography_scale, measurements))
         .collect();
-    let message_content_height = top_padding * 2
-        + message_heights.iter().sum::<i32>()
-        + gap * spec.messages.len().saturating_sub(1) as i32;
+    let message_content_height = message_heights
+        .iter()
+        .copied()
+        .fold(top_padding.saturating_mul(2), i32::saturating_add)
+        .saturating_add(gap.saturating_mul(
+            i32::try_from(spec.messages.len().saturating_sub(1)).unwrap_or(i32::MAX),
+        ));
     let message_scroll_max = (message_content_height - timeline.height).max(0);
     let message_scroll_y = spec.message_scroll_y.clamp(0, message_scroll_max);
-    let mut message_y = timeline.y + top_padding - message_scroll_y;
-    let mut messages = Vec::with_capacity(spec.messages.len());
+    let mut message_y = timeline
+        .y
+        .saturating_add(top_padding)
+        .saturating_sub(message_scroll_y);
+    let materialization_bounds = Rect {
+        x: timeline.x,
+        y: timeline.y.saturating_sub(timeline.height),
+        width: timeline.width,
+        height: timeline.height.saturating_mul(3),
+    };
+    let estimated_visible_messages = spec.messages.len().min(64);
+    let mut messages = Vec::with_capacity(estimated_visible_messages);
 
     for (message_index, message) in spec.messages.iter().enumerate() {
         let height = message_heights[message_index];
         let is_user = message.role == ZsWorkbenchMessageRole::User;
-        let width = if is_user {
-            (content.width * 3 / 4).max(scale(220, dpi))
-        } else {
-            content.width
-        }
-        .min(content.width);
+        let width = workbench_message_width(message.role, content.width, dpi);
         let x = if is_user {
             content.x + content.width - width
         } else {
@@ -974,11 +1197,11 @@ pub fn zs_workbench_layout(
             width,
             height,
         };
-        let horizontal_padding = if is_user {
-            scale(14, dpi)
-        } else {
-            scale(16, dpi)
-        };
+        if !rects_intersect(bounds, materialization_bounds) {
+            message_y = message_y.saturating_add(height).saturating_add(gap);
+            continue;
+        }
+        let horizontal_padding = workbench_message_horizontal_padding(message.role, dpi);
         let content_bounds = Rect {
             x: bounds.x + horizontal_padding,
             y: bounds.y + scale(8, dpi),
@@ -988,7 +1211,13 @@ pub fn zs_workbench_layout(
         let mut blocks = Vec::with_capacity(message.blocks.len());
         let mut block_y = content_bounds.y;
         for (block_index, block) in message.blocks.iter().enumerate() {
-            let block_height = block_height(block, content_bounds.width, dpi);
+            let block_height = block_height(
+                block,
+                content_bounds.width,
+                dpi,
+                typography_scale,
+                measurements,
+            );
             blocks.push(ZsWorkbenchBlockLayout {
                 block_index,
                 bounds: Rect {
@@ -1003,24 +1232,39 @@ pub fn zs_workbench_layout(
         if !message.actions.is_empty() {
             let action_y = bounds.y + bounds.height - scale(30, dpi);
             let mut action_x = if is_user { bounds.x } else { content_bounds.x };
+            let action_right = bounds.x + bounds.width;
             for action in &message.actions {
                 let action_width = scale(30, dpi)
-                    .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+                    .saturating_add(measured_no_wrap_text_width(
                         &action.label,
-                        scale(7, dpi),
+                        workbench_text_style(
+                            TextRole::Caption,
+                            ColorRole::SecondaryText,
+                            TextWeight::Regular,
+                            HorizontalAlign::Start,
+                            TextWrap::NoWrap,
+                        ),
+                        dpi,
+                        measurements,
                     ))
                     .clamp(scale(32, dpi), scale(128, dpi));
-                regions.push(ZsWorkbenchLayoutRegion {
-                    kind: ZsWorkbenchRegionKind::MessageAction,
-                    id: format!("{}:{}", message.id, action.id),
-                    bounds: Rect {
-                        x: action_x,
-                        y: action_y,
-                        width: action_width,
-                        height: scale(28, dpi),
-                    },
-                    enabled: action.enabled,
-                });
+                if action_x.saturating_add(action_width) > action_right {
+                    break;
+                }
+                let action_bounds = Rect {
+                    x: action_x,
+                    y: action_y,
+                    width: action_width,
+                    height: scale(28, dpi),
+                };
+                if rects_intersect(action_bounds, timeline) {
+                    regions.push(ZsWorkbenchLayoutRegion {
+                        kind: ZsWorkbenchRegionKind::MessageAction,
+                        id: format!("{}:{}", message.id, action.id),
+                        bounds: clipped_to(action_bounds, timeline),
+                        enabled: action.enabled,
+                    });
+                }
                 action_x += action_width + scale(4, dpi);
             }
         }
@@ -1030,7 +1274,7 @@ pub fn zs_workbench_layout(
             content_bounds,
             blocks,
         });
-        message_y += height + gap;
+        message_y = message_y.saturating_add(height).saturating_add(gap);
     }
 
     ZsWorkbenchLayoutPlan {
@@ -1038,15 +1282,268 @@ pub fn zs_workbench_layout(
         metrics,
         regions,
         messages,
+        sidebar_content_height: sidebar_list.content_height,
+        sidebar_scroll_y: sidebar_list.scroll_y,
+        sidebar_scroll_max: sidebar_list.scroll_max,
+        sidebar_scrollbar,
+        composer_mode_label_bounds: composer_labels.mode,
+        composer_model_label_bounds: composer_labels.model,
+        inspector_body_bounds: inspector_body.body,
+        inspector_body_viewport: inspector_body.viewport,
+        inspector_body_content_height: inspector_body.content_height,
+        inspector_scroll_y: inspector_body.scroll_y,
+        inspector_scroll_max: inspector_body.scroll_max,
+        inspector_scrollbar,
         message_content_height,
         message_scroll_y,
         message_scroll_max,
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SidebarListGeometry {
+    viewport: Rect,
+    content_height: i32,
+    scroll_y: i32,
+    scroll_max: i32,
+}
+
+fn sidebar_list_geometry(
+    spec: &ZsWorkbenchSpec,
+    sidebar: Rect,
+    collapsed: bool,
+    dpi: Dpi,
+) -> SidebarListGeometry {
+    let pad = scale(12, dpi);
+    let row_height = scale_dp(workbench_style_tokens().controls.navigation_row_height, dpi);
+    let list_top = sidebar.y
+        + scale(68, dpi)
+        + spec.sidebar.primary_actions.len() as i32 * (row_height + scale(4, dpi))
+        + scale(14, dpi);
+    let footer_height = spec.sidebar.footer_actions.len() as i32 * (row_height + scale(4, dpi));
+    let footer_top = sidebar.y + sidebar.height - pad - footer_height;
+    let viewport = Rect {
+        x: sidebar.x,
+        y: list_top,
+        width: sidebar.width,
+        height: if collapsed {
+            0
+        } else {
+            (footer_top - scale(8, dpi) - list_top).max(0)
+        },
+    };
+    let content_height = if collapsed {
+        0
+    } else {
+        spec.sidebar.groups.iter().fold(0_i32, |height, group| {
+            let rows = i32::try_from(group.conversations.len()).unwrap_or(i32::MAX);
+            height
+                .saturating_add(scale(26, dpi))
+                .saturating_add(rows.saturating_mul(scale(52, dpi)))
+                .saturating_add(scale(10, dpi))
+        })
+    };
+    let scroll_max = (content_height - viewport.height).max(0);
+    SidebarListGeometry {
+        viewport,
+        content_height,
+        scroll_y: spec.sidebar.scroll_y.clamp(0, scroll_max),
+        scroll_max,
+    }
+}
+
+fn composer_band_height(
+    spec: &ZsWorkbenchSpec,
+    content_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+    profile: crate::platform_component_profile::PlatformWorkbenchProfile,
+    surface_height: i32,
+    top_height: i32,
+) -> i32 {
+    let text = if spec.composer.draft.is_empty() {
+        spec.composer.placeholder.as_str()
+    } else {
+        spec.composer.draft.as_str()
+    };
+    let color = if spec.composer.draft.is_empty() {
+        ColorRole::SecondaryText
+    } else {
+        ColorRole::PrimaryText
+    };
+    let input_width = (content_width - scale(32, dpi)).max(1);
+    let text_height = measured_text_height(
+        text,
+        input_width,
+        TextRole::Body,
+        color,
+        TextWeight::Regular,
+        TextWrap::Word,
+        dpi,
+        typography_scale,
+        measurements,
+    );
+    let base_height = scale_dp(profile.composer_height, dpi).max(0);
+    let inset = scale_dp(profile.composer_vertical_inset, dpi);
+    let desired = text_height
+        .saturating_add(scale(62, dpi))
+        .saturating_add(inset.saturating_mul(2));
+    let maximum = base_height.saturating_mul(2).max(base_height);
+    let available = (surface_height - top_height - scale(48, dpi)).max(0);
+    desired
+        .clamp(base_height.min(maximum), maximum)
+        .min(available)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ComposerLabelLayout {
+    mode: Option<Rect>,
+    model: Option<Rect>,
+    actions_right: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct InspectorBodyGeometry {
+    body: Option<Rect>,
+    viewport: Option<Rect>,
+    content_height: i32,
+    scroll_y: i32,
+    scroll_max: i32,
+}
+
+fn inspector_body_geometry(
+    spec: &ZsWorkbenchSpec,
+    metrics: &ZsWorkbenchLayoutMetrics,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> InspectorBodyGeometry {
+    let (Some(inspector), Some(panel)) = (&spec.inspector, metrics.inspector) else {
+        return InspectorBodyGeometry::default();
+    };
+    let body_top = panel.y + scale(86, dpi);
+    let body_width = (panel.width - scale(20, dpi)).max(0);
+    let available_height = (panel.y + panel.height - scale(12, dpi) - body_top).max(0);
+    let text_width = (body_width - scale(24, dpi)).max(1);
+    let content_height = measured_text_height(
+        &inspector.body,
+        text_width,
+        TextRole::Body,
+        ColorRole::PrimaryText,
+        TextWeight::Regular,
+        TextWrap::Word,
+        dpi,
+        typography_scale,
+        measurements,
+    );
+    let body_height = (content_height + scale(24, dpi))
+        .max(scale(112, dpi))
+        .min(available_height);
+    let body = Rect {
+        x: panel.x + scale(10, dpi),
+        y: body_top,
+        width: body_width,
+        height: body_height,
+    };
+    let viewport = Rect {
+        x: body.x + scale(12, dpi),
+        y: body.y + scale(8, dpi),
+        width: (body.width - scale(24, dpi)).max(0),
+        height: (body.height - scale(16, dpi)).max(0),
+    };
+    let scroll_max = (content_height - viewport.height).max(0);
+    InspectorBodyGeometry {
+        body: Some(body),
+        viewport: Some(viewport),
+        content_height,
+        scroll_y: inspector.scroll_y.clamp(0, scroll_max),
+        scroll_max,
+    }
+}
+
+fn composer_label_layout(
+    spec: &ZsWorkbenchSpec,
+    metrics: &ZsWorkbenchLayoutMetrics,
+    dpi: Dpi,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> ComposerLabelLayout {
+    let bounds = metrics.composer;
+    let submit_size = scale(36, dpi).min((bounds.width - scale(24, dpi)).max(0));
+    let submit_x = bounds.x + bounds.width - scale(12, dpi) - submit_size;
+    let left_limit = bounds.x + scale(12, dpi);
+    let mut right = submit_x - scale(8, dpi);
+    if bounds.width < scale(104, dpi) || bounds.height < scale(44, dpi) {
+        return ComposerLabelLayout {
+            actions_right: left_limit,
+            ..ComposerLabelLayout::default()
+        };
+    }
+    let label_y = bounds.y + bounds.height - scale(42, dpi);
+    let label_height = scale(32, dpi);
+    let style = workbench_text_style(
+        TextRole::Caption,
+        ColorRole::SecondaryText,
+        TextWeight::Regular,
+        HorizontalAlign::End,
+        TextWrap::NoWrap,
+    );
+    let mut result = ComposerLabelLayout {
+        actions_right: right,
+        ..ComposerLabelLayout::default()
+    };
+    let label_width = |label: &str, maximum: i32| {
+        measurements
+            .and_then(|entries| entries.measure(label, style, 0))
+            .map(|size| size.width.saturating_add(scale(6, dpi)))
+            .unwrap_or_else(|| {
+                crate::widget_render::zs_estimated_text_width_px(label, scale(7, dpi))
+                    .saturating_add(scale(6, dpi))
+            })
+            .clamp(scale(40, dpi), maximum)
+    };
+    if let Some(model) = spec
+        .composer
+        .model_label
+        .as_deref()
+        .filter(|label| !label.trim().is_empty())
+    {
+        let width = label_width(model, scale(144, dpi));
+        if right - width >= left_limit {
+            result.model = Some(Rect {
+                x: right - width,
+                y: label_y,
+                width,
+                height: label_height,
+            });
+            right -= width + scale(8, dpi);
+        }
+    }
+    if let Some(mode) = spec
+        .composer
+        .mode_label
+        .as_deref()
+        .filter(|label| !label.trim().is_empty())
+    {
+        let width = label_width(mode, scale(120, dpi));
+        if right - width >= left_limit {
+            result.mode = Some(Rect {
+                x: right - width,
+                y: label_y,
+                width,
+                height: label_height,
+            });
+            right -= width + scale(8, dpi);
+        }
+    }
+    result.actions_right = right;
+    result
+}
+
 fn layout_sidebar_regions(
     spec: &ZsWorkbenchSpec,
     metrics: &ZsWorkbenchLayoutMetrics,
+    list: &SidebarListGeometry,
     dpi: Dpi,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
@@ -1056,7 +1553,12 @@ fn layout_sidebar_regions(
     let touch_target = scale_dp(style.controls.touch_target, dpi);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::SidebarToggle,
-        id: "sidebar.toggle".to_string(),
+        id: if metrics.sidebar_collapsed {
+            "sidebar.toggle.expand"
+        } else {
+            "sidebar.toggle.collapse"
+        }
+        .to_string(),
         bounds: Rect {
             x: metrics.sidebar.x + pad,
             y: metrics.sidebar.y + scale(12, dpi),
@@ -1080,22 +1582,31 @@ fn layout_sidebar_regions(
         });
         y += row_height + scale(4, dpi);
     }
-    if !spec.sidebar.collapsed {
-        y += scale(14, dpi);
+    if !metrics.sidebar_collapsed && list.viewport.height > 0 {
+        regions.push(ZsWorkbenchLayoutRegion {
+            kind: ZsWorkbenchRegionKind::SidebarViewport,
+            id: "sidebar.viewport".to_string(),
+            bounds: list.viewport,
+            enabled: list.scroll_max > 0,
+        });
+        y = list.viewport.y - list.scroll_y;
         for group in &spec.sidebar.groups {
             y += scale(26, dpi);
             for conversation in &group.conversations {
-                regions.push(ZsWorkbenchLayoutRegion {
-                    kind: ZsWorkbenchRegionKind::Conversation,
-                    id: conversation.id.clone(),
-                    bounds: Rect {
-                        x: metrics.sidebar.x + pad,
-                        y,
-                        width: (metrics.sidebar.width - pad * 2).max(0),
-                        height: scale(48, dpi),
-                    },
-                    enabled: true,
-                });
+                let bounds = Rect {
+                    x: metrics.sidebar.x + pad,
+                    y,
+                    width: (metrics.sidebar.width - pad * 2).max(0),
+                    height: scale(48, dpi),
+                };
+                if rects_intersect(bounds, list.viewport) {
+                    regions.push(ZsWorkbenchLayoutRegion {
+                        kind: ZsWorkbenchRegionKind::Conversation,
+                        id: conversation.id.clone(),
+                        bounds: clipped_to(bounds, list.viewport),
+                        enabled: true,
+                    });
+                }
                 y += scale(52, dpi);
             }
             y += scale(10, dpi);
@@ -1147,10 +1658,13 @@ fn layout_toolbar_regions(
 fn layout_composer_regions(
     spec: &ZsWorkbenchSpec,
     metrics: &ZsWorkbenchLayoutMetrics,
+    labels: &ComposerLabelLayout,
     dpi: Dpi,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
-    let bottom_y = metrics.composer.y + metrics.composer.height - scale(44, dpi);
+    let bottom_y =
+        (metrics.composer.y + metrics.composer.height - scale(44, dpi)).max(metrics.composer.y);
     regions.push(ZsWorkbenchLayoutRegion {
         kind: ZsWorkbenchRegionKind::ComposerInput,
         id: "composer.input".to_string(),
@@ -1165,11 +1679,22 @@ fn layout_composer_regions(
     let mut action_x = metrics.composer.x + scale(12, dpi);
     for action in &spec.composer.actions {
         let width = scale(34, dpi)
-            .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+            .saturating_add(measured_no_wrap_text_width(
                 &action.label,
-                scale(7, dpi),
+                workbench_text_style(
+                    TextRole::Caption,
+                    ColorRole::SecondaryText,
+                    TextWeight::Regular,
+                    HorizontalAlign::Start,
+                    TextWrap::NoWrap,
+                ),
+                dpi,
+                measurements,
             ))
             .clamp(scale(34, dpi), scale(140, dpi));
+        if action_x.saturating_add(width) > labels.actions_right {
+            break;
+        }
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::ComposerAction,
             id: action.id.clone(),
@@ -1183,7 +1708,7 @@ fn layout_composer_regions(
         });
         action_x += width + scale(4, dpi);
     }
-    let submit_size = scale(36, dpi);
+    let submit_size = scale(36, dpi).min((metrics.composer.width - scale(24, dpi)).max(0));
     regions.push(ZsWorkbenchLayoutRegion {
         kind: if spec.composer.busy {
             ZsWorkbenchRegionKind::Stop
@@ -1209,20 +1734,43 @@ fn layout_composer_regions(
 fn layout_inspector_regions(
     spec: &ZsWorkbenchSpec,
     metrics: &ZsWorkbenchLayoutMetrics,
+    body: &InspectorBodyGeometry,
     dpi: Dpi,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
     regions: &mut Vec<ZsWorkbenchLayoutRegion>,
 ) {
     let (Some(inspector), Some(bounds)) = (&spec.inspector, metrics.inspector) else {
         return;
     };
     let mut x = bounds.x + scale(20, dpi);
+    let right = bounds.x + bounds.width - scale(20, dpi);
     for tab in &inspector.tabs {
+        let selected = inspector.selected_tab_id.as_deref() == Some(tab.id.as_str());
         let width = scale(24, dpi)
-            .saturating_add(crate::widget_render::zs_estimated_text_width_px(
+            .saturating_add(measured_no_wrap_text_width(
                 &tab.label,
-                scale(7, dpi),
+                workbench_text_style(
+                    TextRole::Caption,
+                    if selected {
+                        ColorRole::PrimaryText
+                    } else {
+                        ColorRole::SecondaryText
+                    },
+                    if selected {
+                        TextWeight::Semibold
+                    } else {
+                        TextWeight::Regular
+                    },
+                    HorizontalAlign::Center,
+                    TextWrap::NoWrap,
+                ),
+                dpi,
+                measurements,
             ))
             .clamp(scale(48, dpi), scale(128, dpi));
+        if x.saturating_add(width) > right {
+            break;
+        }
         regions.push(ZsWorkbenchLayoutRegion {
             kind: ZsWorkbenchRegionKind::InspectorTab,
             id: tab.id.clone(),
@@ -1236,43 +1784,167 @@ fn layout_inspector_regions(
         });
         x += width + scale(4, dpi);
     }
+    if body.scroll_max > 0 {
+        if let Some(bounds) = body
+            .body
+            .filter(|bounds| bounds.width > 0 && bounds.height > 0)
+        {
+            regions.push(ZsWorkbenchLayoutRegion {
+                kind: ZsWorkbenchRegionKind::InspectorViewport,
+                id: "inspector.viewport".to_string(),
+                bounds,
+                enabled: true,
+            });
+        }
+    }
 }
 
-fn message_height(message: &ZsWorkbenchMessageSpec, width: i32, dpi: Dpi) -> i32 {
-    let is_user = message.role == ZsWorkbenchMessageRole::User;
-    let content_width = if is_user {
-        width * 3 / 4 - scale(28, dpi)
-    } else {
-        width - scale(32, dpi)
-    };
-    let blocks_height = message
-        .blocks
-        .iter()
-        .map(|block| block_height(block, content_width.max(1), dpi))
-        .sum::<i32>();
-    let block_gaps = message.blocks.len().saturating_sub(1) as i32 * scale(8, dpi);
+fn message_height(
+    message: &ZsWorkbenchMessageSpec,
+    width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> i32 {
+    let content_width = workbench_message_width(message.role, width, dpi)
+        .saturating_sub(workbench_message_horizontal_padding(message.role, dpi).saturating_mul(2));
+    let blocks_height = message.blocks.iter().fold(0_i32, |height, block| {
+        height.saturating_add(block_height(
+            block,
+            content_width.max(1),
+            dpi,
+            typography_scale,
+            measurements,
+        ))
+    });
+    let block_gaps = i32::try_from(message.blocks.len().saturating_sub(1))
+        .unwrap_or(i32::MAX)
+        .saturating_mul(scale(8, dpi));
     let action_height = if message.actions.is_empty() {
         0
     } else {
         scale(34, dpi)
     };
-    (blocks_height + block_gaps + action_height + scale(16, dpi)).max(scale(44, dpi))
+    blocks_height
+        .saturating_add(block_gaps)
+        .saturating_add(action_height)
+        .saturating_add(scale(16, dpi))
+        .max(scale(44, dpi))
 }
 
-fn block_height(block: &ZsWorkbenchContentBlock, width: i32, dpi: Dpi) -> i32 {
+fn workbench_message_width(role: ZsWorkbenchMessageRole, available_width: i32, dpi: Dpi) -> i32 {
+    let available_width = available_width.max(0);
+    if role == ZsWorkbenchMessageRole::User {
+        (available_width.saturating_mul(3) / 4)
+            .max(scale(220, dpi))
+            .min(available_width)
+    } else {
+        available_width
+    }
+}
+
+fn workbench_message_horizontal_padding(role: ZsWorkbenchMessageRole, dpi: Dpi) -> i32 {
+    if role == ZsWorkbenchMessageRole::User {
+        scale(14, dpi)
+    } else {
+        scale(16, dpi)
+    }
+}
+
+fn block_height(
+    block: &ZsWorkbenchContentBlock,
+    width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> i32 {
     match block {
-        ZsWorkbenchContentBlock::Paragraph { text } => {
-            estimate_text_height(text, width, scale(20, dpi), dpi)
-        }
+        ZsWorkbenchContentBlock::Paragraph { text } => measured_text_height(
+            text,
+            width,
+            TextRole::Body,
+            ColorRole::PrimaryText,
+            TextWeight::Regular,
+            TextWrap::Word,
+            dpi,
+            typography_scale,
+            measurements,
+        ),
         ZsWorkbenchContentBlock::Code { code, .. } => {
-            let lines = code.lines().count().max(1).min(18) as i32;
-            scale(42, dpi) + lines * scale(18, dpi)
+            scale(42, dpi)
+                + measured_text_height(
+                    code,
+                    (width - scale(24, dpi)).max(1),
+                    TextRole::Monospace,
+                    ColorRole::PrimaryText,
+                    TextWeight::Regular,
+                    TextWrap::Word,
+                    dpi,
+                    typography_scale,
+                    measurements,
+                )
         }
         ZsWorkbenchContentBlock::Tool { .. } => scale(68, dpi),
         ZsWorkbenchContentBlock::Notice { text, .. } => {
-            estimate_text_height(text, width - scale(24, dpi), scale(19, dpi), dpi) + scale(22, dpi)
+            measured_text_height(
+                text,
+                (width - scale(24, dpi)).max(1),
+                TextRole::Caption,
+                ColorRole::PrimaryText,
+                TextWeight::Regular,
+                TextWrap::Word,
+                dpi,
+                typography_scale,
+                measurements,
+            ) + scale(22, dpi)
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn measured_text_height(
+    text: &str,
+    width: i32,
+    role: TextRole,
+    color: ColorRole,
+    weight: TextWeight,
+    wrap: TextWrap,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> i32 {
+    let width = width.max(1);
+    let style = workbench_text_style(role, color, weight, HorizontalAlign::Start, wrap);
+    let max_width = if wrap == TextWrap::Word { width } else { 0 };
+    if let Some(size) = measurements.and_then(|entries| entries.measure(text, style, max_width)) {
+        if size.height > 0 {
+            return size.height;
+        }
+    }
+    let metrics = role.metrics_for(crate::ZsTypographyPlatformStyle::current());
+    let typography_scale = if typography_scale.is_finite() {
+        typography_scale.clamp(0.5, 3.0)
+    } else {
+        1.0
+    };
+    let line_height = ((metrics.line_height * typography_scale) * dpi.scale_factor())
+        .round()
+        .max(1.0) as i32;
+    estimate_text_height(text, width, line_height, dpi)
+}
+
+fn measured_no_wrap_text_width(
+    text: &str,
+    style: SemanticTextStyle,
+    dpi: Dpi,
+    measurements: Option<&crate::view::ViewTextMeasurements>,
+) -> i32 {
+    measurements
+        .and_then(|entries| entries.measure(text, style, 0))
+        .map(|size| size.width.max(0))
+        .unwrap_or_else(|| {
+            crate::widget_render::zs_estimated_text_width_px(text, scale(7, dpi)).max(0)
+        })
 }
 
 fn estimate_text_height(text: &str, width: i32, line_height: i32, dpi: Dpi) -> i32 {
@@ -1285,7 +1957,9 @@ fn estimate_text_height(text: &str, width: i32, line_height: i32, dpi: Dpi) -> i
         })
         .sum::<usize>()
         .max(1);
-    lines as i32 * line_height
+    i32::try_from(lines)
+        .unwrap_or(i32::MAX)
+        .saturating_mul(line_height)
 }
 
 pub fn zs_workbench_native_draw_plan(
@@ -1331,8 +2005,7 @@ fn paint_sidebar(
     let bounds = layout.metrics.sidebar;
     let style = workbench_style_tokens();
     let card_radius = scale_dp(style.radius.medium, dpi);
-    let navigation_row_height = scale_dp(style.controls.navigation_row_height, dpi);
-    if !spec.sidebar.collapsed {
+    if !layout.metrics.sidebar_collapsed {
         commands.push(text_command(
             &spec.sidebar.title,
             Rect {
@@ -1376,17 +2049,18 @@ fn paint_sidebar(
                 card_radius,
             ));
         }
-        let icon_bounds =
-            if spec.sidebar.collapsed || region.kind == ZsWorkbenchRegionKind::SidebarToggle {
-                icon_bounds(region.bounds, dpi)
-            } else {
-                Rect {
-                    x: region.bounds.x + scale(10, dpi),
-                    y: region.bounds.y + (region.bounds.height - scale(20, dpi)) / 2,
-                    width: scale(20, dpi),
-                    height: scale(20, dpi),
-                }
-            };
+        let icon_bounds = if layout.metrics.sidebar_collapsed
+            || region.kind == ZsWorkbenchRegionKind::SidebarToggle
+        {
+            icon_bounds(region.bounds, dpi)
+        } else {
+            Rect {
+                x: region.bounds.x + scale(10, dpi),
+                y: region.bounds.y + (region.bounds.height - scale(20, dpi)) / 2,
+                width: scale(20, dpi),
+                height: scale(20, dpi),
+            }
+        };
         commands.push(icon_command(
             icon,
             icon_bounds,
@@ -1396,7 +2070,7 @@ fn paint_sidebar(
                 ColorRole::DisabledText
             },
         ));
-        if !spec.sidebar.collapsed && !label.is_empty() {
+        if !layout.metrics.sidebar_collapsed && !label.is_empty() {
             commands.push(text_command(
                 label,
                 Rect {
@@ -1413,36 +2087,44 @@ fn paint_sidebar(
             ));
         }
     }
-    if spec.sidebar.collapsed {
+    if layout.metrics.sidebar_collapsed {
         return;
     }
-    let mut group_label_y = bounds.y
-        + scale(68, dpi)
-        + spec.sidebar.primary_actions.len() as i32 * (navigation_row_height + scale(4, dpi))
-        + scale(14, dpi);
+    let Some(viewport) = layout.metrics.sidebar_list_viewport else {
+        return;
+    };
+    commands.push(NativeDrawCommand::PushClip { rect: viewport });
+    let mut group_label_y = viewport.y - layout.sidebar_scroll_y;
     for group in &spec.sidebar.groups {
-        commands.push(text_command(
-            &group.label,
-            Rect {
-                x: bounds.x + scale(16, dpi),
-                y: group_label_y,
-                width: (bounds.width - scale(32, dpi)).max(0),
-                height: scale(24, dpi),
-            },
-            TextRole::Caption,
-            ColorRole::SecondaryText,
-            TextWeight::Semibold,
-            HorizontalAlign::Start,
-            TextWrap::NoWrap,
-        ));
+        let group_label_bounds = Rect {
+            x: bounds.x + scale(16, dpi),
+            y: group_label_y,
+            width: (bounds.width - scale(32, dpi)).max(0),
+            height: scale(24, dpi),
+        };
+        if rects_intersect(group_label_bounds, viewport) {
+            commands.push(text_command(
+                &group.label,
+                group_label_bounds,
+                TextRole::Caption,
+                ColorRole::SecondaryText,
+                TextWeight::Semibold,
+                HorizontalAlign::Start,
+                TextWrap::NoWrap,
+            ));
+        }
         group_label_y += scale(26, dpi);
         for conversation in &group.conversations {
-            if let Some(region) = layout.regions.iter().find(|region| {
-                region.kind == ZsWorkbenchRegionKind::Conversation && region.id == conversation.id
-            }) {
+            let conversation_bounds = Rect {
+                x: bounds.x + scale(12, dpi),
+                y: group_label_y,
+                width: (bounds.width - scale(24, dpi)).max(0),
+                height: scale(48, dpi),
+            };
+            if rects_intersect(conversation_bounds, viewport) {
                 if conversation.selected {
                     commands.push(round_rect(
-                        region.bounds,
+                        conversation_bounds,
                         NativeDrawFill::role(ColorRole::SurfaceRaised),
                         Some(NativeDrawFill::RoleWithAlpha {
                             role: ColorRole::Border,
@@ -1452,8 +2134,8 @@ fn paint_sidebar(
                     ));
                     commands.push(round_fill(
                         Rect {
-                            x: region.bounds.x + scale(3, dpi),
-                            y: region.bounds.y + scale(13, dpi),
+                            x: conversation_bounds.x + scale(3, dpi),
+                            y: conversation_bounds.y + scale(13, dpi),
                             width: scale(3, dpi),
                             height: scale(22, dpi),
                         },
@@ -1464,9 +2146,9 @@ fn paint_sidebar(
                 commands.push(text_command(
                     &conversation.title,
                     Rect {
-                        x: region.bounds.x + scale(14, dpi),
-                        y: region.bounds.y + scale(2, dpi),
-                        width: (region.bounds.width - scale(26, dpi)).max(0),
+                        x: conversation_bounds.x + scale(14, dpi),
+                        y: conversation_bounds.y + scale(2, dpi),
+                        width: (conversation_bounds.width - scale(26, dpi)).max(0),
                         height: if conversation.subtitle.is_some() {
                             scale(22, dpi)
                         } else {
@@ -1487,9 +2169,9 @@ fn paint_sidebar(
                     commands.push(text_command(
                         subtitle,
                         Rect {
-                            x: region.bounds.x + scale(14, dpi),
-                            y: region.bounds.y + scale(22, dpi),
-                            width: (region.bounds.width - scale(26, dpi)).max(0),
+                            x: conversation_bounds.x + scale(14, dpi),
+                            y: conversation_bounds.y + scale(22, dpi),
+                            width: (conversation_bounds.width - scale(26, dpi)).max(0),
                             height: scale(20, dpi),
                         },
                         TextRole::Caption,
@@ -1503,8 +2185,8 @@ fn paint_sidebar(
                     commands.push(icon_command(
                         ZsIcon::Pin,
                         Rect {
-                            x: region.bounds.x + region.bounds.width - scale(20, dpi),
-                            y: region.bounds.y + scale(14, dpi),
+                            x: conversation_bounds.x + conversation_bounds.width - scale(20, dpi),
+                            y: conversation_bounds.y + scale(14, dpi),
                             width: scale(14, dpi),
                             height: scale(18, dpi),
                         },
@@ -1516,6 +2198,8 @@ fn paint_sidebar(
         }
         group_label_y += scale(10, dpi);
     }
+    commands.push(NativeDrawCommand::PopClip);
+    paint_workbench_scrollbar(commands, layout.sidebar_scrollbar);
 }
 
 fn paint_top_bar(
@@ -1610,9 +2294,6 @@ fn paint_messages(
         rect: layout.metrics.timeline,
     });
     for message_layout in &layout.messages {
-        if !rects_intersect(message_layout.bounds, layout.metrics.timeline) {
-            continue;
-        }
         let message = &spec.messages[message_layout.message_index];
         match message.role {
             ZsWorkbenchMessageRole::User => commands.push(round_fill(
@@ -2000,15 +2681,27 @@ fn paint_composer(
             }
         }
     }
-    if let Some(label) = &spec.composer.model_label {
+    if let (Some(label), Some(label_bounds)) = (
+        spec.composer.mode_label.as_deref(),
+        layout.composer_mode_label_bounds,
+    ) {
         commands.push(text_command(
             label,
-            Rect {
-                x: bounds.x + bounds.width - scale(220, dpi),
-                y: bounds.y + bounds.height - scale(40, dpi),
-                width: scale(84, dpi),
-                height: scale(32, dpi),
-            },
+            label_bounds,
+            TextRole::Caption,
+            ColorRole::SecondaryText,
+            TextWeight::Regular,
+            HorizontalAlign::End,
+            TextWrap::NoWrap,
+        ));
+    }
+    if let (Some(label), Some(label_bounds)) = (
+        spec.composer.model_label.as_deref(),
+        layout.composer_model_label_bounds,
+    ) {
+        commands.push(text_command(
+            label,
+            label_bounds,
             TextRole::Caption,
             ColorRole::SecondaryText,
             TextWeight::Regular,
@@ -2162,21 +2855,10 @@ fn paint_inspector(
             ));
         }
     }
-    let body_top = panel.y + scale(86, dpi);
-    let body_width = (panel.width - scale(20, dpi)).max(0);
-    let body_text_height = estimate_text_height(
-        &inspector.body,
-        (body_width - scale(24, dpi)).max(1),
-        scale(20, dpi),
-        dpi,
-    );
-    let body_card = Rect {
-        x: panel.x + scale(10, dpi),
-        y: body_top,
-        width: body_width,
-        height: (body_text_height + scale(24, dpi))
-            .max(scale(112, dpi))
-            .min((panel.y + panel.height - scale(12, dpi) - body_top).max(0)),
+    let (Some(body_card), Some(body_viewport)) =
+        (layout.inspector_body_bounds, layout.inspector_body_viewport)
+    else {
+        return;
     };
     commands.push(round_rect(
         body_card,
@@ -2187,13 +2869,16 @@ fn paint_inspector(
         }),
         scale_dp(workbench_style_tokens().radius.medium, dpi),
     ));
+    commands.push(NativeDrawCommand::PushClip {
+        rect: body_viewport,
+    });
     commands.push(text_command(
         &inspector.body,
         Rect {
-            x: body_card.x + scale(12, dpi),
-            y: body_card.y + scale(8, dpi),
-            width: (body_card.width - scale(24, dpi)).max(0),
-            height: (body_card.height - scale(16, dpi)).max(0),
+            x: body_viewport.x,
+            y: body_viewport.y - layout.inspector_scroll_y,
+            width: body_viewport.width,
+            height: layout.inspector_body_content_height,
         },
         TextRole::Body,
         ColorRole::PrimaryText,
@@ -2201,6 +2886,8 @@ fn paint_inspector(
         HorizontalAlign::Start,
         TextWrap::Word,
     ));
+    commands.push(NativeDrawCommand::PopClip);
+    paint_workbench_scrollbar(commands, layout.inspector_scrollbar);
 }
 
 fn fill(rect: Rect, fill: NativeDrawFill) -> NativeDrawCommand {
@@ -2263,6 +2950,60 @@ fn paint_elevated_surface(
     ));
 }
 
+fn workbench_scrollbar_geometry(
+    viewport: Rect,
+    content_height: i32,
+    scroll_y: i32,
+    scroll_max: i32,
+    x: i32,
+    dpi: Dpi,
+) -> Option<ZsWorkbenchScrollbarGeometry> {
+    if scroll_max <= 0 || viewport.height <= 0 {
+        return None;
+    }
+    let track_width = scale(3, dpi).max(1);
+    let track = Rect {
+        x,
+        y: viewport.y,
+        width: track_width,
+        height: viewport.height,
+    };
+    let minimum_thumb = scale(24, dpi).min(viewport.height);
+    let thumb_height = ((i64::from(viewport.height) * i64::from(viewport.height))
+        / i64::from(content_height.max(1)))
+    .clamp(i64::from(minimum_thumb), i64::from(viewport.height)) as i32;
+    let travel = (viewport.height - thumb_height).max(0);
+    let thumb_y = viewport.y
+        + ((i64::from(scroll_y.clamp(0, scroll_max)) * i64::from(travel))
+            / i64::from(scroll_max.max(1))) as i32;
+    Some(ZsWorkbenchScrollbarGeometry {
+        track,
+        thumb: Rect {
+            x,
+            y: thumb_y,
+            width: track_width,
+            height: thumb_height,
+        },
+    })
+}
+
+fn paint_workbench_scrollbar(
+    commands: &mut Vec<NativeDrawCommand>,
+    geometry: Option<ZsWorkbenchScrollbarGeometry>,
+) {
+    let Some(geometry) = geometry else {
+        return;
+    };
+    commands.push(round_fill(
+        geometry.thumb,
+        NativeDrawFill::RoleWithAlpha {
+            role: ColorRole::SecondaryText,
+            alpha: 88,
+        },
+        (geometry.thumb.width / 2).max(1),
+    ));
+}
+
 fn icon_command(icon: ZsWorkbenchIcon, bounds: Rect, color: ColorRole) -> NativeDrawCommand {
     NativeDrawCommand::Icon(
         NativeDrawIconCommand::new(icon, bounds, NativeIconColorMode::ThemeAware).with_color(color),
@@ -2292,20 +3033,47 @@ fn text_command(
     NativeDrawCommand::Text(NativeDrawTextCommand::new(
         text,
         bounds,
-        SemanticTextStyle {
-            role,
-            color,
-            weight,
-            horizontal_align,
-            vertical_align: VerticalAlign::Center,
-            wrap,
-            ellipsis: wrap == TextWrap::NoWrap,
-        },
+        workbench_text_style(role, color, weight, horizontal_align, wrap),
     ))
+}
+
+fn workbench_text_style(
+    role: TextRole,
+    color: ColorRole,
+    weight: TextWeight,
+    horizontal_align: HorizontalAlign,
+    wrap: TextWrap,
+) -> SemanticTextStyle {
+    SemanticTextStyle {
+        role,
+        color,
+        weight,
+        horizontal_align,
+        vertical_align: if wrap == TextWrap::Word {
+            VerticalAlign::Start
+        } else {
+            VerticalAlign::Center
+        },
+        wrap,
+        ellipsis: wrap == TextWrap::NoWrap,
+    }
 }
 
 fn rects_intersect(a: Rect, b: Rect) -> bool {
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+}
+
+fn clipped_to(rect: Rect, clip: Rect) -> Rect {
+    let left = rect.x.max(clip.x);
+    let top = rect.y.max(clip.y);
+    let right = (rect.x + rect.width).min(clip.x + clip.width);
+    let bottom = (rect.y + rect.height).min(clip.y + clip.height);
+    Rect {
+        x: left,
+        y: top,
+        width: (right - left).max(0),
+        height: (bottom - top).max(0),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2358,6 +3126,29 @@ impl ZsWorkbenchRuntime {
         true
     }
 
+    pub fn scroll_sidebar(&mut self, delta_y: i32) -> bool {
+        let next = (self.spec.sidebar.scroll_y + delta_y).clamp(0, self.layout.sidebar_scroll_max);
+        if next == self.spec.sidebar.scroll_y {
+            return false;
+        }
+        self.spec.sidebar.scroll_y = next;
+        self.rebuild();
+        true
+    }
+
+    pub fn scroll_inspector(&mut self, delta_y: i32) -> bool {
+        let Some(inspector) = self.spec.inspector.as_mut() else {
+            return false;
+        };
+        let next = (inspector.scroll_y + delta_y).clamp(0, self.layout.inspector_scroll_max);
+        if next == inspector.scroll_y {
+            return false;
+        }
+        inspector.scroll_y = next;
+        self.rebuild();
+        true
+    }
+
     pub fn pointer_down(&mut self, point: Point) -> bool {
         self.pressed_region_id = self.layout.region_at(point).map(|region| region.id.clone());
         self.pressed_region_id.is_some()
@@ -2401,6 +3192,20 @@ impl ZsWorkbenchRuntime {
     pub fn scroll_update(&mut self, delta_y: i32) -> ZsWorkbenchInteractionUpdate {
         ZsWorkbenchInteractionUpdate {
             redraw: self.scroll_messages(delta_y),
+            events: Vec::new(),
+        }
+    }
+
+    pub fn sidebar_scroll_update(&mut self, delta_y: i32) -> ZsWorkbenchInteractionUpdate {
+        ZsWorkbenchInteractionUpdate {
+            redraw: self.scroll_sidebar(delta_y),
+            events: Vec::new(),
+        }
+    }
+
+    pub fn inspector_scroll_update(&mut self, delta_y: i32) -> ZsWorkbenchInteractionUpdate {
+        ZsWorkbenchInteractionUpdate {
+            redraw: self.scroll_inspector(delta_y),
             events: Vec::new(),
         }
     }
@@ -2773,5 +3578,210 @@ mod tests {
             runtime.layout().message_scroll_max
         );
         assert!(!runtime.scroll_messages(1));
+    }
+
+    #[test]
+    fn overscan_messages_are_measured_but_screen_off_actions_are_not_interactive() {
+        let mut spec = ZsWorkbenchSpec::new(
+            "Workbench",
+            ZsWorkbenchSidebarSpec::new("Workspace"),
+            ZsWorkbenchComposerSpec::new("Message"),
+        )
+        .message_scroll_y(720);
+        for index in 0..32 {
+            spec.messages.push(
+                ZsWorkbenchMessageSpec::new(
+                    format!("message-{index}"),
+                    ZsWorkbenchMessageRole::Assistant,
+                )
+                .block(ZsWorkbenchContentBlock::paragraph(format!(
+                    "overscan paragraph {index} with enough text to remain unique"
+                )))
+                .action(ZsWorkbenchActionSpec::new(
+                    format!("copy-{index}"),
+                    "Copy",
+                    ZsWorkbenchIcon::Copy,
+                )),
+            );
+        }
+        let plan = spec.layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 900,
+                height: 520,
+            },
+            Dpi::standard(),
+        );
+        let timeline = plan.metrics.timeline;
+        let offscreen = plan
+            .messages
+            .iter()
+            .find(|message| !rects_intersect(message.bounds, timeline))
+            .expect("overscan should materialize at least one screen-off message");
+        let offscreen_text = match &spec.messages[offscreen.message_index].blocks[0] {
+            ZsWorkbenchContentBlock::Paragraph { text } => text,
+            _ => unreachable!(),
+        };
+        let draw = zs_workbench_native_draw_plan(&spec, &plan);
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(command) if command.text == *offscreen_text
+        )));
+        assert!(plan
+            .regions
+            .iter()
+            .filter(|region| region.kind == ZsWorkbenchRegionKind::MessageAction)
+            .all(|region| {
+                region.bounds.x >= timeline.x
+                    && region.bounds.y >= timeline.y
+                    && region.bounds.x + region.bounds.width <= timeline.x + timeline.width
+                    && region.bounds.y + region.bounds.height <= timeline.y + timeline.height
+            }));
+    }
+
+    #[test]
+    fn narrow_user_message_uses_the_painted_bubble_width_for_measurement() {
+        let text = "窄窗口中的用户消息需要使用气泡实际宽度进行系统文字测量。";
+        let spec = ZsWorkbenchSpec::new(
+            "Workbench",
+            ZsWorkbenchSidebarSpec::new("Workspace"),
+            ZsWorkbenchComposerSpec::new("Message"),
+        )
+        .message(
+            ZsWorkbenchMessageSpec::new("user", ZsWorkbenchMessageRole::User)
+                .block(ZsWorkbenchContentBlock::paragraph(text)),
+        );
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: 360,
+            height: 640,
+        };
+        let dpi = Dpi::standard();
+        let estimated = spec.layout(surface, dpi);
+        let measured_width = estimated.messages[0].content_bounds.width;
+        let mut measurements = crate::view::ViewTextMeasurements::default();
+        measurements.insert(
+            text,
+            workbench_text_style(
+                TextRole::Body,
+                ColorRole::PrimaryText,
+                TextWeight::Regular,
+                HorizontalAlign::Start,
+                TextWrap::Word,
+            ),
+            measured_width,
+            crate::Size {
+                width: measured_width,
+                height: 73,
+            },
+        );
+        let measured = spec.layout_with_text_measurements(surface, dpi, 1.0, &measurements);
+
+        assert_eq!(measured.messages[0].content_bounds.width, measured_width);
+        assert_eq!(measured.messages[0].blocks[0].bounds.height, 73);
+    }
+
+    #[test]
+    fn sidebar_and_inspector_share_scrollbar_track_and_thumb_geometry() {
+        let mut sidebar = ZsWorkbenchSidebarSpec::new("Workspace");
+        let mut group = ZsWorkbenchConversationGroupSpec::new("all", "All");
+        for index in 0..40 {
+            group.conversations.push(ZsWorkbenchConversationSpec::new(
+                format!("thread-{index}"),
+                format!("Thread {index}"),
+            ));
+        }
+        sidebar.groups.push(group);
+        let inspector = ZsWorkbenchInspectorSpec::new("Inspector").body(
+            (0..80)
+                .map(|index| format!("Line {index}\n"))
+                .collect::<String>(),
+        );
+        let spec = ZsWorkbenchSpec::new(
+            "Workbench",
+            sidebar,
+            ZsWorkbenchComposerSpec::new("Message"),
+        )
+        .inspector(inspector);
+        let plan = spec.layout(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 420,
+            },
+            Dpi::standard(),
+        );
+
+        let sidebar_scrollbar = plan.sidebar_scrollbar.expect("sidebar scrollbar");
+        assert_eq!(
+            sidebar_scrollbar.track.height,
+            plan.metrics
+                .sidebar_list_viewport
+                .expect("sidebar viewport")
+                .height
+        );
+        assert!(sidebar_scrollbar.thumb.height > 0);
+        assert!(sidebar_scrollbar.thumb.height < sidebar_scrollbar.track.height);
+
+        let inspector_scrollbar = plan.inspector_scrollbar.expect("inspector scrollbar");
+        assert_eq!(
+            inspector_scrollbar.track.height,
+            plan.inspector_body_viewport
+                .expect("inspector viewport")
+                .height
+        );
+        assert!(inspector_scrollbar.thumb.height > 0);
+        assert!(inspector_scrollbar.thumb.height < inspector_scrollbar.track.height);
+    }
+
+    #[test]
+    fn retained_text_measurements_keep_long_overscan_geometry_available() {
+        let style = workbench_text_style(
+            TextRole::Body,
+            ColorRole::PrimaryText,
+            TextWeight::Regular,
+            HorizontalAlign::Start,
+            TextWrap::Word,
+        );
+        let first_text = "first long message ".repeat(128);
+        let second_text = "second long message ".repeat(128);
+        let mut first_frame = crate::view::ViewTextMeasurements::default();
+        first_frame.insert(
+            &first_text,
+            style,
+            480,
+            crate::Size {
+                width: 480,
+                height: 360,
+            },
+        );
+        let mut next_frame = first_frame.clone();
+        next_frame.insert(
+            &second_text,
+            style,
+            480,
+            crate::Size {
+                width: 480,
+                height: 420,
+            },
+        );
+
+        assert_eq!(
+            next_frame.measure(&first_text, style, 480),
+            Some(crate::Size {
+                width: 480,
+                height: 360,
+            })
+        );
+        assert_eq!(
+            next_frame.measure(&second_text, style, 480),
+            Some(crate::Size {
+                width: 480,
+                height: 420,
+            })
+        );
     }
 }

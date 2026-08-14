@@ -104,5 +104,7 @@ Reject the implementation before visual polish if any answer is “yes”:
 - Was a demo window size, placeholder or sample record copied?
 - Is `full` enabled for a small application?
 - Is visible framework-owned English mixed into localized application copy?
+- Do background or streaming results use a zero-size Video, animation, timer
+  widget or fixed-rate polling loop instead of `InvalidationHandle`?
 - Could the same workflow use fewer components without losing information or
   accessibility?

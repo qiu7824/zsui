@@ -1220,6 +1220,35 @@ impl Default for ViewStyle {
     }
 }
 
+#[cfg(feature = "workbench")]
+#[derive(Debug, Clone)]
+struct ViewWorkbenchLayoutCache {
+    plan: crate::ZsWorkbenchLayoutPlan,
+    typography_scale: f32,
+    text_measurements: Arc<ViewTextMeasurements>,
+}
+
+#[cfg(feature = "workbench")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ViewWorkbenchTransientSource {
+    sidebar_collapsed: bool,
+    sidebar_force_expanded: bool,
+    sidebar_scroll_y: i32,
+    inspector_scroll_y: Option<i32>,
+}
+
+#[cfg(feature = "workbench")]
+impl ViewWorkbenchTransientSource {
+    fn from_spec(spec: &crate::ZsWorkbenchSpec) -> Self {
+        Self {
+            sidebar_collapsed: spec.sidebar.collapsed,
+            sidebar_force_expanded: spec.sidebar.force_expanded,
+            sidebar_scroll_y: spec.sidebar.scroll_y,
+            inspector_scroll_y: spec.inspector.as_ref().map(|inspector| inspector.scroll_y),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ViewNode<Msg> {
     pub id: Option<WidgetId>,
@@ -1256,11 +1285,22 @@ pub struct ViewNode<Msg> {
     adaptive_scroll_offset_y: Dp,
     #[cfg(feature = "scroll")]
     resolved_scroll_content_height: Dp,
+    #[cfg(feature = "workbench")]
+    workbench_layout: Option<ViewWorkbenchLayoutCache>,
+    #[cfg(feature = "workbench")]
+    workbench_transient_source: Option<ViewWorkbenchTransientSource>,
     message: PhantomData<fn() -> Msg>,
 }
 
 impl<Msg> ViewNode<Msg> {
     pub fn new(kind: ViewNodeKind<Msg>) -> Self {
+        #[cfg(feature = "workbench")]
+        let workbench_transient_source = match &kind {
+            ViewNodeKind::Workbench { spec, .. } => {
+                Some(ViewWorkbenchTransientSource::from_spec(spec))
+            }
+            _ => None,
+        };
         Self {
             id: None,
             kind,
@@ -1296,7 +1336,111 @@ impl<Msg> ViewNode<Msg> {
             adaptive_scroll_offset_y: Dp::new(0.0),
             #[cfg(feature = "scroll")]
             resolved_scroll_content_height: Dp::new(0.0),
+            #[cfg(feature = "workbench")]
+            workbench_layout: None,
+            #[cfg(feature = "workbench")]
+            workbench_transient_source,
             message: PhantomData,
+        }
+    }
+
+    #[cfg(feature = "workbench")]
+    fn cache_workbench_layout(&mut self, cx: &ViewLayoutCx) {
+        let ViewNodeKind::Workbench { spec, .. } = &self.kind else {
+            self.workbench_layout = None;
+            return;
+        };
+        let typography_scale = cx.typography_scale();
+        let text_measurements = cx.text_measurements.clone();
+        let plan = spec.layout_with_text_measurements(
+            cx.bounds,
+            cx.dpi,
+            typography_scale,
+            text_measurements.as_ref(),
+        );
+        self.workbench_layout = Some(ViewWorkbenchLayoutCache {
+            plan,
+            typography_scale,
+            text_measurements,
+        });
+    }
+
+    #[cfg(feature = "workbench")]
+    fn refresh_workbench_layout(&mut self) {
+        let (Some(bounds), Some(cache)) = (self.bounds, self.workbench_layout.as_ref()) else {
+            return;
+        };
+        let typography_scale = cache.typography_scale;
+        let text_measurements = cache.text_measurements.clone();
+        let ViewNodeKind::Workbench { spec, .. } = &self.kind else {
+            self.workbench_layout = None;
+            return;
+        };
+        let plan = spec.layout_with_text_measurements(
+            bounds,
+            self.layout_dpi,
+            typography_scale,
+            text_measurements.as_ref(),
+        );
+        self.workbench_layout = Some(ViewWorkbenchLayoutCache {
+            plan,
+            typography_scale,
+            text_measurements,
+        });
+    }
+
+    #[cfg(feature = "workbench")]
+    fn resolved_workbench_layout<'a>(
+        &'a self,
+        spec: &crate::ZsWorkbenchSpec,
+        bounds: Rect,
+    ) -> std::borrow::Cow<'a, crate::ZsWorkbenchLayoutPlan> {
+        if let Some(cache) = self.workbench_layout.as_ref().filter(|cache| {
+            cache.plan.metrics.surface == bounds && cache.plan.dpi == self.layout_dpi
+        }) {
+            std::borrow::Cow::Borrowed(&cache.plan)
+        } else {
+            std::borrow::Cow::Owned(spec.layout(bounds, self.layout_dpi))
+        }
+    }
+
+    #[cfg(feature = "workbench")]
+    fn restore_workbench_transient_state(&mut self, previous: &Self) {
+        let (Some(source), Some(previous_source)) = (
+            self.workbench_transient_source,
+            previous.workbench_transient_source,
+        ) else {
+            return;
+        };
+        let (
+            ViewNodeKind::Workbench { spec, .. },
+            ViewNodeKind::Workbench {
+                spec: previous_spec,
+                ..
+            },
+        ) = (&mut self.kind, &previous.kind)
+        else {
+            return;
+        };
+
+        if (source.sidebar_collapsed, source.sidebar_force_expanded)
+            == (
+                previous_source.sidebar_collapsed,
+                previous_source.sidebar_force_expanded,
+            )
+        {
+            spec.sidebar.collapsed = previous_spec.sidebar.collapsed;
+            spec.sidebar.force_expanded = previous_spec.sidebar.force_expanded;
+        }
+        if source.sidebar_scroll_y == previous_source.sidebar_scroll_y {
+            spec.sidebar.scroll_y = previous_spec.sidebar.scroll_y;
+        }
+        if source.inspector_scroll_y == previous_source.inspector_scroll_y {
+            if let (Some(inspector), Some(previous_inspector)) =
+                (spec.inspector.as_mut(), previous_spec.inspector.as_ref())
+            {
+                inspector.scroll_y = previous_inspector.scroll_y;
+            }
         }
     }
 
@@ -1654,6 +1798,10 @@ impl<Msg> ViewNode<Msg> {
         let same_node = self.id.is_some()
             && self.id == previous.id
             && std::mem::discriminant(&self.kind) == std::mem::discriminant(&previous.kind);
+        #[cfg(feature = "workbench")]
+        if same_node {
+            self.restore_workbench_transient_state(previous);
+        }
         if same_node
             && self.style.overflow_y == ViewOverflow::Auto
             && previous.style.overflow_y == ViewOverflow::Auto

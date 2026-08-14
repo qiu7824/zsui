@@ -273,13 +273,18 @@ application settings outside the framework.
 declaration separates navigation history, message content blocks, composer
 actions and inspector content from application commands and persistence. The
 layout produces stable DPI-aware regions and a product-neutral
-`NativeDrawPlan`; `ZsWorkbenchRuntime` adds hit testing, bounded timeline
-scrolling, conversation selection, sidebar collapse and inspector-tab state.
+`NativeDrawPlan`; the retained View caches backend text measurements so layout,
+paint, input and accessibility consume identical geometry. `ZsWorkbenchRuntime`
+adds hit testing, bounded timeline/sidebar/inspector scrolling, conversation
+selection, adaptive sidebar collapse and inspector-tab state. Composer height
+grows within the selected platform profile rather than relying on one fixed
+text box height.
 `ZsWorkbenchShellSpec`, `ZsMessageTimelineSpec`, `ZsComposerSpec` and
 `ZsInspectorPanelSpec` expose those regions as explicit reusable child
 contracts; `workbench_shell(...)` builds the retained View while
 `NativeWindowBuilder::workbench(...)` accepts either the structured shell or
-the flattened compatibility spec. The internal platform profile owns distinct
+the flattened compatibility spec and installs the same live retained runtime.
+The internal platform profile owns distinct
 WinUI, AppKit and GTK shell geometry instead of sharing Windows dimensions.
 Direct target interaction proof remains a separate completion gate.
 

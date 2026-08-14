@@ -3742,6 +3742,8 @@ fn document_workbench_shell<Msg: Clone + 'static>(
     let sidebar = crate::ZsWorkbenchSidebarSpec {
         title: sidebar.title,
         collapsed: sidebar.collapsed,
+        force_expanded: false,
+        scroll_y: 0,
         primary_actions,
         groups,
         footer_actions,
@@ -3865,6 +3867,7 @@ fn document_workbench_shell<Msg: Clone + 'static>(
                 selected_tab_id: optional_string_property(inspector, properties, "selected_tab"),
                 tabs: document_workbench_actions(inspector, properties, "tabs")?,
                 body: string_property(inspector, properties, "body", ""),
+                scroll_y: 0,
             })
         })
         .transpose()?;
@@ -3962,7 +3965,12 @@ fn document_workbench_shell<Msg: Clone + 'static>(
     let mapper = mapper.clone();
     let control = crate::workbench_shell(shell_spec).on_workbench_interaction_with(move |event| {
         let (route, payload) = match event {
-            crate::ZsWorkbenchInteractionEvent::ToggleSidebar => {
+            crate::ZsWorkbenchInteractionEvent::ToggleSidebar
+            | crate::ZsWorkbenchInteractionEvent::SetSidebarExpanded { .. } => {
+                // Keep the schema-v1 sidebar_toggle action payload stable. The
+                // explicit expansion event is the adaptive-layout form of the
+                // same user action; framework-owned expansion state is
+                // reconciled separately when the document View rebuilds.
                 (sidebar_toggle.as_ref(), Value::Null)
             }
             crate::ZsWorkbenchInteractionEvent::InvokeSidebarAction { action_id } => {
@@ -3998,6 +4006,11 @@ fn document_workbench_shell<Msg: Clone + 'static>(
             crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft { draft } => {
                 (composer_change.as_ref(), Value::String(draft))
             }
+            // These offsets are transient presentation state. They are kept
+            // across compatible View rebuilds without introducing undeclared
+            // document actions or a string-keyed event channel.
+            crate::ZsWorkbenchInteractionEvent::ScrollSidebar { .. }
+            | crate::ZsWorkbenchInteractionEvent::ScrollInspector { .. } => (None, Value::Null),
             crate::ZsWorkbenchInteractionEvent::ScrollMessages { offset_y } => {
                 (scroll.as_ref(), Value::from(offset_y.max(0)))
             }
@@ -5698,6 +5711,171 @@ mod tests {
         let mut paint = crate::ViewPaintCx::new(Dpi::standard());
         view.paint(&mut paint);
         assert!(paint.plan().commands.len() > 20);
+    }
+
+    #[cfg(feature = "workbench")]
+    #[test]
+    fn workbench_rebuild_preserves_only_framework_owned_transient_state() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "workbench",
+                "component": "workbench_shell",
+                "properties": {
+                  "title": "Workbench",
+                  "sidebar": {
+                    "title": "Sessions",
+                    "groups": [{
+                      "id": "recent",
+                      "label": "Recent",
+                      "conversations": [{ "id": "thread-1", "title": "First" }]
+                    }]
+                  }
+                },
+                "action_bindings": { "sidebar_toggle": "sidebar_toggle" },
+                "children": [
+                  {
+                    "id": "timeline",
+                    "component": "message_timeline",
+                    "properties": {
+                      "messages": [{
+                        "id": "message-1",
+                        "role": "assistant",
+                        "blocks": [{ "kind": "paragraph", "text": "Ready" }]
+                      }]
+                    }
+                  },
+                  {
+                    "id": "composer",
+                    "component": "composer",
+                    "properties": { "draft": "external draft", "placeholder": "Message" }
+                  },
+                  {
+                    "id": "inspector",
+                    "component": "inspector_panel",
+                    "properties": {
+                      "title": "Inspector",
+                      "selected_tab": "details",
+                      "tabs": [
+                        { "id": "details", "label": "Details", "icon": "Info" },
+                        { "id": "events", "label": "Events", "icon": "Inspector" }
+                      ],
+                      "body": "Details"
+                    }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::new(),
+            actions: BTreeMap::from([(
+                "sidebar_toggle".to_owned(),
+                crate::ui_document::UiValueType::Null,
+            )]),
+        };
+        let mut view =
+            ui_document_view(&document, &bindings, &BTreeMap::new(), Msg::Action).unwrap();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 700,
+            height: 480,
+        };
+        view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
+        let root = document.root.id.widget_id();
+        let toggle = {
+            let crate::ViewNodeKind::Workbench { spec, .. } = &view.kind else {
+                panic!("expected retained workbench view")
+            };
+            let layout = spec.layout(bounds, Dpi::standard());
+            let region = layout
+                .regions
+                .iter()
+                .find(|region| region.kind == crate::ZsWorkbenchRegionKind::SidebarToggle)
+                .expect("sidebar toggle region");
+            crate::workbench::zs_workbench_region_widget_id(root, region)
+        };
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(&mut events, &crate::ViewEvent::Click { widget: toggle });
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::Action(UiDocumentAction {
+                node_id: "workbench".to_owned(),
+                binding: "sidebar_toggle".to_owned(),
+                property_binding: None,
+                payload: Value::Null,
+            })]
+        );
+
+        let crate::ViewNodeKind::Workbench { spec, .. } = &mut view.kind else {
+            panic!("expected retained workbench view")
+        };
+        assert!(!spec.sidebar.collapsed);
+        assert!(spec.sidebar.force_expanded);
+        assert!(crate::workbench::zs_workbench_apply_interaction(
+            spec,
+            &crate::ZsWorkbenchInteractionEvent::ScrollSidebar { offset_y: 120 },
+        ));
+        assert!(crate::workbench::zs_workbench_apply_interaction(
+            spec,
+            &crate::ZsWorkbenchInteractionEvent::ScrollInspector { offset_y: 80 },
+        ));
+        assert!(crate::workbench::zs_workbench_apply_interaction(
+            spec,
+            &crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft {
+                draft: "runtime draft".to_owned(),
+            },
+        ));
+        assert!(crate::workbench::zs_workbench_apply_interaction(
+            spec,
+            &crate::ZsWorkbenchInteractionEvent::SelectInspectorTab {
+                tab_id: "events".to_owned(),
+            },
+        ));
+        assert!(crate::workbench::zs_workbench_apply_interaction(
+            spec,
+            &crate::ZsWorkbenchInteractionEvent::ScrollMessages { offset_y: 144 },
+        ));
+
+        let mut rebuilt =
+            ui_document_view(&document, &bindings, &BTreeMap::new(), Msg::Action).unwrap();
+        rebuilt.restore_adaptive_scroll_state(&view);
+        let crate::ViewNodeKind::Workbench { spec, .. } = &rebuilt.kind else {
+            panic!("expected rebuilt workbench view")
+        };
+        assert!(!spec.sidebar.collapsed);
+        assert!(spec.sidebar.force_expanded);
+        assert_eq!(spec.sidebar.scroll_y, 120);
+        assert_eq!(spec.inspector.as_ref().unwrap().scroll_y, 80);
+        assert_eq!(spec.composer.draft, "external draft");
+        assert_eq!(
+            spec.inspector
+                .as_ref()
+                .and_then(|inspector| inspector.selected_tab_id.as_deref()),
+            Some("details")
+        );
+        assert_eq!(spec.message_scroll_y, 0);
+
+        let mut changed_document = document.clone();
+        changed_document
+            .root
+            .properties
+            .get_mut("sidebar")
+            .and_then(Value::as_object_mut)
+            .expect("sidebar property")
+            .insert("collapsed".to_owned(), Value::Bool(true));
+        let mut changed =
+            ui_document_view(&changed_document, &bindings, &BTreeMap::new(), Msg::Action).unwrap();
+        changed.restore_adaptive_scroll_state(&view);
+        let crate::ViewNodeKind::Workbench { spec, .. } = &changed.kind else {
+            panic!("expected changed workbench view")
+        };
+        assert!(spec.sidebar.collapsed);
+        assert!(!spec.sidebar.force_expanded);
     }
 
     #[cfg(feature = "image-preview")]

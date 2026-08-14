@@ -50,14 +50,36 @@ pub(crate) fn install_linux_gtk_draw_plan(
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     sync_linux_gtk_text_accessibility(&drawing_area, &runtime);
     let runtime_timer = Rc::new(RefCell::new(None));
+    let application = window.application();
     let ime = gtk::IMMulticontext::new();
     ime.set_client_widget(Some(&drawing_area));
     ime.set_use_preedit(true);
     drawing_area.set_draw_func({
         let plan = Rc::clone(&plan);
         let runtime = Rc::clone(&runtime);
+        let application = application.clone();
+        let runtime_timer = Rc::clone(&runtime_timer);
         let ime = ime.clone();
         move |area, context, width, height| {
+            let invalidation = runtime.borrow_mut().refresh_invalidated_view();
+            if invalidation.handled || invalidation.redraw_plan.is_some() {
+                apply_linux_gtk_input_report_during_draw(
+                    invalidation,
+                    area,
+                    &plan,
+                    &runtime,
+                    &ime,
+                    application.as_ref(),
+                );
+                schedule_linux_gtk_runtime_tick(
+                    area,
+                    &plan,
+                    &runtime,
+                    &ime,
+                    application.clone(),
+                    &runtime_timer,
+                );
+            }
             let resize = runtime.borrow_mut().set_surface(
                 Rect {
                     x: 0,
@@ -486,7 +508,17 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
-    let application = window.application();
+    let invalidation_binding = {
+        let area = gtk::glib::SendWeakRef::from(drawing_area.downgrade());
+        runtime.borrow().bind_invalidation_target(move || {
+            let area = area.clone();
+            gtk::glib::idle_add_once(move || {
+                if let Some(area) = area.upgrade() {
+                    area.queue_draw();
+                }
+            });
+        })
+    };
     schedule_linux_gtk_runtime_tick(
         &drawing_area,
         &plan,
@@ -507,6 +539,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         ime,
         application,
         runtime_timer,
+        _invalidation_binding: invalidation_binding,
     }
 }
 
@@ -519,6 +552,7 @@ pub(crate) struct LinuxGtkDrawViewHost {
     ime: gtk::IMMulticontext,
     application: Option<gtk::Application>,
     runtime_timer: Rc<RefCell<Option<gtk::glib::SourceId>>>,
+    _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
 }
 
 impl std::fmt::Debug for LinuxGtkDrawViewHost {
@@ -873,12 +907,51 @@ fn schedule_linux_gtk_runtime_tick(
 }
 
 fn apply_linux_gtk_input_report(
+    report: crate::native::NativeViewInputDispatchReport,
+    area: &gtk::DrawingArea,
+    plan: &Rc<RefCell<NativeDrawPlan>>,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+    application: Option<&gtk::Application>,
+) -> crate::native::NativeViewInputDispatchReport {
+    apply_linux_gtk_input_report_with_redraw_request(
+        report,
+        area,
+        plan,
+        runtime,
+        ime,
+        application,
+        true,
+    )
+}
+
+fn apply_linux_gtk_input_report_during_draw(
+    report: crate::native::NativeViewInputDispatchReport,
+    area: &gtk::DrawingArea,
+    plan: &Rc<RefCell<NativeDrawPlan>>,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    ime: &gtk::IMMulticontext,
+    application: Option<&gtk::Application>,
+) -> crate::native::NativeViewInputDispatchReport {
+    apply_linux_gtk_input_report_with_redraw_request(
+        report,
+        area,
+        plan,
+        runtime,
+        ime,
+        application,
+        false,
+    )
+}
+
+fn apply_linux_gtk_input_report_with_redraw_request(
     mut report: crate::native::NativeViewInputDispatchReport,
     area: &gtk::DrawingArea,
     plan: &Rc<RefCell<NativeDrawPlan>>,
     runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
     ime: &gtk::IMMulticontext,
     application: Option<&gtk::Application>,
+    request_redraw: bool,
 ) -> crate::native::NativeViewInputDispatchReport {
     let (executor, commands) = runtime.borrow_mut().take_pending_app_command_dispatch();
     let effect_executed =
@@ -890,7 +963,9 @@ fn apply_linux_gtk_input_report(
     }
     if let Some(updated) = report.redraw_plan.take() {
         *plan.borrow_mut() = updated;
-        area.queue_draw();
+        if request_redraw {
+            area.queue_draw();
+        }
     }
     if report.quit_requested {
         if let Some(application) = application {

@@ -26,9 +26,10 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
     .children(children)
 }
 
-/// Creates the retained native workbench surface used by document authors and
-/// regular Rust applications. Layout and painting remain owned by the shared
-/// workbench contract while each backend renders the resulting native plan.
+/// Creates the retained native workbench surface used by products that
+/// explicitly need a conversation timeline and composer. Layout and painting
+/// remain owned by the shared workbench contract while each backend renders
+/// the resulting native plan.
 #[cfg(feature = "workbench")]
 pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
     #[cfg(feature = "accessibility")]
@@ -37,8 +38,8 @@ pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
         spec,
         on_interaction: None,
     })
-    .min_width(Dp::new(640.0))
-    .min_height(Dp::new(480.0));
+    .min_width(Dp::new(360.0))
+    .min_height(Dp::new(320.0));
     #[cfg(feature = "accessibility")]
     let node = node.accessibility(
         crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Application)
@@ -50,8 +51,10 @@ pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
 /// Creates a retained native workbench from explicit shell, timeline,
 /// composer and inspector component contracts.
 ///
-/// This is the preferred application-facing constructor. [`workbench`] stays
-/// available for code that already owns the flattened compatibility spec.
+/// This is the application-facing constructor after the Workbench selection
+/// gate has been met. [`workbench`] stays available for code that already owns
+/// the flattened compatibility spec. Ordinary utilities and forms should
+/// compose the smaller View controls directly.
 #[cfg(feature = "workbench")]
 pub fn workbench_shell<Msg>(spec: crate::ZsWorkbenchShellSpec) -> ViewNode<Msg> {
     workbench(spec.into_workbench())
@@ -1138,6 +1141,7 @@ mod data_tests {
                     crate::ZsIcon::Inspector,
                 )),
         );
+        #[allow(unused_mut)]
         let mut view = workbench_shell::<()>(shell);
 
         assert!(matches!(

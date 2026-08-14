@@ -42,6 +42,7 @@ winit = { version = "0.30", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = { version = "0.6", optional = true }
+dispatch2 = { version = "0.3", optional = true }
 libc = { version = "0.2", optional = true }
 objc2 = { version = "0.6", optional = true }
 objc2-app-kit = { version = "0.3", optional = true, default-features = false, features = ["std", "block2", "objc2-core-foundation", "NSAlert", "NSAppearance", "NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSButton", "NSCell", "NSColor", "NSColorSpace", "NSControl", "NSEvent", "NSFont", "NSFontDescriptor", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSParagraphStyle", "NSPasteboard", "NSRunningApplication", "NSSavePanel", "NSPanel", "NSResponder", "NSStatusBar", "NSStatusItem", "NSStringDrawing", "NSText", "NSTextInputClient", "NSTextInputContext", "NSTrackingArea", "NSView", "NSWindow"] }
@@ -147,7 +148,7 @@ rust-text = ["dep:cosmic-text", "dep:swash", "dep:ttf-parser"]
 rust-text-proof = ["rust-text"]
 windows-rust-text = ["windows-gdi", "rust-text"]
 windows-text-proof = ["windows-directwrite", "rust-text-proof"]
-macos-appkit = ["dep:block2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+macos-appkit = ["dep:block2", "dep:dispatch2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
 linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
 linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
 linux-direct-accessibility = ["accessibility", "linux-direct-host", "dep:accesskit", "dep:accesskit_winit"]

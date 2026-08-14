@@ -382,6 +382,26 @@ pub struct ViewHitTarget {
     pub kind: ViewHitTargetKind,
 }
 
+/// Declares whether a hit-test surface owns a position in the global keyboard
+/// focus order.
+///
+/// Hit testing and focus are deliberately separate contracts: scroll
+/// viewports, scrollbars, scrims and owner-managed composite children still
+/// receive pointer input without becoming oversized or duplicate Tab stops.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ViewFocusBehavior {
+    /// The surface participates in pointer routing only.
+    None,
+    /// The surface owns keyboard focus and participates in Tab traversal.
+    TabStop,
+}
+
+impl ViewFocusBehavior {
+    pub const fn is_tab_stop(self) -> bool {
+        matches!(self, Self::TabStop)
+    }
+}
+
 #[cfg(feature = "tooltip")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ViewTooltipTarget {
@@ -416,6 +436,11 @@ impl ViewHitTarget {
 
     pub const fn contains(self, point: Point) -> bool {
         self.bounds.contains(point)
+    }
+
+    /// Returns the focus contract for this semantic hit-target kind.
+    pub const fn focus_behavior(self) -> ViewFocusBehavior {
+        self.kind.focus_behavior()
     }
 }
 
@@ -667,15 +692,20 @@ impl ViewInteractionPlan {
 
     pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
         #[cfg(feature = "menu-flyout")]
-        if let Some(target) = self.hit_targets.iter().copied().find(|target| {
-            target.widget == widget && target.kind == ViewHitTargetKind::MenuFlyout
-        }) {
+        if let Some(target) =
+            self.hit_targets.iter().copied().find(|target| {
+                target.widget == widget && target.kind == ViewHitTargetKind::MenuFlyout
+            })
+        {
             return Some(target);
         }
         #[cfg(feature = "flyout")]
-        if let Some(target) = self.hit_targets.iter().copied().find(|target| {
-            target.widget == widget && target.kind == ViewHitTargetKind::Flyout
-        }) {
+        if let Some(target) = self
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.widget == widget && target.kind == ViewHitTargetKind::Flyout)
+        {
             return Some(target);
         }
         #[cfg(feature = "command-palette")]
@@ -745,14 +775,9 @@ impl ViewInteractionPlan {
     }
 
     pub(crate) fn focus_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
-        self.hit_targets
-            .iter()
-            .copied()
-            .find(|target| {
-                target.widget == widget
-                    && target.accepts_focus()
-                    && self.accepts_focus_scope(*target)
-            })
+        self.hit_targets.iter().copied().find(|target| {
+            target.widget == widget && target.accepts_focus() && self.accepts_focus_scope(*target)
+        })
     }
 
     pub(crate) fn modal_focus_target(&self) -> Option<ViewHitTarget> {
@@ -882,8 +907,7 @@ impl ViewInteractionPlan {
         {
             return _target.kind == ViewHitTargetKind::Flyout
                 || (rect_contains_rect(surface.bounds, _target.bounds)
-                    && self.hit_targets[surface_index.saturating_add(1)..]
-                        .contains(&_target));
+                    && self.hit_targets[surface_index.saturating_add(1)..].contains(&_target));
         }
         if let Some(modal) = self.modal_focus_target() {
             return _target.widget == modal.widget && _target.kind == modal.kind;
@@ -894,137 +918,7 @@ impl ViewInteractionPlan {
 
 impl ViewHitTarget {
     fn accepts_focus(&self) -> bool {
-        #[cfg(feature = "label")]
-        if self.kind == ViewHitTargetKind::NavigationViewScrim {
-            return false;
-        }
-        #[cfg(feature = "split-view")]
-        if self.kind == ViewHitTargetKind::SplitViewScrim {
-            return false;
-        }
-        #[cfg(feature = "command-palette")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::CommandPaletteScrim
-                | ViewHitTargetKind::CommandPaletteClear
-                | ViewHitTargetKind::CommandPaletteItem { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "dialog")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::ContentDialogScrim | ViewHitTargetKind::ContentDialogButton { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "flyout")]
-        if self.kind == ViewHitTargetKind::FlyoutScrim {
-            return false;
-        }
-        #[cfg(feature = "menu-flyout")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::MenuFlyoutScrim | ViewHitTargetKind::MenuFlyoutItem { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "toast")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::ToastAction | ViewHitTargetKind::ToastClose
-        ) {
-            return false;
-        }
-        #[cfg(feature = "teaching-tip")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::TeachingTipAction | ViewHitTargetKind::TeachingTipClose
-        ) {
-            return false;
-        }
-        #[cfg(feature = "info-bar")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::InfoBarAction | ViewHitTargetKind::InfoBarClose
-        ) {
-            return false;
-        }
-        #[cfg(feature = "breadcrumb")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::BreadcrumbOverflow
-                | ViewHitTargetKind::BreadcrumbItem { .. }
-                | ViewHitTargetKind::BreadcrumbOverflowItem { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "grid-view")]
-        if matches!(self.kind, ViewHitTargetKind::GridViewItem { .. }) {
-            return false;
-        }
-        #[cfg(feature = "password-box")]
-        if self.kind == ViewHitTargetKind::PasswordBoxReveal {
-            return false;
-        }
-        #[cfg(feature = "number-box")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::NumberBoxDecrement | ViewHitTargetKind::NumberBoxIncrement
-        ) {
-            return false;
-        }
-        #[cfg(feature = "table")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::TableHeader { .. } | ViewHitTargetKind::TableRow { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "combo")]
-        if matches!(self.kind, ViewHitTargetKind::ComboBoxOption { .. }) {
-            return false;
-        }
-        #[cfg(feature = "auto-suggest")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::AutoSuggestSearch
-                | ViewHitTargetKind::AutoSuggestClear
-                | ViewHitTargetKind::AutoSuggestSuggestion { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "tree")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::TreeNode { .. } | ViewHitTargetKind::TreeNodeExpander { .. }
-        ) {
-            return false;
-        }
-        #[cfg(feature = "date-picker")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::DatePickerDay { .. }
-                | ViewHitTargetKind::DatePickerPreviousMonth
-                | ViewHitTargetKind::DatePickerNextMonth
-        ) {
-            return false;
-        }
-        #[cfg(feature = "time-picker")]
-        if matches!(self.kind, ViewHitTargetKind::TimePickerChoice { .. }) {
-            return false;
-        }
-        #[cfg(feature = "color-picker")]
-        if matches!(
-            self.kind,
-            ViewHitTargetKind::ColorPickerPopup
-                | ViewHitTargetKind::ColorPickerSpectrum
-                | ViewHitTargetKind::ColorPickerHue
-                | ViewHitTargetKind::ColorPickerChannel { .. }
-        ) {
-            return false;
-        }
-        true
+        self.focus_behavior().is_tab_stop()
     }
 }
 
@@ -1037,6 +931,126 @@ fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
 }
 
 impl ViewHitTargetKind {
+    /// Central focus policy for semantic hit-target kinds.
+    ///
+    /// Composite controls retain one owner Tab stop; their internal action
+    /// regions use owner-managed keyboard navigation. Scroll surfaces remain
+    /// pointer/wheel targets and intentionally do not own focus visuals.
+    pub const fn focus_behavior(self) -> ViewFocusBehavior {
+        match self {
+            Self::Unknown | Self::Button | Self::Textbox | Self::TextEditor => {
+                ViewFocusBehavior::TabStop
+            }
+            #[cfg(feature = "canvas")]
+            Self::Canvas => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "label")]
+            Self::NavigationViewToggle => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "toggle-button")]
+            Self::ToggleButton => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "password-box")]
+            Self::PasswordBox => ViewFocusBehavior::TabStop,
+            Self::Checkbox | Self::Toggle => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "slider")]
+            Self::Slider => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "number-box")]
+            Self::NumberBox => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "radio")]
+            Self::RadioButton => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "auto-suggest")]
+            Self::AutoSuggestBox => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "tree")]
+            Self::TreeView => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "grid-view")]
+            Self::GridView => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "table")]
+            Self::DataGrid => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "dialog")]
+            Self::ContentDialog => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "flyout")]
+            Self::Flyout => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "menu-flyout")]
+            Self::MenuFlyout => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "command-palette")]
+            Self::CommandPalette => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "toast")]
+            Self::Toast => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "teaching-tip")]
+            Self::TeachingTip => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "info-bar")]
+            Self::InfoBar => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "breadcrumb")]
+            Self::BreadcrumbBar => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "combo")]
+            Self::ComboBox => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "date-picker")]
+            Self::DatePicker => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "time-picker")]
+            Self::TimePicker => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "color-picker")]
+            Self::ColorPicker => ViewFocusBehavior::TabStop,
+            #[cfg(feature = "tabs")]
+            Self::Tab { .. } => ViewFocusBehavior::TabStop,
+
+            #[cfg(feature = "label")]
+            Self::NavigationViewScrim => ViewFocusBehavior::None,
+            #[cfg(feature = "split-view")]
+            Self::SplitViewScrim => ViewFocusBehavior::None,
+            #[cfg(feature = "scroll")]
+            Self::ScrollbarTrack | Self::ScrollbarThumb | Self::Scroll => ViewFocusBehavior::None,
+            #[cfg(feature = "virtual-list")]
+            Self::ItemsRepeaterScrollbarTrack | Self::ItemsRepeaterScrollbarThumb => {
+                ViewFocusBehavior::None
+            }
+            #[cfg(feature = "password-box")]
+            Self::PasswordBoxReveal => ViewFocusBehavior::None,
+            #[cfg(feature = "number-box")]
+            Self::NumberBoxDecrement | Self::NumberBoxIncrement => ViewFocusBehavior::None,
+            #[cfg(feature = "auto-suggest")]
+            Self::AutoSuggestSearch
+            | Self::AutoSuggestClear
+            | Self::AutoSuggestSuggestion { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "tree")]
+            Self::TreeNode { .. } | Self::TreeNodeExpander { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "grid-view")]
+            Self::GridViewItem { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "table")]
+            Self::TableHeader { .. } | Self::TableRow { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "dialog")]
+            Self::ContentDialogScrim | Self::ContentDialogButton { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "flyout")]
+            Self::FlyoutScrim => ViewFocusBehavior::None,
+            #[cfg(feature = "menu-flyout")]
+            Self::MenuFlyoutScrim | Self::MenuFlyoutItem { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "command-palette")]
+            Self::CommandPaletteScrim
+            | Self::CommandPaletteClear
+            | Self::CommandPaletteItem { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "toast")]
+            Self::ToastAction | Self::ToastClose => ViewFocusBehavior::None,
+            #[cfg(feature = "teaching-tip")]
+            Self::TeachingTipAction | Self::TeachingTipClose => ViewFocusBehavior::None,
+            #[cfg(feature = "info-bar")]
+            Self::InfoBarAction | Self::InfoBarClose => ViewFocusBehavior::None,
+            #[cfg(feature = "breadcrumb")]
+            Self::BreadcrumbOverflow
+            | Self::BreadcrumbItem { .. }
+            | Self::BreadcrumbOverflowItem { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "combo")]
+            Self::ComboBoxOption { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "date-picker")]
+            Self::DatePickerDay { .. }
+            | Self::DatePickerPreviousMonth
+            | Self::DatePickerNextMonth => ViewFocusBehavior::None,
+            #[cfg(feature = "time-picker")]
+            Self::TimePickerChoice { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "color-picker")]
+            Self::ColorPickerPopup
+            | Self::ColorPickerSpectrum
+            | Self::ColorPickerHue
+            | Self::ColorPickerChannel { .. } => ViewFocusBehavior::None,
+        }
+    }
+
     pub(crate) fn accepts_text_input(self) -> bool {
         let accepts = matches!(self, Self::Textbox | Self::TextEditor);
         #[cfg(feature = "password-box")]
@@ -1065,8 +1079,8 @@ impl ViewLayoutCx {
         Self {
             bounds,
             dpi,
-            typography_scale_per_mille:
-                crate::render_protocol::default_typography_scale_per_mille(),
+            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            ),
             text_measurements: Arc::new(ViewTextMeasurements::default()),
             depth: 0,
         }

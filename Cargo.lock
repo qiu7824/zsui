@@ -4277,6 +4277,7 @@ dependencies = [
  "cairo-rs",
  "chrono",
  "cosmic-text",
+ "dispatch2",
  "fluent-bundle",
  "freedesktop-icons",
  "gdk-pixbuf",

@@ -147,6 +147,11 @@ impl WindowsWin32ViewInputRoute {
         self.adapt_shared_report(report, WindowsSharedInputKind::Background)
     }
 
+    fn refresh_invalidated_view(&mut self) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.refresh_invalidated_view();
+        self.adapt_shared_report(report, WindowsSharedInputKind::Background)
+    }
+
     fn set_surface(&mut self, bounds: crate::Rect, dpi: crate::Dpi) -> bool {
         let report = self.shared_runtime.set_surface(bounds, dpi);
         let changed = report.surface_changed;

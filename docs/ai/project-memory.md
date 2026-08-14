@@ -28,6 +28,11 @@ history remain authoritative for implementation status.
   GTK objects, drawing handles, or native event loops.
 - A concise native-window entry is important, but it is only the bootstrap
   contract. The real objective is a complete native application loop.
+- Background and streaming work wakes a stateful UI through the cloneable
+  `InvalidationHandle`. Requests coalesce until the native UI thread rebuilds
+  and repaints once; applications must not insert a zero-size Video or another
+  visible node as a timer, and an idle window must not poll merely to discover
+  application-owned state changes.
 - Controls and advanced capabilities should remain Cargo-feature selectable so
   unused surfaces and heavy dependencies can be omitted.
 - v0.2 additionally requires a versioned semantic UI document, typed binding
@@ -1008,6 +1013,17 @@ history remain authoritative for implementation status.
   1280x800 routed four real clicks plus one real scroll into five typed
   messages with zero unhandled clicks or scrolls; the observed pre-teardown
   process sample was 24,809,472 bytes RSS and 7,696,384 private.
+- The retained Workbench View caches one authoritative measured layout per
+  surface/DPI/typography context and reuses it for paint, hit testing, text
+  input and accessibility. Paragraphs, code, notices and dynamic action labels
+  consume backend text measurements; multiline text aligns to the top. Sidebar
+  history and inspector bodies own clipped wheel-scroll viewports, narrow
+  windows auto-collapse without disabling explicit expansion, and Composer
+  height grows within platform-profile bounds while preserving both mode and
+  model labels. The message timeline materializes the viewport plus one
+  viewport of overscan on each side while retaining the total scroll extent.
+  `NativeWindowBuilder::workbench(...)` installs this retained runtime rather
+  than freezing a one-frame draw plan.
 - Rust applications use the same named component layer as UiDocument:
   `items_repeater`, `image`, `settings_card`, `message_timeline`, `composer`,
   `inspector_panel` and `workbench_shell`. `ZsWorkbenchShellSpec` retains the

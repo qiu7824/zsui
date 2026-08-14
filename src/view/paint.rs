@@ -504,6 +504,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         if cx.is_root() {
             self.assign_automatic_ids();
         }
+        #[cfg(feature = "workbench")]
+        if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
+            self.bounds = Some(cx.bounds);
+            self.layout_dpi = cx.dpi;
+            self.cache_workbench_layout(cx);
+            let children = self
+                .id
+                .map(|id| {
+                    vec![LayoutNode {
+                        component: id.into(),
+                        bounds: cx.bounds,
+                    }]
+                })
+                .unwrap_or_default();
+            return LayoutOutput {
+                bounds: cx.bounds,
+                children,
+            };
+        }
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             self.bounds = Some(cx.bounds);
@@ -683,7 +702,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 return;
             };
             let interaction = if let ViewNodeKind::Workbench { spec, .. } = &self.kind {
-                let layout = spec.layout(bounds, self.layout_dpi);
+                let layout = self.resolved_workbench_layout(spec, bounds);
                 match event {
                     ViewEvent::Click { widget } => layout
                         .regions
@@ -718,13 +737,41 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             draft: value.clone(),
                         }),
                     #[cfg(feature = "scroll")]
-                    ViewEvent::ScrollBy { widget, delta_y } if *widget == root => {
-                        let next = (spec.message_scroll_y
-                            + delta_y.to_px(self.layout_dpi).round_i32())
-                        .clamp(0, layout.message_scroll_max);
-                        Some(crate::ZsWorkbenchInteractionEvent::ScrollMessages {
-                            offset_y: next,
-                        })
+                    ViewEvent::ScrollBy { widget, delta_y } => {
+                        let delta = delta_y.to_px(self.layout_dpi).round_i32();
+                        if *widget == root {
+                            let next = (spec.message_scroll_y + delta)
+                                .clamp(0, layout.message_scroll_max);
+                            Some(crate::ZsWorkbenchInteractionEvent::ScrollMessages {
+                                offset_y: next,
+                            })
+                        } else if layout.regions.iter().any(|region| {
+                            region.kind == crate::ZsWorkbenchRegionKind::SidebarViewport
+                                && crate::workbench::zs_workbench_region_widget_id(root, region)
+                                    == *widget
+                        }) {
+                            let next = (spec.sidebar.scroll_y + delta)
+                                .clamp(0, layout.sidebar_scroll_max);
+                            Some(crate::ZsWorkbenchInteractionEvent::ScrollSidebar {
+                                offset_y: next,
+                            })
+                        } else if layout.regions.iter().any(|region| {
+                            region.kind == crate::ZsWorkbenchRegionKind::InspectorViewport
+                                && crate::workbench::zs_workbench_region_widget_id(root, region)
+                                    == *widget
+                        }) {
+                            let current = spec
+                                .inspector
+                                .as_ref()
+                                .map(|inspector| inspector.scroll_y)
+                                .unwrap_or(0);
+                            let next = (current + delta).clamp(0, layout.inspector_scroll_max);
+                            Some(crate::ZsWorkbenchInteractionEvent::ScrollInspector {
+                                offset_y: next,
+                            })
+                        } else {
+                            None
+                        }
                     }
                     _ => None,
                 }
@@ -745,6 +792,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message);
                     }
                 }
+                self.refresh_workbench_layout();
             }
             return;
         }
@@ -2602,7 +2650,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         match &self.kind {
             #[cfg(feature = "workbench")]
             ViewNodeKind::Workbench { spec, .. } => {
-                let plan = spec.native_draw_plan(bounds, cx.dpi);
+                let layout = self.resolved_workbench_layout(spec, bounds);
+                let plan = crate::zs_workbench_native_draw_plan(spec, layout.as_ref());
                 for command in plan.commands {
                     cx.draw(command);
                 }

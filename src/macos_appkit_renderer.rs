@@ -122,6 +122,7 @@ struct ZsuiAppKitDrawViewIvars {
     plan: RefCell<NativeDrawPlan>,
     runtime: RefCell<crate::native::NativeViewInputRuntime>,
     runtime_timer: RefCell<Option<Retained<NSTimer>>>,
+    invalidation_binding: RefCell<Option<crate::native::UiInvalidationBinding>>,
     marked_text: RefCell<String>,
     marked_selection: Cell<Option<(usize, usize)>>,
     ime_dispatched: Cell<bool>,
@@ -139,6 +140,11 @@ define_class!(
             self.ivars().runtime_timer.borrow_mut().take();
             let report = self.ivars().runtime.borrow_mut().refresh_transient_view();
             self.apply_input_report(report);
+        }
+
+        #[unsafe(method(zsuiInvalidationWake))]
+        fn zsui_invalidation_wake(&self) {
+            self.refresh_external_invalidation();
         }
     }
 
@@ -1362,6 +1368,11 @@ impl ZsuiAppKitMenuAccessibilityElement {
 }
 
 impl ZsuiAppKitDrawView {
+    fn refresh_external_invalidation(&self) {
+        let report = self.ivars().runtime.borrow_mut().refresh_invalidated_view();
+        self.apply_input_report(report);
+    }
+
     fn dispatch_appkit_ime_preedit(
         &self,
         text: &str,
@@ -1634,6 +1645,29 @@ impl ZsuiAppKitDrawView {
         *self.ivars().runtime_timer.borrow_mut() = Some(timer);
     }
 
+    fn install_invalidation_wake(&self) {
+        let view = std::sync::Arc::new(dispatch2::MainThreadBound::new(
+            objc2::rc::Weak::new(self),
+            self.mtm(),
+        ));
+        let binding = self
+            .ivars()
+            .runtime
+            .borrow()
+            .bind_invalidation_target(move || {
+                let view = std::sync::Arc::clone(&view);
+                dispatch2::DispatchQueue::main().exec_async(move || {
+                    let Some(mtm) = MainThreadMarker::new() else {
+                        return;
+                    };
+                    if let Some(view) = view.get(mtm).load() {
+                        view.refresh_external_invalidation();
+                    }
+                });
+            });
+        *self.ivars().invalidation_binding.borrow_mut() = binding;
+    }
+
     fn new(
         mtm: MainThreadMarker,
         frame: NSRect,
@@ -1645,11 +1679,14 @@ impl ZsuiAppKitDrawView {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),
             runtime_timer: RefCell::new(None),
+            invalidation_binding: RefCell::new(None),
             marked_text: RefCell::new(String::new()),
             marked_selection: Cell::new(None),
             ime_dispatched: Cell::new(false),
         });
-        unsafe { msg_send![super(this), initWithFrame: frame] }
+        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
+        this.install_invalidation_wake();
+        this
     }
 
     fn install_pointer_tracking(&self) {

@@ -346,6 +346,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
+        ZSUI_WIN32_INVALIDATE_VIEW_MESSAGE => {
+            if refresh_windows_win32_window_invalidated_view(hwnd).is_some() {
+                0
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_PAINT => paint_no_flicker_background(hwnd),
         WM_PRINTCLIENT => paint_window_client_to_dc(hwnd, wparam as _),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),

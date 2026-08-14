@@ -16,7 +16,9 @@ use softbuffer::{Context as SoftBufferContext, Surface as SoftBufferSurface};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
+use winit::event_loop::{
+    ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy, OwnedDisplayHandle,
+};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
 use winit::window::{
@@ -125,8 +127,10 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         });
     }
 
-    let event_loop = EventLoop::new()
+    let event_loop = EventLoop::<LinuxDirectUserEvent>::with_user_event()
+        .build()
         .map_err(|error| ZsuiError::host("linux_direct_event_loop", error.to_string()))?;
+    let event_proxy = event_loop.create_proxy();
     let mut app = LinuxDirectApp::new(
         specs,
         draw_plans,
@@ -135,6 +139,7 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         capture_path,
         proof_inputs,
         proof_resize,
+        event_proxy,
     );
     event_loop
         .run_app(&mut app)
@@ -158,6 +163,11 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
         accessibility_action_count: app.accessibility_action_count,
         process_memory: app.process_memory.take(),
     })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum LinuxDirectUserEvent {
+    InvalidateView,
 }
 
 struct LinuxDirectApp {
@@ -190,6 +200,7 @@ struct LinuxDirectApp {
     accessibility_node_count: usize,
     accessibility_action_count: usize,
     process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
+    event_proxy: EventLoopProxy<LinuxDirectUserEvent>,
 }
 
 impl LinuxDirectApp {
@@ -201,6 +212,7 @@ impl LinuxDirectApp {
         capture_path: Option<&Path>,
         proof_inputs: &[crate::NativeViewSmokeInput],
         proof_resize: Option<crate::Size>,
+        event_proxy: EventLoopProxy<LinuxDirectUserEvent>,
     ) -> Self {
         let started_at = Instant::now();
         let close_after = auto_close_after_ms.map(|delay| Duration::from_millis(delay.max(1)));
@@ -236,6 +248,7 @@ impl LinuxDirectApp {
             accessibility_node_count: 0,
             accessibility_action_count: 0,
             process_memory: None,
+            event_proxy,
         }
     }
 
@@ -323,6 +336,7 @@ impl LinuxDirectApp {
                 text_context,
                 self.capture_path.is_some(),
             );
+            direct.bind_invalidation_target(self.event_proxy.clone());
             direct.synchronize_initial_surface(window.inner_size());
             direct.sync_text_input();
             window.set_visible(visible);
@@ -523,7 +537,7 @@ impl OptionInstantExt for Option<Instant> {
     }
 }
 
-impl ApplicationHandler for LinuxDirectApp {
+impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
     fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: StartCause) {}
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -533,6 +547,18 @@ impl ApplicationHandler for LinuxDirectApp {
         if let Err(error) = self.create_windows(event_loop) {
             self.fail(event_loop, "create_windows", error);
             return;
+        }
+        self.schedule_control_flow(event_loop);
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: LinuxDirectUserEvent) {
+        match event {
+            LinuxDirectUserEvent::InvalidateView => {
+                for window in self.windows.values_mut() {
+                    let report = window.runtime.refresh_invalidated_view();
+                    window.apply_report(report, event_loop);
+                }
+            }
         }
         self.schedule_control_flow(event_loop);
     }
@@ -798,6 +824,7 @@ struct LinuxDirectWindow {
     last_frame: Vec<u32>,
     icon_cache: HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
     next_tick: Option<Instant>,
+    _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
     menu_surface: Option<crate::linux_direct_menu::LinuxDirectMenuSurface>,
     menu_surface_command_count: usize,
     #[cfg(feature = "linux-direct-accessibility")]
@@ -883,11 +910,18 @@ impl LinuxDirectWindow {
             last_frame: Vec::new(),
             icon_cache: HashMap::new(),
             next_tick: None,
+            _invalidation_binding: None,
             menu_surface,
             menu_surface_command_count: 0,
             #[cfg(feature = "linux-direct-accessibility")]
             accessibility,
         }
+    }
+
+    fn bind_invalidation_target(&mut self, proxy: EventLoopProxy<LinuxDirectUserEvent>) {
+        self._invalidation_binding = self.runtime.bind_invalidation_target(move || {
+            let _ = proxy.send_event(LinuxDirectUserEvent::InvalidateView);
+        });
     }
 
     fn synchronize_initial_surface(&mut self, physical_size: PhysicalSize<u32>) {

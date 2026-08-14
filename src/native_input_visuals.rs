@@ -137,7 +137,11 @@ impl NativeTextShapingBackend {
         dpi: Dpi,
         previous: &crate::view::ViewTextMeasurements,
     ) -> crate::view::ViewTextMeasurements {
-        let mut measurements = crate::view::ViewTextMeasurements::default();
+        // Retain a bounded, fingerprint-only per-runtime history so virtualized
+        // text keeps stable geometry when it leaves and later re-enters the
+        // draw plan. `ViewTextMeasurements` owns the capacity and eviction
+        // policy; no source text is duplicated into the cache.
+        let mut measurements = previous.clone();
         let Self::Platform(shaper, _) = self else {
             return measurements;
         };
@@ -150,7 +154,7 @@ impl NativeTextShapingBackend {
                 .measure(&command.text, command.style, 0)
                 .or_else(|| shaper.measure(&command.text, command.style, 0, dpi, typography_scale))
             {
-                measurements.insert(command.text.clone(), command.style, 0, size);
+                measurements.insert(&command.text, command.style, 0, size);
             }
             if command.style.wrap == crate::TextWrap::Word && command.bounds.width > 0 {
                 if let Some(size) = previous
@@ -165,12 +169,7 @@ impl NativeTextShapingBackend {
                         )
                     })
                 {
-                    measurements.insert(
-                        command.text.clone(),
-                        command.style,
-                        command.bounds.width,
-                        size,
-                    );
+                    measurements.insert(&command.text, command.style, command.bounds.width, size);
                 }
             }
         }

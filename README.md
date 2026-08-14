@@ -654,6 +654,13 @@ cargo run --example compact_service_panel `
 和附加导航。AI 编写应用时遵循[应用编写契约](docs/ai/app-authoring.md)，框架组件开发仍
 按对应 context pack 执行。
 
+后台任务、流式响应或文件监视需要刷新状态时，使用稳定接口中的
+`InvalidationHandle`：为每个窗口创建一个句柄，将它附加到 `WindowBuilder` 后使用
+`stateful(...)` 安装可重建的状态化 View；后台线程更新应用自有的共享状态后调用
+`request_rebuild()`。请求会合并为一次原生事件循环唤醒和 UI 线程重建，无需把零高度
+Video、动画或隐藏控件当成定时器，空闲时也不会因此持续轮询。句柄不能在多个窗口间
+复用，也不能搭配固定的 `view(...)` 或 DrawPlan。
+
 ## 按需编译
 
 从 crates.io 使用：

@@ -34,13 +34,14 @@ fn workbench_message_accessibility_label(message: &crate::ZsWorkbenchMessageSpec
 fn workbench_region_accessibility(
     spec: &crate::ZsWorkbenchSpec,
     region: &crate::ZsWorkbenchLayoutRegion,
+    sidebar_collapsed: bool,
 ) -> Option<(crate::ZsAccessibilityRole, String, Option<bool>)> {
     use crate::{ZsAccessibilityRole as Role, ZsWorkbenchRegionKind as Kind};
 
     let result = match region.kind {
         Kind::SidebarToggle => (
             Role::Button,
-            if spec.sidebar.collapsed {
+            if sidebar_collapsed {
                 "Show sidebar"
             } else {
                 "Hide sidebar"
@@ -48,6 +49,7 @@ fn workbench_region_accessibility(
             .to_string(),
             None,
         ),
+        Kind::SidebarViewport => return None,
         Kind::SidebarAction => {
             let action = spec
                 .sidebar
@@ -108,6 +110,7 @@ fn workbench_region_accessibility(
                 Some(inspector.selected_tab_id.as_deref() == Some(tab.id.as_str())),
             )
         }
+        Kind::InspectorViewport => return None,
         Kind::Timeline => return None,
     };
     Some(result)
@@ -282,7 +285,7 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let layout = spec.layout(bounds, self.layout_dpi);
+            let layout = self.resolved_workbench_layout(spec, bounds);
             if layout.regions.iter().any(|region| {
                 region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
                     && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
@@ -320,7 +323,7 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let layout = spec.layout(bounds, self.layout_dpi);
+            let layout = self.resolved_workbench_layout(spec, bounds);
             if layout.regions.iter().any(|region| {
                 region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
                     && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
@@ -1065,12 +1068,80 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let layout = spec.layout(bounds, self.layout_dpi);
+            let layout = self.resolved_workbench_layout(spec, bounds);
             if layout.regions.iter().any(|region| {
-                region.kind == crate::ZsWorkbenchRegionKind::Timeline
-                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+                matches!(
+                    region.kind,
+                    crate::ZsWorkbenchRegionKind::Timeline
+                        | crate::ZsWorkbenchRegionKind::MessageAction
+                ) && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
             }) {
                 return Some(root);
+            }
+            if layout.sidebar_scroll_max > 0 {
+                let viewport_widget = layout
+                    .regions
+                    .iter()
+                    .find(|region| {
+                        region.kind == crate::ZsWorkbenchRegionKind::SidebarViewport
+                    })
+                    .map(|region| {
+                        crate::workbench::zs_workbench_region_widget_id(root, region)
+                    });
+                let over_sidebar_scrollbar = layout.sidebar_scrollbar.is_some()
+                    && [
+                        crate::workbench::zs_workbench_named_widget_id(
+                            root,
+                            0xa11c_0201,
+                            "sidebar.scrollbar.track",
+                        ),
+                        crate::workbench::zs_workbench_named_widget_id(
+                            root,
+                            0xa11c_0202,
+                            "sidebar.scrollbar.thumb",
+                        ),
+                    ]
+                    .contains(&widget);
+                let over_sidebar_content = layout.regions.iter().any(|region| {
+                    matches!(
+                        region.kind,
+                        crate::ZsWorkbenchRegionKind::SidebarViewport
+                            | crate::ZsWorkbenchRegionKind::Conversation
+                    ) && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+                });
+                if over_sidebar_content || over_sidebar_scrollbar {
+                    return viewport_widget;
+                }
+            }
+            if layout.inspector_scroll_max > 0 {
+                if let Some(viewport_widget) = layout
+                    .regions
+                    .iter()
+                    .find(|region| {
+                        region.kind == crate::ZsWorkbenchRegionKind::InspectorViewport
+                    })
+                    .map(|region| {
+                        crate::workbench::zs_workbench_region_widget_id(root, region)
+                    })
+                {
+                    let over_inspector_scrollbar = layout.inspector_scrollbar.is_some()
+                        && [
+                            crate::workbench::zs_workbench_named_widget_id(
+                                root,
+                                0xa11c_0203,
+                                "inspector.scrollbar.track",
+                            ),
+                            crate::workbench::zs_workbench_named_widget_id(
+                                root,
+                                0xa11c_0204,
+                                "inspector.scrollbar.thumb",
+                            ),
+                        ]
+                        .contains(&widget);
+                    if viewport_widget == widget || over_inspector_scrollbar {
+                        return Some(viewport_widget);
+                    }
+                }
             }
         }
         if let Some(target) = self
@@ -1414,7 +1485,7 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let layout = spec.layout(bounds, self.layout_dpi);
+            let layout = self.resolved_workbench_layout(spec, bounds);
             let parent = semantic_parent.or(Some(root));
             let sidebar = crate::workbench::zs_workbench_named_widget_id(
                 root,
@@ -1557,13 +1628,17 @@ impl<Msg> ViewNode<Msg> {
             for region in layout.regions.iter().filter(|region| {
                 region.kind != crate::ZsWorkbenchRegionKind::Timeline
             }) {
-                let Some((role, label, selected)) =
-                    workbench_region_accessibility(spec, region)
+                let Some((role, label, selected)) = workbench_region_accessibility(
+                    spec,
+                    region,
+                    layout.metrics.sidebar_collapsed,
+                )
                 else {
                     continue;
                 };
                 let region_parent = match region.kind {
                     crate::ZsWorkbenchRegionKind::SidebarToggle
+                    | crate::ZsWorkbenchRegionKind::SidebarViewport
                     | crate::ZsWorkbenchRegionKind::SidebarAction
                     | crate::ZsWorkbenchRegionKind::Conversation => Some(sidebar),
                     crate::ZsWorkbenchRegionKind::ToolbarAction => Some(toolbar),
@@ -1584,6 +1659,9 @@ impl<Msg> ViewNode<Msg> {
                     | crate::ZsWorkbenchRegionKind::Stop => Some(composer),
                     crate::ZsWorkbenchRegionKind::InspectorTab => {
                         inspector.map(|(_, tabs)| tabs)
+                    }
+                    crate::ZsWorkbenchRegionKind::InspectorViewport => {
+                        inspector.map(|(inspector, _)| inspector)
                     }
                     crate::ZsWorkbenchRegionKind::Timeline => timeline,
                 };
@@ -1673,7 +1751,7 @@ impl<Msg> ViewNode<Msg> {
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
             (self.id, self.bounds, &self.kind)
         {
-            let layout = spec.layout(bounds, self.layout_dpi);
+            let layout = self.resolved_workbench_layout(spec, bounds);
             for region in layout.regions.iter().filter(|region| region.enabled) {
                 let Some(bounds) = clipped_rect(region.bounds, clip) else {
                     continue;
@@ -1682,7 +1760,11 @@ impl<Msg> ViewNode<Msg> {
                     crate::ZsWorkbenchRegionKind::ComposerInput => {
                         ViewHitTargetKind::TextEditor
                     }
-                    crate::ZsWorkbenchRegionKind::Timeline => ViewHitTargetKind::Scroll,
+                    crate::ZsWorkbenchRegionKind::Timeline
+                    | crate::ZsWorkbenchRegionKind::SidebarViewport
+                    | crate::ZsWorkbenchRegionKind::InspectorViewport => {
+                        ViewHitTargetKind::Scroll
+                    }
                     _ => ViewHitTargetKind::Button,
                 };
                 hit_targets.push(ViewHitTarget::with_kind(
@@ -1690,6 +1772,44 @@ impl<Msg> ViewNode<Msg> {
                     bounds,
                     kind,
                 ));
+            }
+            for (geometry, track_kind, thumb_kind, track_id, thumb_id) in [
+                (
+                    layout.sidebar_scrollbar,
+                    0xa11c_0201,
+                    0xa11c_0202,
+                    "sidebar.scrollbar.track",
+                    "sidebar.scrollbar.thumb",
+                ),
+                (
+                    layout.inspector_scrollbar,
+                    0xa11c_0203,
+                    0xa11c_0204,
+                    "inspector.scrollbar.track",
+                    "inspector.scrollbar.thumb",
+                ),
+            ] {
+                let Some(geometry) = geometry else {
+                    continue;
+                };
+                if let Some(bounds) = clipped_rect(geometry.track, clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        crate::workbench::zs_workbench_named_widget_id(
+                            root, track_kind, track_id,
+                        ),
+                        bounds,
+                        ViewHitTargetKind::Scroll,
+                    ));
+                }
+                if let Some(bounds) = clipped_rect(geometry.thumb, clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        crate::workbench::zs_workbench_named_widget_id(
+                            root, thumb_kind, thumb_id,
+                        ),
+                        bounds,
+                        ViewHitTargetKind::Scroll,
+                    ));
+                }
             }
             return;
         }

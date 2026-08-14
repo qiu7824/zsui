@@ -629,7 +629,7 @@ pub use native::{
     NativeWindowContentReady, NativeWindowHost, NativeWindowResizeEvidence,
     NativeWindowResourcePolicy, NativeWindowRuntimeDriver, NativeWindowRuntimeDriverReport,
     NativeWindowRuntimeHandle, NativeWindowSmokeRunOptions, NativeWindowSmokeRunReport,
-    TypedNativeWindowBuilder, ZsPointerButton, ZsPointerModifiers,
+    TypedNativeWindowBuilder, UiInvalidationHandle, ZsPointerButton, ZsPointerModifiers,
 };
 #[doc(hidden)]
 pub use native_adapter_manifest::{
@@ -996,9 +996,9 @@ pub use view::{calculator_view, ZsCalculatorViewIds};
 #[doc(hidden)]
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
-    LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewHitTarget,
-    ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind, ViewOverflow,
-    ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
+    LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewFocusBehavior,
+    ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind,
+    ViewOverflow, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
 };
 #[cfg(feature = "button")]
 #[doc(hidden)]
@@ -1263,9 +1263,9 @@ pub use workbench::{
     ZsWorkbenchInspectorSpec, ZsWorkbenchInteractionEvent, ZsWorkbenchInteractionUpdate,
     ZsWorkbenchLayoutMetrics, ZsWorkbenchLayoutPlan, ZsWorkbenchLayoutRegion,
     ZsWorkbenchMessageLayout, ZsWorkbenchMessageRole, ZsWorkbenchMessageSpec,
-    ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime, ZsWorkbenchShellSpec,
-    ZsWorkbenchSidebarSpec, ZsWorkbenchSpec, ZsWorkbenchToolStatus,
-    ZS_WORKBENCH_BASE_SIDEBAR_WIDTH, ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH,
+    ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime,
+    ZsWorkbenchScrollbarGeometry, ZsWorkbenchShellSpec, ZsWorkbenchSidebarSpec, ZsWorkbenchSpec,
+    ZsWorkbenchToolStatus, ZS_WORKBENCH_BASE_SIDEBAR_WIDTH, ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH,
     ZS_WORKBENCH_COMPOSER_HEIGHT, ZS_WORKBENCH_CONTENT_MAX_WIDTH, ZS_WORKBENCH_INSPECTOR_WIDTH,
     ZS_WORKBENCH_TOP_BAR_HEIGHT,
 };

@@ -95,6 +95,33 @@ impl From<WidgetId> for crate::WidgetId {
     }
 }
 
+/// A cloneable, thread-safe request handle for rebuilding a stateful window.
+///
+/// This is intended for worker-thread results, streaming responses and other
+/// app-owned state changes that must become visible without a polling widget.
+/// Requests are coalesced and the rebuild always runs on the native UI thread.
+/// Attach each handle to exactly one window created with
+/// [`WindowBuilder::stateful`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InvalidationHandle {
+    inner: crate::UiInvalidationHandle,
+}
+
+impl InvalidationHandle {
+    /// Creates an invalidation handle that can be attached to a window.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Requests one stateful View rebuild and repaint.
+    ///
+    /// Returns `true` when a new request was queued, or `false` when an
+    /// earlier request is already waiting for the native UI thread.
+    pub fn request_rebuild(&self) -> bool {
+        self.inner.request_rebuild()
+    }
+}
+
 /// An opaque retained UI element that carries messages of type `Message`.
 ///
 /// The platform-specific render, input and accessibility objects remain
@@ -332,6 +359,19 @@ impl WindowBuilder {
     /// application state and command routing alive.
     pub fn release_view_when_hidden(mut self) -> Self {
         self.inner = self.inner.release_view_when_hidden();
+        self
+    }
+
+    /// Attaches a non-visual rebuild handle to the window's stateful View.
+    ///
+    /// Clone the handle into background work, update application-owned shared
+    /// state there, then call [`InvalidationHandle::request_rebuild`]. No
+    /// timer, animation or visible placeholder control is required. A handle
+    /// belongs to one window and this method must be followed by
+    /// [`WindowBuilder::stateful`]; fixed [`WindowBuilder::view`] content
+    /// cannot be rebuilt.
+    pub fn invalidation_handle(mut self, handle: InvalidationHandle) -> Self {
+        self.inner = self.inner.invalidation_handle(handle.inner);
         self
     }
 
