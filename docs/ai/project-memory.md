@@ -18,6 +18,12 @@ history remain authoritative for implementation status.
 
 - Preserve one shared Rust application shape across Win32, AppKit and Linux:
   `native_window(...).stateful_view(...).run()`.
+- AI-authored product UI starts from `zsui::stable` and the smallest component
+  tree that satisfies explicit regions, actions and data. Composite navigation,
+  workbench and document shells are opt-in workflow contracts, never templates
+  inferred from words such as manager, console, service, task, status or log.
+  Examples prove capabilities and must not donate unspecified regions, sample
+  data, copy or window dimensions to an application.
 - Application code must not expose platform `cfg`, raw handles, Objective-C or
   GTK objects, drawing handles, or native event loops.
 - A concise native-window entry is important, but it is only the bootstrap

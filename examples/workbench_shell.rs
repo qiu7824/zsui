@@ -124,10 +124,11 @@ fn sample_workbench() -> ZsWorkbenchShellSpec {
             .block(ZsWorkbenchContentBlock::paragraph(
                 "The workbench is product-neutral. Applications provide conversation data, commands and tool output while ZSUI owns layout, paint and hit regions.",
             ))
-            .block(ZsWorkbenchContentBlock::tool(
+            .block(ZsWorkbenchContentBlock::tool_with_status_label(
                 "Update framework",
                 "Added the shared workbench component family",
                 ZsWorkbenchToolStatus::Succeeded,
+                "Completed",
             ))
             .block(ZsWorkbenchContentBlock::code(
                 "rust",

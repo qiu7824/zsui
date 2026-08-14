@@ -2340,6 +2340,8 @@ pub enum UiWorkbenchContentBlock {
         title: String,
         summary: String,
         status: UiWorkbenchToolStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status_label: Option<String>,
     },
     Notice {
         text: String,
@@ -11623,6 +11625,45 @@ mod tests {
             diagnostic.code == UiDiagnosticCode::InvalidChildCount
                 && diagnostic.path == "$.root.children"
         }));
+    }
+
+    #[test]
+    fn workbench_tool_status_label_is_optional_and_application_owned() {
+        let messages = ui_workbench_messages_from_value(&serde_json::json!([{
+            "id": "message-1",
+            "role": "assistant",
+            "blocks": [
+                {
+                    "kind": "tool",
+                    "title": "旧文档",
+                    "summary": "没有显式状态文案",
+                    "status": "succeeded"
+                },
+                {
+                    "kind": "tool",
+                    "title": "本地化文档",
+                    "summary": "应用提供可见文案",
+                    "status": "succeeded",
+                    "status_label": "已完成"
+                }
+            ]
+        }]))
+        .expect("old and localized workbench tool blocks must both remain valid");
+
+        assert!(matches!(
+            &messages[0].blocks[0],
+            UiWorkbenchContentBlock::Tool {
+                status_label: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &messages[0].blocks[1],
+            UiWorkbenchContentBlock::Tool {
+                status_label: Some(label),
+                ..
+            } if label == "已完成"
+        ));
     }
 
     #[cfg(feature = "image-preview")]

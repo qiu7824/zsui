@@ -3784,6 +3784,7 @@ fn document_workbench_shell<Msg: Clone + 'static>(
                         title,
                         summary,
                         status,
+                        status_label,
                     } => crate::ZsWorkbenchContentBlock::Tool {
                         title,
                         summary,
@@ -3801,6 +3802,7 @@ fn document_workbench_shell<Msg: Clone + 'static>(
                                 crate::ZsWorkbenchToolStatus::Failed
                             }
                         },
+                        status_label,
                     },
                     crate::ui_document::UiWorkbenchContentBlock::Notice { text, level } => {
                         crate::ZsWorkbenchContentBlock::Notice {

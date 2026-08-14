@@ -13,20 +13,38 @@
   "packs": [
     {
       "id": "quickstart",
-      "purpose": "Public API, one-line native windows and basic declarations",
+      "purpose": "Stable public API and one-line native windows",
       "required": [
         "Cargo.toml",
+        "src/stable.rs",
+        "examples/stable_api.rs"
+      ],
+      "optional": [
+        "README.md",
         "src/lib.rs",
         "src/native.rs"
       ],
-      "optional": [
-        "examples/basic.rs",
-        "examples/rust_first_view.rs",
-        "README.md"
-      ],
       "verify": [
         "cargo test --no-default-features --quiet",
-        "cargo test --quiet"
+        "cargo check --example stable_api --no-default-features --features window,button,label"
+      ]
+    },
+    {
+      "id": "app-authoring",
+      "purpose": "Product UI authoring with explicit intent and minimum component composition",
+      "required": [
+        "docs/ai/app-authoring.md",
+        "src/stable.rs",
+        "examples/compact_service_panel.rs"
+      ],
+      "optional": [
+        "README.md",
+        "src/view/mod.rs",
+        "src/platform/experience.rs"
+      ],
+      "verify": [
+        "cargo check --example compact_service_panel --no-default-features --features window,button,label,toggle",
+        "cargo test --no-default-features --quiet"
       ]
     },
     {

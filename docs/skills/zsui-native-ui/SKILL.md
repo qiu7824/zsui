@@ -12,6 +12,9 @@ platform host into a copy of a product application.
 
 1. Read `docs/ai-agent.md` only.
 2. Select one task pack with `scripts/ai-context.ps1 -Pack <id>`.
+   Use `app-authoring` when building a product UI. Component packs such as
+   `workbench` are for modifying or verifying that framework component, not
+   templates selected from product keywords.
 3. Read only the pack's required paths and use `rg` inside them.
 4. Load optional paths only when a concrete question remains unanswered.
 5. Use `completion-audit` for framework-wide progress and
@@ -44,12 +47,18 @@ platform host into a copy of a product application.
 
 ## Common Workflow
 
-1. Identify the feature surface: app declaration audit, Cargo feature gate,
+1. Classify the task boundary. For application UI authoring, read
+   `docs/ai/app-authoring.md`, extract only the required regions/actions/data
+   and begin with the smallest stable View composition. Do not infer a
+   navigation or workbench shell from words such as manager, console, service,
+   task, status, tool or log. Examples demonstrate capabilities and are not
+   product templates.
+2. Identify the feature surface: app declaration audit, Cargo feature gate,
    window, tray/status menu, menu, hotkey, clipboard, settings, generic
    navigation/card shell layout, conversation/task workbench, document-editor
    shell, calculator engine/shell, component catalog, dialog, shell-open, file
    picker, runtime launch, adapter metadata or mobile host.
-2. Check the shared contract in `src/` before editing platform code.
+3. Check the shared contract in `src/` before editing platform code.
    Use `AppBuilder::declaration_report_for(...)` when changing app, window,
    menu, tray, hotkey or settings declaration shapes.
    For live application UI, preserve the
@@ -62,11 +71,13 @@ platform host into a copy of a product application.
    product implements `ProductAdapterHost`.
    For switch-style input, reuse `zs_toggle_render_plan(...)` from
    `src/widget_render.rs`; its geometry must stay shared with shell accessories.
-   For desktop conversation/task applications, compose
+   Only when a product explicitly requires both a message timeline and a
+   composer, compose
    `ZsWorkbenchShellSpec` from `ZsMessageTimelineSpec`, `ZsComposerSpec` and
-   `ZsInspectorPanelSpec` instead of creating product-specific navigation,
-   message, tool-output, composer and inspector layout code. Keep product
-   commands and persistence outside the workbench runtime.
+   optional `ZsInspectorPanelSpec` instead of creating product-specific
+   conversation layout code. A task list, service controller, log viewer or
+   status panel does not satisfy this gate. Keep product commands and
+   persistence outside the workbench runtime.
    Built-in visuals must consume the selected desktop component profile and
    semantic `ZsIcon` catalog. Do not add private PUA glyph strings, local
    palettes or duplicate control metrics to component modules.
@@ -78,7 +89,7 @@ platform host into a copy of a product application.
    Reuse `ZsCalculatorEngine` and `ZsCalculatorShellSpec` for standard decimal
    calculator behavior and presentation. Keep scientific/conversion modes and
    product-specific commands outside that shell until their contracts exist.
-3. For Android, inspect `mobile_runtime_host_scaffold(platform)` and
+4. For Android, inspect `mobile_runtime_host_scaffold(platform)` and
    `mobile_runtime_bridge_contract(platform)` before editing Activity
    bridge code. Use `mobile_runtime_bridge_parity_report(platform)` to check
    required callback route coverage and pending FFI symbols. Use
@@ -100,17 +111,17 @@ platform host into a copy of a product application.
    `mobile_runtime_device_smoke_trace_templates(platform)` or
    `mobile_scaffold_manifest --trace-template` to inspect the exact trace shape
    expected from a future Activity bridge.
-4. Edit platform code only for native presentation or OS service calls.
-5. Route behavior through public contracts such as `ZsuiHost`,
+5. Edit platform code only for native presentation or OS service calls.
+6. Route behavior through public contracts such as `ZsuiHost`,
    `NativeRuntimeDriver`, `NativeMainWindowHost`, `NativeDialogHost`,
    `NativeFileDialogHost`, `ClipboardHost` and `HostCapabilities`.
-6. For product adapter changes, run or update `examples/product_adapter_smoke.rs`
+7. For product adapter changes, run or update `examples/product_adapter_smoke.rs`
    so startup, command, event, AI and shutdown routing remain proven.
-7. When product adapter work touches native startup, also run or update
+8. When product adapter work touches native startup, also run or update
    `examples/product_adapter_native_driver.rs`.
-8. Update docs and source guards when a new host surface, smoke log or platform
+9. Update docs and source guards when a new host surface, smoke log or platform
    proof expectation is added.
-9. Run local Rust checks, then require target OS smoke artifacts before marking
+10. Run local Rust checks, then require target OS smoke artifacts before marking
    a backend runtime complete.
 
 ## Completion Reporting

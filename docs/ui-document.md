@@ -814,6 +814,11 @@ Workbench 示例用一份声明组合 WorkbenchShell、MessageTimeline、Compose
 InspectorPanel。四个组件共享稳定 ID、受控状态和类型化事件，目标平台继续决定字体、图标、
 布局参数与最终绘制：
 
+这不是普通工具窗口的默认模板。只有产品明确包含消息时间线和编辑器时才选择
+Workbench；服务控制、状态查看、日志阅读或少量按钮仍使用基础 View。工具块的
+`status` 只提供状态语义、图标和颜色，用户可见状态文字必须由应用通过
+`status_label` 显式提供并本地化，框架不会自动插入英文状态词。
+
 ```powershell
 cargo run --bin zsui-viewer `
   --no-default-features `

@@ -192,6 +192,8 @@ pub enum ZsWorkbenchToolStatus {
 }
 
 impl ZsWorkbenchToolStatus {
+    /// Returns the legacy English status copy for applications that explicitly
+    /// choose it. Workbench painting does not inject this text automatically.
     pub const fn label(self) -> &'static str {
         match self {
             Self::Pending => "Pending",
@@ -223,6 +225,8 @@ pub enum ZsWorkbenchContentBlock {
         title: String,
         summary: String,
         status: ZsWorkbenchToolStatus,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status_label: Option<String>,
     },
     Notice {
         text: String,
@@ -251,6 +255,22 @@ impl ZsWorkbenchContentBlock {
             title: title.into(),
             summary: summary.into(),
             status,
+            status_label: None,
+        }
+    }
+
+    /// Creates a tool block with application-owned localized status copy.
+    pub fn tool_with_status_label(
+        title: impl Into<String>,
+        summary: impl Into<String>,
+        status: ZsWorkbenchToolStatus,
+        status_label: impl Into<String>,
+    ) -> Self {
+        Self::Tool {
+            title: title.into(),
+            summary: summary.into(),
+            status,
+            status_label: Some(status_label.into()),
         }
     }
 
@@ -1757,7 +1777,11 @@ fn paint_message_block(
             title,
             summary,
             status,
+            status_label,
         } => {
+            let status_label = status_label
+                .as_deref()
+                .filter(|label| !label.trim().is_empty());
             paint_elevated_surface(
                 commands,
                 bounds,
@@ -1788,7 +1812,13 @@ fn paint_message_block(
                 Rect {
                     x: bounds.x + scale(40, dpi),
                     y: bounds.y + scale(7, dpi),
-                    width: (bounds.width - scale(140, dpi)).max(0),
+                    width: (bounds.width
+                        - if status_label.is_some() {
+                            scale(140, dpi)
+                        } else {
+                            scale(52, dpi)
+                        })
+                    .max(0),
                     height: scale(26, dpi),
                 },
                 TextRole::Button,
@@ -1797,24 +1827,26 @@ fn paint_message_block(
                 HorizontalAlign::Start,
                 TextWrap::NoWrap,
             ));
-            commands.push(text_command(
-                status.label(),
-                Rect {
-                    x: bounds.x + bounds.width - scale(100, dpi),
-                    y: bounds.y + scale(7, dpi),
-                    width: scale(88, dpi),
-                    height: scale(24, dpi),
-                },
-                TextRole::Caption,
-                if *status == ZsWorkbenchToolStatus::Failed {
-                    ColorRole::Danger
-                } else {
-                    ColorRole::SecondaryText
-                },
-                TextWeight::Regular,
-                HorizontalAlign::End,
-                TextWrap::NoWrap,
-            ));
+            if let Some(status_label) = status_label {
+                commands.push(text_command(
+                    status_label,
+                    Rect {
+                        x: bounds.x + bounds.width - scale(100, dpi),
+                        y: bounds.y + scale(7, dpi),
+                        width: scale(88, dpi),
+                        height: scale(24, dpi),
+                    },
+                    TextRole::Caption,
+                    if *status == ZsWorkbenchToolStatus::Failed {
+                        ColorRole::Danger
+                    } else {
+                        ColorRole::SecondaryText
+                    },
+                    TextWeight::Regular,
+                    HorizontalAlign::End,
+                    TextWrap::NoWrap,
+                ));
+            }
             commands.push(text_command(
                 summary,
                 Rect {
@@ -2423,10 +2455,11 @@ mod tests {
                     .block(ZsWorkbenchContentBlock::paragraph(
                         "The shell is separated into navigation, timeline, composer and inspector regions.",
                     ))
-                    .block(ZsWorkbenchContentBlock::tool(
+                    .block(ZsWorkbenchContentBlock::tool_with_status_label(
                         "Update files",
                         "Added shared layout and draw plans",
                         ZsWorkbenchToolStatus::Succeeded,
+                        "Completed",
                     ))
                     .action(ZsWorkbenchActionSpec::new(
                         "copy",
@@ -2444,6 +2477,33 @@ mod tests {
                     ))
                     .body("Changed files and runtime output are application-provided content."),
             )
+    }
+
+    #[test]
+    fn tool_status_copy_is_application_owned() {
+        let implicit =
+            ZsWorkbenchContentBlock::tool("Build", "Finished", ZsWorkbenchToolStatus::Succeeded);
+        let explicit = ZsWorkbenchContentBlock::tool_with_status_label(
+            "Build",
+            "Finished",
+            ZsWorkbenchToolStatus::Succeeded,
+            "已完成",
+        );
+
+        assert!(matches!(
+            implicit,
+            ZsWorkbenchContentBlock::Tool {
+                status_label: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            explicit,
+            ZsWorkbenchContentBlock::Tool {
+                status_label: Some(label),
+                ..
+            } if label == "已完成"
+        ));
     }
 
     #[test]

@@ -78,7 +78,8 @@
                   "kind": "tool",
                   "title": "UiDocument 结构验证",
                   "summary": "校验稳定 ID、子组件顺序、动作载荷和受控状态",
-                  "status": "succeeded"
+                  "status": "succeeded",
+                  "status_label": "已完成"
                 },
                 {
                   "kind": "code",

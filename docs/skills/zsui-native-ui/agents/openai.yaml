@@ -1,4 +1,4 @@
 interface:
   display_name: "ZSUI Native UI"
   short_description: "Work on standalone ZSUI native UI contracts and hosts."
-  default_prompt: "Read docs/ai-agent.md, select one task context pack, then modify or verify ZSUI without adding product behavior."
+  default_prompt: "Read docs/ai-agent.md and select one task context pack. For product UI authoring, use app-authoring, zsui::stable and the smallest component tree; never infer a composite shell or copy demo regions that the brief did not request."

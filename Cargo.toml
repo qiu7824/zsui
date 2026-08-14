@@ -202,6 +202,11 @@ path = "examples/stable_api.rs"
 required-features = ["window", "button", "label"]
 
 [[example]]
+name = "compact_service_panel"
+path = "examples/compact_service_panel.rs"
+required-features = ["window", "button", "label", "toggle"]
+
+[[example]]
 name = "text_geometry_proof"
 path = "examples/text_geometry_proof.rs"
 required-features = ["windows-text-proof"]

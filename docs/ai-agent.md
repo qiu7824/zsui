@@ -47,7 +47,8 @@ and is not part of normal task context.
 
 | Pack | Use it for |
 | --- | --- |
-| `quickstart` | Public entry points, one-line windows, basic examples |
+| `quickstart` | Stable public entry points and one-line windows |
+| `app-authoring` | Build a product UI from an explicit brief with the smallest component tree |
 | `features` | Cargo features, optional dependencies, compile trimming |
 | `ui-document` | Versioned UI documents, typed bindings, validation, handoff and release artifacts |
 | `ui-document-runtime` | Feature-pruned release UI-document to View compilation |
@@ -71,6 +72,15 @@ and is not part of normal task context.
 Do not load `completion-audit` just to implement a control. Do not load
 platform backends for a pure layout or engine task.
 
+Application-building tasks select `app-authoring`, not a framework component
+pack. Start from `zsui::prelude` / `zsui::stable` and the minimum View tree.
+Select `navigation-shell`, `workbench` or `document-shell` only when the brief
+explicitly requires that composition's defining regions. Words such as
+“manager”, “console”, “service”, “task”, “status” and “log” do not select a
+shell. Do not add regions, actions, example data or window dimensions that are
+absent from the product brief. The full decision contract is
+`docs/ai/app-authoring.md`.
+
 ## Non-Negotiable Engineering Rules
 
 - Reuse existing module patterns and keep edits within the selected ownership
@@ -92,7 +102,9 @@ platform backends for a pure layout or engine task.
 - Treat code-level, target-smoke and system-complete as different statuses.
   Never claim a platform complete from declarations or scaffolds alone.
 - Do not rewrite a stable native solution inside an example when a reusable
-  framework service already owns it.
+  framework service already owns the requested behavior. This rule does not
+  authorize replacing a small View composition with an unrelated composite
+  shell.
 
 ## Reading Discipline
 

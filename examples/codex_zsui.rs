@@ -223,10 +223,11 @@ fn codex_workbench(data: &CodexData) -> ZsWorkbenchSpec {
                 .block(ZsWorkbenchContentBlock::paragraph(
                     "本机任务索引可用。侧栏显示最近任务，界面状态由应用数据显式构建。",
                 ))
-                .block(ZsWorkbenchContentBlock::tool(
+                .block(ZsWorkbenchContentBlock::tool_with_status_label(
                     "读取任务索引",
                     format!("{} 个任务 · 只读", data.sessions.len()),
                     ZsWorkbenchToolStatus::Succeeded,
+                    "已完成",
                 ))
                 .block(ZsWorkbenchContentBlock::notice(
                     "未读取认证信息、对话正文或附件。",

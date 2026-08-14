@@ -637,6 +637,23 @@ window("ZSUI 稳定 API")
 当前实测为 100%。历史根模块继续用于源码兼容与后端开发，但不属于该稳定承诺。
 完整规则见[API 稳定性](docs/api-stability.md)。
 
+### 小型应用默认使用基础 View
+
+普通工具窗、服务控制面板和少量操作组成的窗口，默认使用 `column`、`row`、`text`、
+`button`、`toggle` 等基础组件。不要因为名称中出现“管理器”“控制台”“服务”“任务”或
+“日志”就套用导航、工作台、检查器或编辑器外壳；复合外壳只有在产品明确需要其完整
+工作流时才启用。
+
+```powershell
+cargo run --example compact_service_panel `
+  --no-default-features `
+  --features window,button,label,toggle
+```
+
+这个示例只保留状态与操作两个区域，不复制 Gallery 或 Workbench 的窗口尺寸、占位内容
+和附加导航。AI 编写应用时遵循[应用编写契约](docs/ai/app-authoring.md)，框架组件开发仍
+按对应 context pack 执行。
+
 ## 按需编译
 
 从 crates.io 使用：
@@ -831,6 +848,9 @@ cargo run --example image_preview --no-default-features --features window,button
 只使用普通控件的依赖图。接口与边界见[视频表面](docs/video.md)。
 
 ### 工作台
+
+仅当产品明确需要消息时间线和编辑器时使用 Workbench；“任务”“服务”“控制台”“日志”
+等名称本身不构成选择条件。工具状态的可见文字由应用显式提供，框架只持有状态语义。
 
 ```powershell
 cargo run --example workbench_shell --features full
