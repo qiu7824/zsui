@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "settings_expanded": "string_array"
+  },
+  "actions": {
+    "settings_expanded_changed": "string_array"
+  }
+}

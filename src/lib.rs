@@ -15,6 +15,9 @@ pub mod prelude {
 
 #[doc(hidden)]
 pub mod accessibility;
+#[cfg(feature = "accordion")]
+#[doc(hidden)]
+pub mod accordion;
 #[doc(hidden)]
 pub mod agent_context;
 #[doc(hidden)]
@@ -372,6 +375,9 @@ pub use accessibility::{
     ZsAccessibilityNode, ZsAccessibilityRangeInteraction, ZsAccessibilityRangeValue,
     ZsAccessibilityRole, ZsAccessibilitySpec,
 };
+#[cfg(feature = "accordion")]
+#[doc(hidden)]
+pub use accordion::{ZsAccordionChange, ZsAccordionItem, ZsAccordionItemId, ZsAccordionMode};
 #[doc(hidden)]
 pub use agent_context::{
     zsui_agent_context, zsui_agent_context_json, zsui_completion_areas,
@@ -865,6 +871,9 @@ pub use video::{
     zs_video_native_draw_command, zs_video_render_geometry, ZsVideoFit, ZsVideoPlaybackState,
     ZsVideoRenderGeometry, ZsVideoSnapshot, ZsVideoSource, ZsVideoSurfaceConfig,
 };
+#[cfg(feature = "accordion")]
+#[doc(hidden)]
+pub use view::accordion;
 #[cfg(feature = "auto-suggest")]
 #[doc(hidden)]
 pub use view::auto_suggest_box;
@@ -892,6 +901,9 @@ pub use view::command_palette;
 #[cfg(feature = "dialog")]
 #[doc(hidden)]
 pub use view::content_dialog;
+#[cfg(feature = "context-menu")]
+#[doc(hidden)]
+pub use view::context_menu;
 #[cfg(feature = "table")]
 #[doc(hidden)]
 pub use view::data_grid;

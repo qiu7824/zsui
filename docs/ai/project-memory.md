@@ -1604,6 +1604,23 @@ history remain authoritative for implementation status.
   Win32 Viewer proof at 1200x720 routed one real row click into one typed Viewer
   message with zero unhandled clicks; RSS at teardown was 17,022,976 bytes and
   Windows private bytes were 5,955,584.
+- Accordion is an opt-in composition over semantic toolbar buttons and arbitrary
+  View content. `ZsAccordionItemId` is stable, single mode owns `collapsible`,
+  multiple mode toggles independently, and every action carries the complete
+  next expanded-ID set. Content may nest another Accordion. Its UiDocument
+  contract uses direct child IDs, a complete `labels` map and paired
+  `expanded`/`expanded_change` bindings.
+- ContextMenu is the secondary-click invocation policy for MenuFlyout, not a
+  product-owned listener. The wrapper retains its pointer anchor and open menu
+  traversal across stateful View rebuilds, covers descendant controls and blank
+  page regions, and closes through the existing MenuFlyout command/dismissal
+  path. UiDocument therefore needs only one page child, the recursive menu item
+  tree and an `invoke` binding; it has no target/open bindings.
+- A timed-out Toast is retained as dismissed by `(presenter WidgetId,
+  ZsToastId)` across stateful View rebuilds until the application declaration
+  removes that identity. Result handlers may record the timeout without
+  clearing state immediately, and the same ID can be presented again after an
+  absent declaration.
 
 ## Acceptance applications
 

@@ -577,6 +577,44 @@ fn compile_node<Msg: Clone + 'static>(
             }
             control
         }
+        #[cfg(feature = "context-menu")]
+        "context_menu" => {
+            let actual = children.len();
+            let mut children = children.into_iter();
+            let Some(page) = children.next() else {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            };
+            if children.next().is_some() {
+                return Err(UiDocumentRuntimeError::InvalidChildCount {
+                    component: node.component.clone(),
+                    expected: 1,
+                    actual,
+                });
+            }
+            let menu = document_menu_flyout(node, properties)?;
+            let mut control = crate::context_menu(node.id.widget_id(), menu, page);
+            if let Some(binding) = node.action_bindings.get("invoke") {
+                let mapper = mapper.clone();
+                let node_id = node.id.as_str().to_owned();
+                let binding = binding.clone();
+                control = control.on_menu_flyout_command_with(move |command| {
+                    let crate::Command::Custom { id, payload: None } = command else {
+                        unreachable!("document ContextMenu emits only stable custom item IDs");
+                    };
+                    mapper.map(UiDocumentAction {
+                        node_id: node_id.clone(),
+                        binding: binding.clone(),
+                        property_binding: None,
+                        payload: Value::String(id),
+                    })
+                });
+            }
+            control
+        }
         #[cfg(feature = "flyout")]
         "flyout" => {
             let actual = children.len();
@@ -1568,6 +1606,90 @@ fn compile_node<Msg: Clone + 'static>(
                 });
             }
             control
+        }
+        #[cfg(feature = "accordion")]
+        "accordion" => {
+            let labels = string_map_property(node, properties, "labels");
+            let item_ids = node
+                .children
+                .iter()
+                .map(|child| {
+                    (
+                        crate::ZsAccordionItemId::new(child.id.widget_id().0),
+                        child.id.as_str().to_owned(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let items = node
+                .children
+                .iter()
+                .zip(children)
+                .zip(&item_ids)
+                .map(|((child, content), (item_id, _))| {
+                    crate::ZsAccordionItem::new(
+                        *item_id,
+                        labels
+                            .get(child.id.as_str())
+                            .cloned()
+                            .unwrap_or_else(|| child.id.as_str().to_owned()),
+                        content,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let expanded_names = string_array_property(node, properties, "expanded");
+            let expanded = item_ids
+                .iter()
+                .filter(|(_, node_id)| expanded_names.contains(node_id))
+                .map(|(item_id, _)| *item_id)
+                .collect::<Vec<_>>();
+            let mode = match optional_string_property(node, properties, "mode").as_deref() {
+                None | Some("single") => crate::ZsAccordionMode::single(bool_property(
+                    node,
+                    properties,
+                    "collapsible",
+                    true,
+                )),
+                Some("multiple") => crate::ZsAccordionMode::multiple(),
+                Some(mode) => {
+                    return Err(invalid_resolved_property(
+                        node,
+                        "mode",
+                        format!("unsupported accordion mode {mode:?}"),
+                    ));
+                }
+            };
+            let binding = node
+                .action_bindings
+                .get("expanded_change")
+                .cloned()
+                .ok_or_else(|| {
+                    invalid_resolved_property(
+                        node,
+                        "action_bindings.expanded_change",
+                        "accordion requires an expanded_change action binding",
+                    )
+                })?;
+            let mapper = mapper.clone();
+            let node_id = node.id.as_str().to_owned();
+            let property_binding = node.property_bindings.get("expanded").cloned();
+            crate::accordion(node.id.widget_id(), items, expanded, mode, move |change| {
+                let payload = change
+                    .next_expanded
+                    .iter()
+                    .filter_map(|expanded| {
+                        item_ids
+                            .iter()
+                            .find(|(item_id, _)| item_id == expanded)
+                            .map(|(_, node_id)| Value::String(node_id.clone()))
+                    })
+                    .collect::<Vec<_>>();
+                mapper.map(UiDocumentAction {
+                    node_id: node_id.clone(),
+                    binding: binding.clone(),
+                    property_binding: property_binding.clone(),
+                    payload: Value::Array(payload),
+                })
+            })
         }
         #[cfg(feature = "progress")]
         "progress_bar" => crate::progress_bar(
@@ -3574,6 +3696,7 @@ fn grid_gap_property(
     feature = "breadcrumb",
     feature = "flyout",
     feature = "menu-flyout",
+    feature = "accordion",
     feature = "grid",
     feature = "list",
     feature = "progress-ring",
@@ -5166,7 +5289,7 @@ fn optional_string_property(
     property_value(node, properties, property).and_then(|value| value.as_str().map(str::to_owned))
 }
 
-#[cfg(feature = "tabs")]
+#[cfg(any(feature = "tabs", feature = "accordion"))]
 fn string_map_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -5192,7 +5315,7 @@ fn document_tab_id(node: &UiNode) -> crate::ZsTabId {
     crate::ZsTabId::new(node.id.widget_id().0 & DOCUMENT_ID_PAYLOAD_MASK)
 }
 
-#[cfg(feature = "combo")]
+#[cfg(any(feature = "combo", feature = "accordion"))]
 fn string_array_property(
     node: &UiNode,
     properties: &BTreeMap<String, Value>,
@@ -5361,6 +5484,7 @@ mod tests {
         feature = "grid-view",
         feature = "table",
         feature = "grid",
+        feature = "accordion",
         feature = "list",
         feature = "virtual-list",
         feature = "image-preview",
@@ -7524,6 +7648,144 @@ mod tests {
                         == crate::ui_document::UiDiagnosticCode::BindingValueTypeMismatch
                         && diagnostic.path == "$.file_menu_items")
         ));
+    }
+
+    #[cfg(all(feature = "accordion", feature = "label"))]
+    #[test]
+    fn compiles_controlled_accordion_and_emits_complete_expanded_child_ids() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "details",
+                "component": "accordion",
+                "properties": {
+                  "labels": { "general": "General", "advanced": "Advanced" },
+                  "mode": "multiple"
+                },
+                "property_bindings": { "expanded": "details_expanded" },
+                "action_bindings": { "expanded_change": "details_expanded_changed" },
+                "children": [
+                  { "id": "general", "component": "text", "properties": { "text": "General content" } },
+                  { "id": "advanced", "component": "text", "properties": { "text": "Advanced content" } }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "details_expanded".to_owned(),
+                crate::ui_document::UiValueType::StringArray,
+            )]),
+            actions: BTreeMap::from([(
+                "details_expanded_changed".to_owned(),
+                crate::ui_document::UiValueType::StringArray,
+            )]),
+        };
+        let values = BTreeMap::from([(
+            "details_expanded".to_owned(),
+            serde_json::json!(["general"]),
+        )]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            Dpi::standard(),
+        ));
+
+        let advanced = crate::ZsAccordionItemId::new(document.root.children[1].id.widget_id().0);
+        let advanced_header =
+            crate::WidgetId::synthetic_child(document.root.id.widget_id(), advanced.0);
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::Click {
+                widget: advanced_header,
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(change)] = messages.as_slice() else {
+            panic!("accordion toggle must emit one complete expanded-state action");
+        };
+        assert_eq!(change.binding, "details_expanded_changed");
+        assert_eq!(change.property_binding.as_deref(), Some("details_expanded"));
+        assert_eq!(change.payload, serde_json::json!(["general", "advanced"]));
+    }
+
+    #[cfg(all(feature = "context-menu", feature = "label"))]
+    #[test]
+    fn compiles_context_menu_without_target_or_open_state_bindings() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "row-menu",
+                "component": "context_menu",
+                "property_bindings": { "items": "row_menu_items" },
+                "action_bindings": { "invoke": "row_menu_invoked" },
+                "children": [{
+                  "id": "table-area",
+                  "component": "stack",
+                  "children": [{ "id": "row-copy", "component": "text", "properties": { "text": "Right-click anywhere" } }]
+                }]
+              }
+            }"#,
+        )
+        .unwrap();
+        let bindings = UiBindingSchema {
+            properties: BTreeMap::from([(
+                "row_menu_items".to_owned(),
+                crate::ui_document::UiValueType::MenuFlyoutItemArray,
+            )]),
+            actions: BTreeMap::from([(
+                "row_menu_invoked".to_owned(),
+                crate::ui_document::UiValueType::MenuFlyoutItemId,
+            )]),
+        };
+        let values = BTreeMap::from([(
+            "row_menu_items".to_owned(),
+            serde_json::json!([{ "kind": "command", "id": "inspect", "label": "Inspect" }]),
+        )]);
+        let mut view = ui_document_view(&document, &bindings, &values, Msg::Action).unwrap();
+        let widget = document.root.id.widget_id();
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            Dpi::standard(),
+        ));
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::ContextMenuRequested {
+                widget,
+                anchor: crate::Point { x: 420, y: 260 },
+            },
+        );
+        assert!(events.into_messages().is_empty());
+
+        let mut events = crate::ViewEventCx::new();
+        view.event(
+            &mut events,
+            &crate::ViewEvent::MenuFlyoutInvoked {
+                widget,
+                path: crate::ZsMenuFlyoutPath::root(0),
+            },
+        );
+        let messages = events.into_messages();
+        let [Msg::Action(invoked)] = messages.as_slice() else {
+            panic!("context menu invocation must emit one semantic item action");
+        };
+        assert_eq!(invoked.binding, "row_menu_invoked");
+        assert_eq!(invoked.payload, Value::String("inspect".to_owned()));
     }
 
     #[cfg(all(feature = "flyout", feature = "button", feature = "label"))]

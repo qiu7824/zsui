@@ -260,6 +260,11 @@ pub enum ViewEvent {
         widget: WidgetId,
         open: bool,
     },
+    #[cfg(feature = "context-menu")]
+    ContextMenuRequested {
+        widget: WidgetId,
+        anchor: Point,
+    },
     #[cfg(feature = "info-bar")]
     InfoBarFocused {
         widget: WidgetId,
@@ -534,6 +539,8 @@ pub enum ViewHitTargetKind {
     FlyoutScrim,
     #[cfg(feature = "menu-flyout")]
     MenuFlyout,
+    #[cfg(feature = "context-menu")]
+    ContextMenuRegion,
     #[cfg(feature = "menu-flyout")]
     MenuFlyoutScrim,
     #[cfg(feature = "menu-flyout")]
@@ -1021,6 +1028,8 @@ impl ViewHitTargetKind {
             Self::FlyoutScrim => ViewFocusBehavior::None,
             #[cfg(feature = "menu-flyout")]
             Self::MenuFlyoutScrim | Self::MenuFlyoutItem { .. } => ViewFocusBehavior::None,
+            #[cfg(feature = "context-menu")]
+            Self::ContextMenuRegion => ViewFocusBehavior::None,
             #[cfg(feature = "command-palette")]
             Self::CommandPaletteScrim
             | Self::CommandPaletteClear

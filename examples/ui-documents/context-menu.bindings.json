@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "records_menu_items": "menu_flyout_item_array"
+  },
+  "actions": {
+    "records_menu_invoked": "menu_flyout_item_id"
+  }
+}

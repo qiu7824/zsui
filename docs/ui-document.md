@@ -223,7 +223,7 @@ cargo run --bin zsui-uic `
 `text`、`badge`、`split_view`、`canvas`、`icon`、`button`、`toggle_button`、`checkbox`、`toggle`、`textbox`、
 `radio_button`、`slider`、`number_box`、`combo_box`、`auto_suggest`、`command_palette`、`tree`、`grid_view`、`table`、`date_picker`、`time_picker`、`color_picker`、`password_box`、`list`、`tabs`、`grid`、
 `progress_bar`、`progress_ring`、`toast`、`info_bar`、`content_dialog`、`tooltip`、
-`teaching_tip`、`flyout`、`menu_flyout`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
+`teaching_tip`、`flyout`、`menu_flyout`、`context_menu`、`accordion`、`breadcrumb`、`navigation`、`command_bar` 和 `scroll`。
 其他已存在的 ZSUI 组件会被识别为“尚未进入 UiDocument schema”，不会被误报为未知组件。
 
 ## 布局与文字完整性
@@ -465,6 +465,16 @@ Toast；超时仍沿用平台运行时的计时器。Toast 的定位、圆角、
 `open_change` 形成受控状态闭环。发布运行时只将稳定作者 ID 映射为私有 `Command`，不会
 执行产品命令或引入字符串事件总线；行高、级联方向、选中标记、快捷键显示、字体和延时
 继续由 Win32、AppKit 与 Linux 各自的 MenuFlyout profile 和原生宿主决定。
+
+`context_menu` 恰好包装一个普通页面子树并复用 `menu_flyout_item_array` 与
+`menu_flyout_item_id`。它不声明 `target` 或 `open`：宿主把包装区域中的右键直接路由到
+拥有者，在指针位置打开菜单并负责轻量关闭；`invoke` 只返回稳定命令 ID。表格行、树节点
+和空白布局区域可以使用同一声明，不需要文档作者添加右键监听器或计算弹层坐标。
+
+`accordion` 的每个直接子节点是一段任意 View 内容，`labels` 必须完整映射稳定子节点 ID。
+`mode` 接受 `single` 或 `multiple`；单选模式可用 `collapsible` 控制最后一个展开项能否
+关闭。`expanded` string 数组与 `expanded_change` 动作组成受控闭环，动作总是返回完整的
+下一展开 ID 集合。内容子树可以继续声明 Accordion，嵌套层级不参与项目身份。
 
 `breadcrumb.items` 使用 `breadcrumb_item_array`，每个路径项包含唯一稳定字符串 ID 和
 非空标签；数组顺序只表达从根到当前位置的路径，不作为项目身份。`expanded` 与
@@ -1025,7 +1035,7 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-全部 49 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
+全部 51 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
 身份：绑定类型和普通/安全存储通道兼容时保留值；绑定被删除、改型或改变存储通道时，
 `source.last_reload.binding_state_resets` 输出确定性原因，旧值不会进入新 View 编译。Win32、
 AppKit 与 Linux Direct 均已有固定 Runner Viewer 证据；仍需补齐高级控件在 AppKit/Linux

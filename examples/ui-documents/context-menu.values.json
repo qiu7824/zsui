@@ -1,0 +1,22 @@
+{
+  "records_menu_items": [
+    {
+      "kind": "command",
+      "id": "open",
+      "label": "打开 / Open"
+    },
+    {
+      "kind": "command",
+      "id": "rename",
+      "label": "重命名 / Rename"
+    },
+    {
+      "kind": "separator"
+    },
+    {
+      "kind": "command",
+      "id": "delete",
+      "label": "删除 / Delete"
+    }
+  ]
+}

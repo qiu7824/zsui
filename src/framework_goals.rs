@@ -165,7 +165,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "a versioned semantic UiDocument, explicit typed binding manifest, schema validator, prebuilt native Viewer, stable-ID patches and release-time embedding",
             "a global string event bus, arbitrary reflection, browser pixels presented as native proof, development watchers in release builds or a mandatory two-process application runtime",
             "src/ui_document.rs, src/ui_document_runtime.rs, src/ui_viewer.rs, src/bin/zsui-uic.rs, src/bin/zsui-viewer.rs, docs/ui-document.md",
-            "keep all 49 catalog families, typed binding compatibility, stable-ID state retention, three-platform Viewer proof and release embedding aligned as components evolve; defer the full drag-and-drop editor",
+            "keep all 51 catalog families, typed binding compatibility, stable-ID state retention, three-platform Viewer proof and release embedding aligned as components evolve; defer the full drag-and-drop editor",
         ),
         ZsuiRustFirstGoal::new(
             "result_error_handling",

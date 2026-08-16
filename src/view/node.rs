@@ -224,6 +224,7 @@ const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
 #[cfg(any(
     all(feature = "dialog", feature = "accessibility"),
     feature = "tabs",
+    feature = "accordion",
     feature = "workbench",
     all(feature = "shell", feature = "ui-document-runtime")
 ))]
@@ -236,6 +237,7 @@ impl WidgetId {
     #[cfg(any(
         all(feature = "dialog", feature = "accessibility"),
         feature = "tabs",
+        feature = "accordion",
         feature = "workbench",
         all(feature = "shell", feature = "ui-document-runtime")
     ))]
@@ -1055,6 +1057,10 @@ pub enum ViewNodeKind<Msg> {
         menu: crate::MenuSpec,
         open: bool,
         target: WidgetId,
+        #[cfg(feature = "context-menu")]
+        context_trigger: bool,
+        #[cfg(feature = "context-menu")]
+        context_anchor: Option<Point>,
         highlighted: Option<crate::ZsMenuFlyoutPath>,
         open_submenus: Vec<crate::ZsMenuFlyoutPath>,
         on_command: Option<ViewMessageMapper<crate::Command, Msg>>,
@@ -1341,6 +1347,107 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "workbench")]
             workbench_transient_source,
             message: PhantomData,
+        }
+    }
+
+    #[cfg(feature = "toast")]
+    pub(crate) fn collect_active_toasts(
+        &self,
+        active: &mut Vec<(WidgetId, crate::ZsToastId)>,
+    ) {
+        if let (Some(widget), ViewNodeKind::ToastPresenter { toast: Some(toast), .. }) =
+            (self.id, &self.kind)
+        {
+            active.push((widget, toast.id()));
+        }
+        for child in &self.children {
+            child.collect_active_toasts(active);
+        }
+    }
+
+    #[cfg(feature = "toast")]
+    pub(crate) fn dismiss_toast(&mut self, widget: WidgetId, toast_id: crate::ZsToastId) {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::ToastPresenter { toast, .. } = &mut self.kind {
+                if toast.as_ref().is_some_and(|toast| toast.id() == toast_id) {
+                    *toast = None;
+                }
+            }
+        }
+        for child in &mut self.children {
+            child.dismiss_toast(widget, toast_id);
+        }
+    }
+
+    #[cfg(feature = "context-menu")]
+    pub(crate) fn collect_context_menu_states(
+        &self,
+        states: &mut Vec<(
+            WidgetId,
+            bool,
+            Option<Point>,
+            Option<crate::ZsMenuFlyoutPath>,
+            Vec<crate::ZsMenuFlyoutPath>,
+        )>,
+    ) {
+        if let (
+            Some(widget),
+            ViewNodeKind::MenuFlyout {
+                open,
+                context_trigger: true,
+                context_anchor,
+                highlighted,
+                open_submenus,
+                ..
+            },
+        ) = (self.id, &self.kind)
+        {
+            states.push((
+                widget,
+                *open,
+                *context_anchor,
+                *highlighted,
+                open_submenus.clone(),
+            ));
+        }
+        for child in &self.children {
+            child.collect_context_menu_states(states);
+        }
+    }
+
+    #[cfg(feature = "context-menu")]
+    pub(crate) fn restore_context_menu_states(
+        &mut self,
+        states: &[(
+            WidgetId,
+            bool,
+            Option<Point>,
+            Option<crate::ZsMenuFlyoutPath>,
+            Vec<crate::ZsMenuFlyoutPath>,
+        )],
+    ) {
+        if let Some(widget) = self.id {
+            if let ViewNodeKind::MenuFlyout {
+                open,
+                context_trigger: true,
+                context_anchor,
+                highlighted,
+                open_submenus,
+                ..
+            } = &mut self.kind
+            {
+                if let Some((_, retained_open, retained_anchor, retained_highlight, retained_stack)) =
+                    states.iter().find(|(candidate, ..)| *candidate == widget)
+                {
+                    *open = *retained_open;
+                    *context_anchor = *retained_anchor;
+                    *highlighted = *retained_highlight;
+                    *open_submenus = retained_stack.clone();
+                }
+            }
+        }
+        for child in &mut self.children {
+            child.restore_context_menu_states(states);
         }
     }
 

@@ -176,6 +176,8 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::MenuFlyoutSubmenuChanged { widget, .. })
             | (Some(id), ViewEvent::MenuFlyoutInvoked { widget, .. })
             | (Some(id), ViewEvent::MenuFlyoutOpenChanged { widget, .. }) => id == *widget,
+            #[cfg(feature = "context-menu")]
+            (Some(id), ViewEvent::ContextMenuRequested { widget, .. }) => id == *widget,
             #[cfg(feature = "info-bar")]
             (Some(id), ViewEvent::InfoBarFocused { widget, .. })
             | (Some(id), ViewEvent::InfoBarInvoked { widget, .. }) => id == *widget,
@@ -1816,6 +1818,24 @@ impl<Msg> ViewNode<Msg> {
 
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
+            #[cfg(feature = "context-menu")]
+            if let (
+                Some(widget),
+                Some(bounds),
+                ViewNodeKind::MenuFlyout {
+                    context_trigger: true,
+                    ..
+                },
+            ) = (self.id, self.bounds, &self.kind)
+            {
+                if let Some(bounds) = clipped_rect(bounds, clip) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::ContextMenuRegion,
+                    ));
+                }
+            }
             if let Some(page) = self.children.first() {
                 page.collect_hit_targets(hit_targets, clip);
             }
@@ -2501,6 +2521,8 @@ impl<Msg> ViewNode<Msg> {
             menu,
             open,
             target,
+            #[cfg(feature = "context-menu")]
+            context_anchor,
             highlighted,
             open_submenus,
             ..
@@ -2514,6 +2536,15 @@ impl<Msg> ViewNode<Msg> {
                 .children
                 .first()
                 .and_then(|page| page.widget_layout_bounds(*target));
+            #[cfg(feature = "context-menu")]
+            let target_bounds = context_anchor
+                .map(|anchor| Rect {
+                    x: anchor.x,
+                    y: anchor.y,
+                    width: 1,
+                    height: 1,
+                })
+                .or(target_bounds);
             if let (true, Some(widget), Some(viewport), Some(target_bounds)) =
                 (*open, self.id, menu_viewport, target_bounds)
             {
@@ -3135,6 +3166,8 @@ impl<Msg> ViewNode<Msg> {
             menu,
             open,
             target,
+            #[cfg(feature = "context-menu")]
+            context_anchor,
             highlighted,
             open_submenus,
             ..
@@ -3148,6 +3181,15 @@ impl<Msg> ViewNode<Msg> {
                 .children
                 .first()
                 .and_then(|page| page.widget_layout_bounds(*target));
+            #[cfg(feature = "context-menu")]
+            let target_bounds = context_anchor
+                .map(|anchor| Rect {
+                    x: anchor.x,
+                    y: anchor.y,
+                    width: 1,
+                    height: 1,
+                })
+                .or(target_bounds);
             if let (true, Some(viewport), Some(target_bounds)) =
                 (*open, menu_viewport, target_bounds)
             {

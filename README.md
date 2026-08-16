@@ -692,7 +692,7 @@ zsui = { version = "0.2.0", default-features = false, features = [
 ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
 控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
 删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
-`password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`grid-view`、`auto-suggest`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
+`password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`accordion`、`context-menu`、`grid-view`、`auto-suggest`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
 开启；原生文本无障碍桥接也只在显式开启时进入编译。`accessibility` 提供共享语义、
 Win32 UI Automation Edit/Value/TextPattern、AppKit Accessibility 和 GTK4
 Accessibility；`linux-direct-accessibility` 才额外编译 AccessKit/AccessKit-Winit 并
@@ -764,7 +764,7 @@ Windows、AppKit 或 Linux 枚举。发布运行时把条目映射为稳定的�
 `minimum_content_width` 只表达应用约束，不覆盖各平台的字体、间距、折叠与选中样式。
 `scroll` 以一个内容子树、显式内容高度、受控偏移和 number 动作构成闭环，布局
 会夹取越界偏移；绑定后的状态在 View 重建后继续保留，不使用全局注册表。v0.2 的
-49 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
+51 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
 富文本对象、任意模板与大型数据源编辑属于后续增量能力。
 
 多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
@@ -785,9 +785,12 @@ ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；�
 | 视频/摄像头预览 | 线程安全的最新帧源、无界队列抑制、播放状态与按需刷新、Contain/Cover/Stretch | `video` |
 | 分页虚拟列表 | 可见区绘制、方向感知预取、请求去重、LRU 页缓存、同步重排锚点 | `paged-list` |
 
-组件目录记录 49 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
+组件目录记录 51 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
 内容，并由 Windows、macOS 与 Linux 的独立组件 profile 决定放置、圆角、箭头和间距。
 控件均通过独立 Cargo feature 按需启用，并复用强类型状态、布局、绘制和事件协议。
+Accordion 使用稳定项目 ID、单选/多选展开策略和完整的下一展开集合，并允许内容继续
+嵌套 Accordion。Context Menu 包装任意页面、表格、树或空白区域；宿主直接处理右键、
+指针锚点、轻量关闭和键盘菜单导航，应用只接收类型化命令。
 详细能力与验证状态以 [`src/component_catalog.rs`](src/component_catalog.rs) 和
 [`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md) 为准。
 
@@ -967,7 +970,7 @@ Linux/macOS 桌面目标。
 ## v0.2 之后
 
 - v0.2 的桌面发布门槛已经覆盖三平台原生窗口、最终表面、共享布局/输入、菜单、
-  剪贴板、文件面板、IME 协议、辅助功能桥接、49 个组件运行面和可裁剪构建。
+  剪贴板、文件面板、IME 协议、辅助功能桥接、51 个组件运行面和可裁剪构建。
 - 后续版本可继续扩展 UIA 富文本属性与嵌入对象范围、富文本编辑、任意数据模板、
   大型 TreeView/DataGrid 虚拟化和更完整的拖放/触摸交互；这些增量不改变 v0.2 API 闭环。
 - 真实中文输入法候选窗、VoiceOver/Narrator/Orca 以及更多桌面环境仍采用发布前人工

@@ -4751,12 +4751,14 @@ impl UiFeatureSet {
             };
         }
         include_feature!("button");
+        include_feature!("accordion");
         include_feature!("badge");
         include_feature!("split-view");
         include_feature!("breadcrumb");
         include_feature!("canvas");
         include_feature!("flyout");
         include_feature!("menu-flyout");
+        include_feature!("context-menu");
         include_feature!("toggle-button");
         include_feature!("label");
         include_feature!("grid");
@@ -6400,6 +6402,104 @@ impl<'a> UiDocumentValidator<'a> {
             }
         }
 
+        if node.component == "accordion" {
+            let child_ids = node
+                .children
+                .iter()
+                .map(|child| child.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if let Some(labels) = node.properties.get("labels").and_then(Value::as_object) {
+                let label_ids = labels.keys().map(String::as_str).collect::<BTreeSet<_>>();
+                if label_ids != child_ids {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.labels"),
+                        "accordion labels must cover exactly the direct child IDs".to_owned(),
+                    );
+                }
+            }
+            if let Some(expanded) = node.properties.get("expanded").and_then(Value::as_array) {
+                let expanded = expanded
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>();
+                if expanded.iter().any(|id| !child_ids.contains(id)) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.expanded"),
+                        "accordion expanded IDs must address direct children".to_owned(),
+                    );
+                }
+                if expanded.iter().copied().collect::<BTreeSet<_>>().len() != expanded.len() {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.expanded"),
+                        "accordion expanded IDs must be unique".to_owned(),
+                    );
+                }
+                let mode = node
+                    .properties
+                    .get("mode")
+                    .and_then(Value::as_str)
+                    .unwrap_or("single");
+                if mode == "single" && expanded.len() > 1 {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidPropertyValue,
+                        format!("{path}.properties.expanded"),
+                        "single accordion mode accepts at most one expanded child".to_owned(),
+                    );
+                }
+            }
+            if node
+                .properties
+                .get("mode")
+                .and_then(Value::as_str)
+                .is_some_and(|mode| !matches!(mode, "single" | "multiple"))
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::InvalidPropertyValue,
+                    format!("{path}.properties.mode"),
+                    "accordion mode must be single or multiple".to_owned(),
+                );
+            }
+            if !node.action_bindings.contains_key("expanded_change") {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::UnresolvedActionBinding,
+                    format!("{path}.action_bindings.expanded_change"),
+                    "accordion requires an expanded_change action binding".to_owned(),
+                );
+            }
+            if node.property_bindings.contains_key("expanded")
+                != node.action_bindings.contains_key("expanded_change")
+            {
+                push_diagnostic(
+                    diagnostics,
+                    UiDiagnosticCode::UnresolvedActionBinding,
+                    format!("{path}.action_bindings.expanded_change"),
+                    "bound accordion expanded state and expanded_change action must be declared together"
+                        .to_owned(),
+                );
+            }
+            for property in ["expanded", "mode", "collapsible"] {
+                if node.localization.contains_key(property) {
+                    push_diagnostic(
+                        diagnostics,
+                        UiDiagnosticCode::InvalidLocalization,
+                        format!("{path}.localization.{property}"),
+                        format!(
+                            "accordion {property:?} is structural state and cannot be localized"
+                        ),
+                    );
+                }
+            }
+        }
+
         if node.component == "list" {
             let child_ids = node
                 .children
@@ -6750,6 +6850,15 @@ impl<'a> UiDocumentValidator<'a> {
                     "bound menu_flyout open state requires an open_change action".to_owned(),
                 );
             }
+        }
+
+        if node.component == "context_menu" && !node.action_bindings.contains_key("invoke") {
+            push_diagnostic(
+                diagnostics,
+                UiDiagnosticCode::UnresolvedActionBinding,
+                format!("{path}.action_bindings.invoke"),
+                "context_menu requires an invoke action binding".to_owned(),
+            );
         }
 
         if node.component == "content_dialog" {
@@ -7914,6 +8023,41 @@ const TABS_ACTIONS: &[ActionSpec] = &[ActionSpec {
     name: "select",
     payload_type: UiValueType::String,
 }];
+const ACCORDION_PROPERTIES: &[PropertySpec] = &[
+    PropertySpec {
+        name: "labels",
+        value_type: UiValueType::StringMap,
+        required: true,
+    },
+    PropertySpec {
+        name: "expanded",
+        value_type: UiValueType::StringArray,
+        required: true,
+    },
+    PropertySpec {
+        name: "mode",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
+        name: "collapsible",
+        value_type: UiValueType::Boolean,
+        required: false,
+    },
+];
+const ACCORDION_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "expanded_change",
+    payload_type: UiValueType::StringArray,
+}];
+const CONTEXT_MENU_PROPERTIES: &[PropertySpec] = &[PropertySpec {
+    name: "items",
+    value_type: UiValueType::MenuFlyoutItemArray,
+    required: true,
+}];
+const CONTEXT_MENU_ACTIONS: &[ActionSpec] = &[ActionSpec {
+    name: "invoke",
+    payload_type: UiValueType::MenuFlyoutItemId,
+}];
 const LIST_PROPERTIES: &[PropertySpec] = &[PropertySpec {
     name: "selected",
     value_type: UiValueType::String,
@@ -8326,6 +8470,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
             actions: TABS_ACTIONS,
             children: ChildPolicy::AtLeast(1),
         }),
+        "accordion" => Some(ComponentSchema {
+            properties: ACCORDION_PROPERTIES,
+            actions: ACCORDION_ACTIONS,
+            children: ChildPolicy::AtLeast(1),
+        }),
         "list" => Some(ComponentSchema {
             properties: LIST_PROPERTIES,
             actions: LIST_ACTIONS,
@@ -8349,6 +8498,11 @@ fn component_schema(component: &str) -> Option<ComponentSchema> {
         "menu_flyout" => Some(ComponentSchema {
             properties: MENU_FLYOUT_PROPERTIES,
             actions: MENU_FLYOUT_ACTIONS,
+            children: ChildPolicy::Exactly(1),
+        }),
+        "context_menu" => Some(ComponentSchema {
+            properties: CONTEXT_MENU_PROPERTIES,
+            actions: CONTEXT_MENU_ACTIONS,
             children: ChildPolicy::Exactly(1),
         }),
         "info_bar" => Some(leaf(INFO_BAR_PROPERTIES, INFO_BAR_ACTIONS)),
@@ -11541,7 +11695,7 @@ mod tests {
             missing.is_empty(),
             "missing UiDocument schemas: {missing:?}"
         );
-        assert_eq!(crate::component_catalog::zsui_component_catalog().len(), 49);
+        assert_eq!(crate::component_catalog::zsui_component_catalog().len(), 51);
     }
 
     #[test]

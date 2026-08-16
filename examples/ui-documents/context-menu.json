@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "records-context-menu",
+    "component": "context_menu",
+    "property_bindings": {
+      "items": "records_menu_items"
+    },
+    "action_bindings": {
+      "invoke": "records_menu_invoked"
+    },
+    "children": [
+      {
+        "id": "records-area",
+        "component": "stack",
+        "layout": {
+          "direction": "vertical",
+          "padding_token": "content_padding"
+        },
+        "children": [
+          {
+            "id": "records-hint",
+            "component": "text",
+            "properties": {
+              "text": "右键单击行或空白区域 / Right-click a row or blank area"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

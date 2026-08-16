@@ -1,4 +1,6 @@
 include!("button.rs");
+#[cfg(feature = "accordion")]
+include!("accordion.rs");
 #[cfg(feature = "badge")]
 include!("badge.rs");
 #[cfg(feature = "split-view")]

@@ -445,6 +445,8 @@ where
     revision: u64,
     animation_epoch: std::time::Instant,
     suspended: bool,
+    #[cfg(feature = "toast")]
+    dismissed_toasts: Vec<(WidgetId, crate::ZsToastId)>,
 }
 
 impl<State, Msg, ViewFn, UpdateFn> TypedLiveViewDriver<State, Msg, ViewFn, UpdateFn>
@@ -476,6 +478,8 @@ where
             revision: 0,
             animation_epoch: std::time::Instant::now(),
             suspended: false,
+            #[cfg(feature = "toast")]
+            dismissed_toasts: Vec::new(),
         };
         driver.layout_current_view();
         driver
@@ -486,6 +490,25 @@ where
             return;
         }
         let next_view = (self.view_fn)(&self.state);
+        #[cfg(any(feature = "toast", feature = "context-menu"))]
+        let mut next_view = next_view;
+        #[cfg(feature = "toast")]
+        {
+            let mut declared_toasts = Vec::new();
+            next_view.collect_active_toasts(&mut declared_toasts);
+            self.dismissed_toasts
+                .retain(|dismissed| declared_toasts.contains(dismissed));
+            for (widget, toast) in &self.dismissed_toasts {
+                next_view.dismiss_toast(*widget, *toast);
+            }
+        }
+        #[cfg(feature = "context-menu")]
+        {
+            let mut context_menu_states = Vec::new();
+            self.view
+                .collect_context_menu_states(&mut context_menu_states);
+            next_view.restore_context_menu_states(&context_menu_states);
+        }
         #[cfg(feature = "scroll")]
         let mut next_view = next_view;
         #[cfg(feature = "scroll")]
@@ -655,6 +678,17 @@ where
                 revision: self.revision,
                 ..LiveViewUpdate::default()
             };
+        }
+        #[cfg(feature = "toast")]
+        if let ViewEvent::ToastResponded { widget, toast, .. } = event {
+            if self
+                .view
+                .widget_toast_state(*widget)
+                .is_some_and(|(state, _)| state.toast == Some(*toast))
+                && !self.dismissed_toasts.contains(&(*widget, *toast))
+            {
+                self.dismissed_toasts.push((*widget, *toast));
+            }
         }
         let mut event_cx = ViewEventCx::new();
         self.view.event(&mut event_cx, event);

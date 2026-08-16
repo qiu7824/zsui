@@ -96,6 +96,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "button component declarations and base widget surface",
         ),
         ZsuiCargoFeature::new(
+            "accordion",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["button", "label"],
+            "typed single or multiple disclosure sections with arbitrary nested View content",
+        ),
+        ZsuiCargoFeature::new(
             "badge",
             Widget,
             false,
@@ -158,6 +166,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Vec::new(),
             vec!["widgets-base"],
             "anchored menu overlay with typed commands, platform-adaptive metrics and keyboard routing",
+        ),
+        ZsuiCargoFeature::new(
+            "context-menu",
+            Widget,
+            false,
+            Vec::new(),
+            vec!["menu-flyout"],
+            "secondary-click menu wrapper with framework-owned invocation, pointer anchoring and dismissal",
         ),
         ZsuiCargoFeature::new(
             "widgets-base",
@@ -504,6 +520,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "ui-document-runtime",
                 "window",
                 "button",
+                "accordion",
                 "badge",
                 "split-view",
                 "breadcrumb",
@@ -542,6 +559,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "teaching-tip",
                 "flyout",
                 "menu-flyout",
+                "context-menu",
                 "scroll",
                 "shell",
                 "workbench",
@@ -825,12 +843,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Vec::new(),
             vec![
                 "button",
+                "accordion",
                 "badge",
                 "split-view",
                 "breadcrumb",
                 "canvas",
                 "flyout",
                 "menu-flyout",
+                "context-menu",
                 "toggle-button",
                 "icon",
                 "label",
@@ -1156,6 +1176,14 @@ mod tests {
             .iter()
             .find(|feature| feature.name == "menu-flyout")
             .expect("menu-flyout feature should be listed");
+        let context_menu = manifest
+            .iter()
+            .find(|feature| feature.name == "context-menu")
+            .expect("context-menu feature should be listed");
+        let accordion = manifest
+            .iter()
+            .find(|feature| feature.name == "accordion")
+            .expect("accordion feature should be listed");
         let image_preview = manifest
             .iter()
             .find(|feature| feature.name == "image-preview")
@@ -1175,6 +1203,8 @@ mod tests {
         assert_eq!(dialog.enables, vec!["widgets-base"]);
         assert_eq!(flyout.enables, vec!["widgets-base"]);
         assert_eq!(menu_flyout.enables, vec!["widgets-base"]);
+        assert_eq!(context_menu.enables, vec!["menu-flyout"]);
+        assert_eq!(accordion.enables, vec!["button", "label"]);
         assert_eq!(table.enables, vec!["widgets-list"]);
         assert_eq!(image_preview.enables, vec!["image", "widgets-base"]);
         assert_eq!(video.enables, vec!["widgets-base"]);
@@ -1185,6 +1215,8 @@ mod tests {
         assert!(all_widgets.enables.contains(&"canvas"));
         assert!(all_widgets.enables.contains(&"flyout"));
         assert!(all_widgets.enables.contains(&"menu-flyout"));
+        assert!(all_widgets.enables.contains(&"context-menu"));
+        assert!(all_widgets.enables.contains(&"accordion"));
         assert!(all_widgets.enables.contains(&"textbox"));
         assert!(all_widgets.enables.contains(&"password-box"));
         assert!(all_widgets.enables.contains(&"image-preview"));

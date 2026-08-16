@@ -267,6 +267,14 @@ const GRID_GAPS: &[&str] = &[
 ];
 const CANVAS_GAPS: &[&str] = &["path-construction primitives and multi-pointer or touch input"];
 const MENU_FLYOUT_GAPS: &[&str] = &[];
+const ACCORDION_GAPS: &[&str] = &[
+    "dedicated disclosure accessibility relationship and target assistive-technology proof",
+    "animated expansion and AppKit/GTK4 target interaction smoke",
+];
+const CONTEXT_MENU_GAPS: &[&str] = &[
+    "keyboard context-menu-key invocation and target assistive-technology proof",
+    "AppKit and GTK4 target interaction smoke",
+];
 const TABS_GAPS: &[&str] = &[
     "hover, pressed and focus-visible header state polish",
     "accessibility tab-list and tab-panel providers",
@@ -665,6 +673,24 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         MENU_FLYOUT_GAPS
     ),
     component!(
+        "context_menu",
+        "MenuFlyout / ContextMenu",
+        Overlay,
+        FirstPass,
+        Some("context-menu"),
+        "src/view/widgets/menu_flyout.rs + src/view/overlay.rs + src/native.rs",
+        CONTEXT_MENU_GAPS
+    ),
+    component!(
+        "accordion",
+        "Accordion",
+        Composite,
+        FirstPass,
+        Some("accordion"),
+        "src/accordion.rs + src/view/widgets/accordion.rs",
+        ACCORDION_GAPS
+    ),
+    component!(
         "teaching_tip",
         "TeachingTip",
         Overlay,
@@ -783,7 +809,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"canvas"));
         assert!(!summary.missing_component_names.contains(&"flyout"));
         assert!(!summary.missing_component_names.contains(&"video"));
-        assert_eq!(summary.first_pass_count, 49);
+        assert_eq!(summary.first_pass_count, 51);
         assert_eq!(summary.contract_only_count, 0);
     }
 

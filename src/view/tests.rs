@@ -42,6 +42,7 @@ mod tests {
 
     #[cfg(any(
         feature = "button",
+        feature = "accordion",
         feature = "canvas",
         feature = "toggle-button",
         feature = "textbox",
@@ -74,6 +75,8 @@ mod tests {
     enum Msg {
         #[cfg(feature = "button")]
         SaveClicked,
+        #[cfg(feature = "accordion")]
+        AccordionChanged(crate::ZsAccordionChange),
         #[cfg(feature = "canvas")]
         CanvasClicked,
         #[cfg(feature = "canvas")]
@@ -160,6 +163,139 @@ mod tests {
         ScrollChanged(Dp),
         #[cfg(feature = "virtual-list")]
         ViewportChanged(VirtualListViewport),
+    }
+
+    #[cfg(feature = "accordion")]
+    #[test]
+    fn accordion_routes_complete_state_and_supports_nested_content() {
+        let outer = WidgetId::new(8_001);
+        let inner = WidgetId::new(8_002);
+        let inner_view = accordion(
+            inner,
+            [
+                crate::ZsAccordionItem::new(11, "Inner one", text("Inner content")),
+                crate::ZsAccordionItem::new(12, "Inner two", spacer()),
+            ],
+            [crate::ZsAccordionItemId::new(11)],
+            crate::ZsAccordionMode::multiple(),
+            Msg::AccordionChanged,
+        );
+        let mut view = accordion(
+            outer,
+            [
+                crate::ZsAccordionItem::new(1, "Outer one", inner_view),
+                crate::ZsAccordionItem::new(2, "Outer two", text("Second content")),
+            ],
+            [crate::ZsAccordionItemId::new(1)],
+            crate::ZsAccordionMode::single(false),
+            Msg::AccordionChanged,
+        );
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 520,
+                height: 420,
+            },
+            Dpi::standard(),
+        ));
+
+        let interaction = view.interaction_plan();
+        assert_eq!(
+            interaction
+                .hit_targets
+                .iter()
+                .filter(|target| target.kind == ViewHitTargetKind::Button)
+                .count(),
+            4
+        );
+        let second_header = WidgetId::synthetic_child(outer, 2);
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::Click {
+                widget: second_header,
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::AccordionChanged(crate::ZsAccordionChange {
+                item: crate::ZsAccordionItemId::new(2),
+                expanded: true,
+                next_expanded: vec![crate::ZsAccordionItemId::new(2)],
+            })]
+        );
+
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::ChevronDown
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::ChevronRight
+        )));
+    }
+
+    #[cfg(feature = "context-menu")]
+    #[test]
+    fn context_menu_owns_pointer_anchor_open_and_command_lifecycle() {
+        let presenter = WidgetId::new(8_101);
+        let mut view = context_menu(
+            presenter,
+            crate::MenuSpec::new().item("Open", crate::Command::custom("document.open")),
+            spacer(),
+        )
+        .on_menu_flyout_command(Msg::MenuCommand)
+        .on_menu_flyout_open_change(Msg::MenuOpen);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 640,
+                height: 400,
+            },
+            Dpi::standard(),
+        ));
+        assert!(view.interaction_plan().hit_targets.iter().any(|target| {
+            target.widget == presenter && target.kind == ViewHitTargetKind::ContextMenuRegion
+        }));
+
+        let anchor = Point { x: 371, y: 229 };
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::ContextMenuRequested {
+                widget: presenter,
+                anchor,
+            },
+        );
+        assert_eq!(events.into_messages(), vec![Msg::MenuOpen(true)]);
+        assert!(view
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open));
+        assert!(view.interaction_plan().hit_targets.iter().any(|target| matches!(
+            target.kind,
+            ViewHitTargetKind::MenuFlyoutItem { path, .. }
+                if path == crate::ZsMenuFlyoutPath::root(0)
+        )));
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::MenuFlyoutInvoked {
+                widget: presenter,
+                path: crate::ZsMenuFlyoutPath::root(0),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![
+                Msg::MenuCommand(crate::Command::custom("document.open")),
+                Msg::MenuOpen(false),
+            ]
+        );
     }
 
     #[test]

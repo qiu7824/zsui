@@ -804,6 +804,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 menu,
                 open,
                 target: menu_target,
+                #[cfg(feature = "context-menu")]
+                context_trigger,
+                #[cfg(feature = "context-menu")]
+                context_anchor,
                 highlighted,
                 open_submenus,
                 on_command,
@@ -812,6 +816,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             } = &mut self.kind
             {
                 match event {
+                    #[cfg(feature = "context-menu")]
+                    ViewEvent::ContextMenuRequested { widget, anchor }
+                        if *context_trigger && self.id == Some(*widget) =>
+                    {
+                        *open = true;
+                        *context_anchor = Some(*anchor);
+                        open_submenus.clear();
+                        let state = crate::ZsMenuFlyoutState {
+                            open: true,
+                            target: *menu_target,
+                            highlighted: None,
+                            open_submenus: Vec::new(),
+                        };
+                        *highlighted = state.first_enabled(menu);
+                        if let Some(message) = on_open_change {
+                            cx.emit(message.map(true));
+                        }
+                        handled = true;
+                    }
                     ViewEvent::MenuFlyoutOpenChanged {
                         widget,
                         open: requested,
@@ -828,6 +851,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         } else {
                             *highlighted = None;
                             open_submenus.clear();
+                            #[cfg(feature = "context-menu")]
+                            {
+                                *context_anchor = None;
+                            }
                         }
                         if let Some(message) = on_open_change {
                             cx.emit(message.map(*requested));
@@ -873,6 +900,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             *open = false;
                             *highlighted = None;
                             open_submenus.clear();
+                            #[cfg(feature = "context-menu")]
+                            {
+                                *context_anchor = None;
+                            }
                             if let Some(message) = on_command {
                                 cx.emit(message.map(command));
                             }
@@ -888,6 +919,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         *open = false;
                         *highlighted = None;
                         open_submenus.clear();
+                        #[cfg(feature = "context-menu")]
+                        {
+                            *context_anchor = None;
+                        }
                         if let Some(message) = on_open_change {
                             cx.emit(message.map(false));
                         }

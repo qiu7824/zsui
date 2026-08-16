@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "settings-sections",
+    "component": "accordion",
+    "properties": {
+      "labels": {
+        "general": "常规 / General",
+        "advanced": "高级 / Advanced"
+      },
+      "mode": "multiple"
+    },
+    "property_bindings": {
+      "expanded": "settings_expanded"
+    },
+    "action_bindings": {
+      "expanded_change": "settings_expanded_changed"
+    },
+    "children": [
+      {
+        "id": "general",
+        "component": "text",
+        "properties": {
+          "text": "Language, theme, and startup preferences."
+        }
+      },
+      {
+        "id": "advanced",
+        "component": "text",
+        "properties": {
+          "text": "Diagnostics and experimental runtime options."
+        }
+      }
+    ]
+  }
+}

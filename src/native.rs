@@ -3316,6 +3316,13 @@ impl NativeViewInputRuntime {
         let target = interaction_plan
             .as_ref()
             .and_then(|plan| plan.hit_target_at(point));
+        #[cfg(feature = "context-menu")]
+        let context_menu_target = interaction_plan.as_ref().and_then(|plan| {
+            plan.hit_targets.iter().rev().copied().find(|candidate| {
+                candidate.kind == crate::ViewHitTargetKind::ContextMenuRegion
+                    && candidate.bounds.contains(point)
+            })
+        });
         #[cfg(feature = "flyout")]
         let dismiss_except = interaction_plan
             .as_ref()
@@ -3356,6 +3363,20 @@ impl NativeViewInputRuntime {
                 .flatten(),
             &mut report,
         );
+        #[cfg(feature = "context-menu")]
+        if button == ZsPointerButton::Secondary {
+            if let Some(context_menu_target) = context_menu_target {
+                report.handled = true;
+                report.menu_flyout_open_changed = true;
+                return self.dispatch_view_event(
+                    ViewEvent::ContextMenuRequested {
+                        widget: context_menu_target.widget,
+                        anchor: point,
+                    },
+                    report,
+                );
+            }
+        }
         let Some(target) = target else {
             return report;
         };
@@ -13652,6 +13673,77 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "context-menu")]
+    #[test]
+    fn native_view_runtime_opens_context_menu_from_secondary_click_without_app_listener() {
+        #[derive(Clone)]
+        enum Msg {
+            Command(crate::Command),
+        }
+        struct State {
+            command: Option<crate::Command>,
+        }
+
+        let presenter = crate::WidgetId::new(8_205);
+        let mut runtime = native_window("Context Menu")
+            .size(640, 400)
+            .stateful_view(
+                State { command: None },
+                move |_state| {
+                    crate::context_menu(
+                        presenter,
+                        crate::MenuSpec::new()
+                            .item("Inspect", crate::Command::custom("row.inspect")),
+                        crate::spacer(),
+                    )
+                    .on_menu_flyout_command(Msg::Command)
+                },
+                |state, message, _cx| match message {
+                    Msg::Command(command) => state.command = Some(command),
+                },
+            )
+            .native_view_input_runtime();
+
+        let anchor = Point { x: 377, y: 211 };
+        let opened = runtime.dispatch_pointer_down_with_button(
+            anchor,
+            ZsPointerButton::Secondary,
+            ZsPointerModifiers::default(),
+        );
+        assert!(opened.handled);
+        assert!(opened.menu_flyout_open_changed);
+        assert_eq!(opened.message_count, 0);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| state.open));
+
+        let command = runtime
+            .current_interaction_plan()
+            .expect("open context menu interaction plan")
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| {
+                matches!(
+                    target.kind,
+                    crate::ViewHitTargetKind::MenuFlyoutItem { path, .. }
+                        if path == crate::ZsMenuFlyoutPath::root(0)
+                )
+            })
+            .expect("context menu command target");
+        let invoked = runtime.dispatch_pointer_click(Point {
+            x: command.bounds.x + command.bounds.width / 2,
+            y: command.bounds.y + command.bounds.height / 2,
+        });
+        assert!(invoked.handled);
+        assert!(invoked.menu_flyout_invoked);
+        assert!(invoked.menu_flyout_open_changed);
+        assert_eq!(invoked.message_count, 1);
+        assert!(runtime
+            .widget_menu_flyout_state(presenter)
+            .is_some_and(|(state, _)| !state.open));
+    }
+
     #[cfg(feature = "toast")]
     #[test]
     fn native_view_runtime_routes_toast_action_and_timeout_as_typed_results() {
@@ -13718,6 +13810,55 @@ mod tests {
         assert!(timeout.toast_responded);
         assert_eq!(timeout.message_count, 1);
         assert!(timeout_runtime.widget_toast_state(widget).is_none());
+    }
+
+    #[cfg(feature = "toast")]
+    #[test]
+    fn native_view_runtime_does_not_restore_an_expired_controlled_toast() {
+        #[derive(Clone)]
+        enum Msg {
+            Responded(crate::ZsToastResult),
+        }
+        struct State {
+            toast: Option<crate::ZsToastSpec>,
+            result: Option<crate::ZsToastResult>,
+        }
+
+        let widget = crate::WidgetId::new(8_197);
+        let mut runtime = native_window("Retained Toast")
+            .size(640, 400)
+            .stateful_view(
+                State {
+                    toast: Some(crate::ZsToastSpec::new(41, "Saved")),
+                    result: None,
+                },
+                move |state| {
+                    crate::toast_presenter(widget, state.toast.clone(), crate::spacer())
+                        .on_toast_result(Msg::Responded)
+                },
+                |state, message, _cx| match message {
+                    // A result handler may record analytics without immediately
+                    // clearing its controlled value. The expired toast must still
+                    // remain dismissed until the declaration removes it.
+                    Msg::Responded(result) => state.result = Some(result),
+                },
+            )
+            .native_view_input_runtime();
+
+        let timeout = runtime.refresh_transient_view_at(
+            std::time::Instant::now() + std::time::Duration::from_secs(6),
+        );
+        assert!(timeout.handled);
+        assert!(timeout.toast_responded);
+        assert_eq!(timeout.message_count, 1);
+        assert!(runtime.widget_toast_state(widget).is_none());
+        assert!(runtime.transient_poll_interval_ms().is_none());
+
+        let refresh = runtime.refresh_transient_view_at(
+            std::time::Instant::now() + std::time::Duration::from_secs(12),
+        );
+        assert!(!refresh.toast_responded);
+        assert!(runtime.widget_toast_state(widget).is_none());
     }
 
     #[cfg(feature = "info-bar")]
