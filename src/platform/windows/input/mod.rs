@@ -1121,9 +1121,17 @@ fn dispatch_windows_win32_window_view_key_down_with_modifiers(
     virtual_key: u32,
     shift: bool,
     control: bool,
+    alt: bool,
+    super_key: bool,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| {
-        route.dispatch_key_down_with_modifiers(virtual_key, shift, control)
+        route.dispatch_key_down_with_all_modifiers(
+            virtual_key,
+            shift,
+            control,
+            alt,
+            super_key,
+        )
     })
 }
 

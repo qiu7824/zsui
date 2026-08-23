@@ -17,6 +17,30 @@ impl WindowsWin32ViewInputRoute {
         shift: bool,
         control: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
+        self.dispatch_key_down_with_all_modifiers(virtual_key, shift, control, false, false)
+    }
+
+    fn dispatch_key_down_with_all_modifiers(
+        &mut self,
+        virtual_key: u32,
+        shift: bool,
+        control: bool,
+        alt: bool,
+        super_key: bool,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        #[cfg(not(feature = "textbox"))]
+        let _ = (alt, super_key);
+        #[cfg(feature = "textbox")]
+        if let Some(command) =
+            windows_text_edit_shortcut(virtual_key, shift, control, alt, super_key)
+        {
+            let target = self.shared_focused_target();
+            let report = self.shared_runtime.dispatch_text_edit_shortcut(command);
+            return self.adapt_shared_report(
+                report,
+                WindowsSharedInputKind::TextEditShortcut { target },
+            );
+        }
         let Some(key) = windows_native_view_key(virtual_key) else {
             return WindowsWin32ViewInputDispatchReport {
                 hit_target_count: self.hit_target_count(),
@@ -32,6 +56,21 @@ impl WindowsWin32ViewInputRoute {
             .dispatch_key_with_modifiers(key, shift, control);
         self.adapt_shared_report(report, WindowsSharedInputKind::Key { key, target })
     }
+}
+
+#[cfg(feature = "textbox")]
+fn windows_text_edit_shortcut(
+    virtual_key: u32,
+    shift: bool,
+    control: bool,
+    alt: bool,
+    super_key: bool,
+) -> Option<crate::ZsTextEditCommand> {
+    if shift || !control || alt || super_key {
+        return None;
+    }
+    char::from_u32(virtual_key)
+        .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
 }
 
 fn windows_native_view_key(virtual_key: u32) -> Option<crate::native::NativeViewKey> {

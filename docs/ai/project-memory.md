@@ -402,9 +402,11 @@ history remain authoritative for implementation status.
   focused editor or an explicit strong `WidgetId`. The per-window input runtime
   may retain bounded undo snapshots as transient interaction state, but every
   resulting value and selection returns through typed View messages so the
-  application remains authoritative. Cut/copy/paste require the optional
-  `clipboard` feature and use target-native clipboard services; examples do not
-  call platform clipboard APIs directly.
+  application remains authoritative. Focused TextBox/TextEditor controls map
+  the exact platform-primary A/C/V/X/Z chords to select-all/copy/paste/cut/undo
+  before ordinary text input: Control on Windows/Linux and Command on macOS.
+  Cut/copy/paste require the optional `clipboard` feature and use target-native
+  clipboard services; examples do not call platform clipboard APIs directly.
 - Shared multiline editors default to `TextWrap::Word` and accept runtime
   `ViewNode::text_wrap(...)` configuration; single-line TextBox remains
   `NoWrap`. Rendering, caret placement, selection rectangles and pointer hit

@@ -1011,6 +1011,8 @@ impl LinuxDirectWindow {
         let shift = self.modifiers.shift_key();
         let control = self.modifiers.control_key();
         let command_modifier = control || self.modifiers.super_key() || self.modifiers.alt_key();
+        let text_edit_shortcut =
+            control && !shift && !self.modifiers.alt_key() && !self.modifiers.super_key();
         let named = match logical_key {
             Key::Named(NamedKey::Tab) => Some(crate::NativeViewKey::Tab),
             Key::Named(NamedKey::Enter) => Some(crate::NativeViewKey::Enter),
@@ -1044,6 +1046,13 @@ impl LinuxDirectWindow {
         match logical_key {
             Key::Named(NamedKey::Backspace) => self.runtime.dispatch_text_input("\u{8}"),
             Key::Named(NamedKey::Delete) => self.runtime.dispatch_text_input("\u{7f}"),
+            #[cfg(feature = "textbox")]
+            Key::Character(text) if text_edit_shortcut => text
+                .chars()
+                .next()
+                .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                .map(|command| self.runtime.dispatch_text_edit_shortcut(command))
+                .unwrap_or_default(),
             _ if !command_modifier => event_text
                 .filter(|text| !text.is_empty() && !text.chars().all(char::is_control))
                 .map(|text| self.runtime.dispatch_text_input(text))

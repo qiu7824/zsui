@@ -636,8 +636,11 @@ define_class!(
             let modifiers = event.modifierFlags();
             let shift = modifiers.contains(NSEventModifierFlags::Shift);
             let control = modifiers.contains(NSEventModifierFlags::Control);
+            let command = modifiers.contains(NSEventModifierFlags::Command);
+            let option = modifiers.contains(NSEventModifierFlags::Option);
             let command_or_control = modifiers
                 .intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
+            let text_edit_shortcut = command && !shift && !control && !option;
             let unmodified = event
                 .charactersIgnoringModifiers()
                 .map(|text| text.to_string())
@@ -715,6 +718,13 @@ define_class!(
                     runtime.dispatch_text_input("\u{8}")
                 }
                 Some(code) if code == NSDeleteCharacter => runtime.dispatch_text_input("\u{7f}"),
+                #[cfg(feature = "textbox")]
+                _ if text_edit_shortcut => unmodified
+                    .chars()
+                    .next()
+                    .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                    .map(|command| runtime.dispatch_text_edit_shortcut(command))
+                    .unwrap_or_default(),
                 _ if !command_or_control => event
                     .characters()
                     .map(|text| runtime.dispatch_text_input(&text.to_string()))

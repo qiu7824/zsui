@@ -322,6 +322,9 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             wparam as u32,
             (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
             (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
+            (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
+            (GetKeyState(VK_LWIN as i32) as u16 & 0x8000) != 0
+                || (GetKeyState(VK_RWIN as i32) as u16 & 0x8000) != 0,
         ) {
             Some(report) if report.unhandled_key_count == 0 => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),

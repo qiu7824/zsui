@@ -1522,6 +1522,36 @@ mod tests {
 
     #[test]
     #[cfg(feature = "textbox")]
+    fn window_text_edit_shortcuts_require_exact_control_chords() {
+        let command_for = |character: char| {
+            windows_text_edit_shortcut(character as u32, false, true, false, false)
+        };
+
+        assert_eq!(command_for('A'), Some(crate::ZsTextEditCommand::SelectAll));
+        assert_eq!(command_for('C'), Some(crate::ZsTextEditCommand::Copy));
+        assert_eq!(command_for('V'), Some(crate::ZsTextEditCommand::Paste));
+        assert_eq!(command_for('X'), Some(crate::ZsTextEditCommand::Cut));
+        assert_eq!(command_for('Z'), Some(crate::ZsTextEditCommand::Undo));
+        assert_eq!(
+            windows_text_edit_shortcut('A' as u32, true, true, false, false),
+            None
+        );
+        assert_eq!(
+            windows_text_edit_shortcut('A' as u32, false, false, false, false),
+            None
+        );
+        assert_eq!(
+            windows_text_edit_shortcut('A' as u32, false, true, true, false),
+            None
+        );
+        assert_eq!(
+            windows_text_edit_shortcut('A' as u32, false, true, false, true),
+            None
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
     fn window_live_view_routes_typed_undo_command_to_focused_editor() {
         #[derive(Clone)]
         enum Msg {
@@ -1563,6 +1593,82 @@ mod tests {
         assert_eq!(undone.text_undo_count, 1);
         assert!(undone.text_edit_command_errors.is_empty());
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A"));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_live_view_routes_control_select_all_and_undo_to_focused_editor() {
+        #[derive(Clone)]
+        enum Msg {
+            Changed(String),
+            Selection(crate::ZsTextSelection),
+        }
+
+        #[derive(Default)]
+        struct State {
+            value: String,
+            selection: crate::ZsTextSelection,
+        }
+
+        let widget = crate::WidgetId::new(35);
+        let builder = crate::native_window("Win32 default editor shortcuts")
+            .size(320, 160)
+            .stateful_view(
+                State::default(),
+                move |state| {
+                    crate::text_editor(&state.value)
+                        .id(widget)
+                        .on_change(Msg::Changed)
+                        .on_text_selection_change(Msg::Selection)
+                },
+                |state, message, _cx| match message {
+                    Msg::Changed(next) => state.value = next,
+                    Msg::Selection(selection) => state.selection = selection,
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("stateful editor should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("editor should expose Win32 focus geometry");
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        route.dispatch_click(crate::Point {
+            x: target.bounds.x + 8,
+            y: target.bounds.y + 8,
+        });
+        route.dispatch_text_input("A中");
+
+        let selected = route.dispatch_key_down_with_all_modifiers(
+            'A' as u32,
+            false,
+            true,
+            false,
+            false,
+        );
+        assert!(selected.handled);
+        assert_eq!(selected.key_down_count, 1);
+        assert_eq!(selected.unhandled_key_count, 0);
+        assert_eq!(selected.text_edit_command_count, 1);
+        assert_eq!(selected.text_selection, Some((0, 2)));
+
+        route.dispatch_text_input("X");
+        let undone = route.dispatch_key_down_with_all_modifiers(
+            'Z' as u32,
+            false,
+            true,
+            false,
+            false,
+        );
+        assert!(undone.handled);
+        assert_eq!(undone.key_down_count, 1);
+        assert_eq!(undone.unhandled_key_count, 0);
+        assert_eq!(undone.text_edit_command_count, 1);
+        assert_eq!(undone.text_undo_count, 1);
+        assert!(undone.text_edit_command_errors.is_empty());
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("A中"));
     }
 
     #[test]
