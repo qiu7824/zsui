@@ -939,6 +939,9 @@ Linux 的“原生”指真实系统窗口、窗口管理器事件、系统字�
 可选 `clipboard` feature 通过统一的 `ClipboardData`/`ClipboardService` API 在
 Win32、AppKit 和 Linux 后端读写 UTF-8 文本及经过尺寸与字节数校验的 RGBA 图像；
 应用代码不接触平台剪贴板对象。文件列表传输仍保持明确的不支持状态。
+获得焦点的 `TextBox` 和 `TextEditor` 默认响应平台主修饰键的全选、复制、粘贴、
+剪切和撤销快捷键：Windows/Linux 使用 `Ctrl+A/C/V/X/Z`，macOS 使用
+`Command+A/C/V/X/Z`；其中复制、粘贴和剪切需要启用 `clipboard` feature。
 
 ## 目录
 

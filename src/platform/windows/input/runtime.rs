@@ -17,6 +17,10 @@ enum WindowsSharedInputKind {
         key: crate::native::NativeViewKey,
         target: Option<crate::ViewHitTarget>,
     },
+    #[cfg(feature = "textbox")]
+    TextEditShortcut {
+        target: Option<crate::ViewHitTarget>,
+    },
     Scroll,
     Blur,
     Background,
@@ -40,6 +44,8 @@ impl WindowsSharedInputKind {
             Self::ImeCommit => "ime_commit",
             Self::ImeCancel => "ime_cancel",
             Self::Key { .. } => "key_down",
+            #[cfg(feature = "textbox")]
+            Self::TextEditShortcut { .. } => "text_edit_shortcut",
             Self::Scroll => "scroll",
             Self::Blur => "blur",
             Self::Background => "background",
@@ -55,6 +61,8 @@ impl WindowsSharedInputKind {
         match self {
             Self::PointerDown(target) | Self::PointerUp(target) => target,
             Self::Text { target, .. } | Self::Key { target, .. } => target,
+            #[cfg(feature = "textbox")]
+            Self::TextEditShortcut { target } => target,
             _ => None,
         }
     }
@@ -538,6 +546,11 @@ impl WindowsWin32ViewInputRoute {
                     report.selection_count = 1;
                     report.keyboard_selection_count = 1;
                 }
+            }
+            #[cfg(feature = "textbox")]
+            WindowsSharedInputKind::TextEditShortcut { .. } => {
+                report.key_down_count = 1;
+                report.unhandled_key_count = usize::from(!shared.handled);
             }
             WindowsSharedInputKind::Scroll => {
                 report.scroll_count = usize::from(shared.handled);

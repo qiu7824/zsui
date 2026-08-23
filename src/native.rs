@@ -8406,6 +8406,35 @@ impl NativeViewInputRuntime {
         }
     }
 
+    #[cfg(feature = "textbox")]
+    pub(crate) fn dispatch_text_edit_shortcut(
+        &mut self,
+        command: crate::ZsTextEditCommand,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        self.dispatch_text_edit_commands(
+            vec![crate::ZsTextEditCommandRequest::focused(command)],
+            &mut report,
+        );
+        if let Some(plan) = report.redraw_plan.take() {
+            let plan = self.stabilize_native_text_layout(plan);
+            report.redraw_plan = Some(self.compose_input_visuals(plan));
+        }
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
+        report
+    }
+
     pub(crate) fn dispatch_app_command(
         &mut self,
         command: Command,

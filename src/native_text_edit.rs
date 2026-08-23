@@ -171,6 +171,30 @@ pub(crate) struct NativeTextCommandResult {
     pub undo_applied: bool,
 }
 
+#[cfg(all(
+    feature = "textbox",
+    any(
+        all(target_os = "windows", feature = "windows-win32"),
+        all(target_os = "macos", feature = "macos-appkit"),
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct-host", feature = "linux-gtk")
+        )
+    )
+))]
+pub(crate) fn text_edit_command_for_shortcut_character(
+    character: char,
+) -> Option<ZsTextEditCommand> {
+    match character.to_ascii_lowercase() {
+        'a' => Some(ZsTextEditCommand::SelectAll),
+        'c' => Some(ZsTextEditCommand::Copy),
+        'v' => Some(ZsTextEditCommand::Paste),
+        'x' => Some(ZsTextEditCommand::Cut),
+        'z' => Some(ZsTextEditCommand::Undo),
+        _ => None,
+    }
+}
+
 #[cfg(feature = "textbox")]
 pub(crate) fn apply_text_edit_command(
     command: ZsTextEditCommand,
@@ -698,6 +722,43 @@ mod tests {
                 caret: 3
             }
         );
+    }
+
+    #[test]
+    #[cfg(all(
+        feature = "textbox",
+        any(
+            all(target_os = "windows", feature = "windows-win32"),
+            all(target_os = "macos", feature = "macos-appkit"),
+            all(
+                target_os = "linux",
+                any(feature = "linux-direct-host", feature = "linux-gtk")
+            )
+        )
+    ))]
+    fn native_text_shortcuts_map_case_insensitive_standard_edit_characters() {
+        assert_eq!(
+            text_edit_command_for_shortcut_character('A'),
+            Some(ZsTextEditCommand::SelectAll)
+        );
+        assert_eq!(
+            text_edit_command_for_shortcut_character('c'),
+            Some(ZsTextEditCommand::Copy)
+        );
+        assert_eq!(
+            text_edit_command_for_shortcut_character('V'),
+            Some(ZsTextEditCommand::Paste)
+        );
+        assert_eq!(
+            text_edit_command_for_shortcut_character('x'),
+            Some(ZsTextEditCommand::Cut)
+        );
+        assert_eq!(
+            text_edit_command_for_shortcut_character('Z'),
+            Some(ZsTextEditCommand::Undo)
+        );
+        assert_eq!(text_edit_command_for_shortcut_character('y'), None);
+        assert_eq!(text_edit_command_for_shortcut_character('中'), None);
     }
 
     #[test]

@@ -377,11 +377,15 @@ pub(crate) fn install_linux_gtk_draw_plan(
         move |_controller, key, _keycode, modifiers| {
             let shift = modifiers.contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let control = modifiers.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            let alt = modifiers.contains(gtk::gdk::ModifierType::ALT_MASK);
+            let super_or_meta = modifiers
+                .intersects(gtk::gdk::ModifierType::SUPER_MASK | gtk::gdk::ModifierType::META_MASK);
             let command_or_control = modifiers.intersects(
                 gtk::gdk::ModifierType::CONTROL_MASK
                     | gtk::gdk::ModifierType::SUPER_MASK
                     | gtk::gdk::ModifierType::META_MASK,
             );
+            let text_edit_shortcut = control && !shift && !alt && !super_or_meta;
             let mut runtime_state = runtime.borrow_mut();
             let report = match key {
                 gtk::gdk::Key::Tab => runtime_state.dispatch_key_with_modifiers(
@@ -448,6 +452,12 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 ),
                 gtk::gdk::Key::BackSpace => runtime_state.dispatch_text_input("\u{8}"),
                 gtk::gdk::Key::Delete => runtime_state.dispatch_text_input("\u{7f}"),
+                #[cfg(feature = "textbox")]
+                _ if text_edit_shortcut => key
+                    .to_unicode()
+                    .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                    .map(|command| runtime_state.dispatch_text_edit_shortcut(command))
+                    .unwrap_or_default(),
                 _ if !command_or_control => key
                     .to_unicode()
                     .filter(|character| !character.is_control())
