@@ -17,7 +17,7 @@ enum WindowsSharedInputKind {
         key: crate::native::NativeViewKey,
         target: Option<crate::ViewHitTarget>,
     },
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     TextEditShortcut {
         target: Option<crate::ViewHitTarget>,
     },
@@ -44,7 +44,7 @@ impl WindowsSharedInputKind {
             Self::ImeCommit => "ime_commit",
             Self::ImeCancel => "ime_cancel",
             Self::Key { .. } => "key_down",
-            #[cfg(feature = "textbox")]
+            #[cfg(feature = "text-input-core")]
             Self::TextEditShortcut { .. } => "text_edit_shortcut",
             Self::Scroll => "scroll",
             Self::Blur => "blur",
@@ -61,7 +61,7 @@ impl WindowsSharedInputKind {
         match self {
             Self::PointerDown(target) | Self::PointerUp(target) => target,
             Self::Text { target, .. } | Self::Key { target, .. } => target,
-            #[cfg(feature = "textbox")]
+            #[cfg(feature = "text-input-core")]
             Self::TextEditShortcut { target } => target,
             _ => None,
         }
@@ -88,6 +88,11 @@ impl WindowsWin32ViewInputRoute {
         self.shared_runtime
             .current_interaction_plan()
             .and_then(|plan| plan.focus_target_for_widget(widget))
+    }
+
+    fn focused_target_accepts_text_input(&self) -> bool {
+        self.shared_focused_target()
+            .is_some_and(|target| self.shared_runtime.target_accepts_text_input(target))
     }
 
 
@@ -471,7 +476,7 @@ impl WindowsWin32ViewInputRoute {
         report
             .events
             .extend(shared.errors.iter().map(|error| format!("win32_shared_input_error:{error}")));
-        #[cfg(feature = "textbox")]
+        #[cfg(feature = "text-input-core")]
         {
             report.text_edit_command_count = shared.text_edit_command_count;
             report.text_clipboard_read_count = shared.text_clipboard_read_count;
@@ -479,7 +484,7 @@ impl WindowsWin32ViewInputRoute {
             report.text_undo_count = shared.text_undo_count;
             report.text_edit_command_errors = shared.errors;
         }
-        #[cfg(not(feature = "textbox"))]
+        #[cfg(not(feature = "text-input-core"))]
         {
             report.app_command_errors = shared.errors;
         }
@@ -547,7 +552,7 @@ impl WindowsWin32ViewInputRoute {
                     report.keyboard_selection_count = 1;
                 }
             }
-            #[cfg(feature = "textbox")]
+            #[cfg(feature = "text-input-core")]
             WindowsSharedInputKind::TextEditShortcut { .. } => {
                 report.key_down_count = 1;
                 report.unhandled_key_count = usize::from(!shared.handled);

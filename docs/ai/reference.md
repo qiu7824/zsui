@@ -7,7 +7,7 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 ## v0.2 Release and Broader Roadmap
 
 The three-desktop-platform v0.2 release gate is 100% complete. It covers one
-shared Rust application loop, 49 runtime component families, the versioned UI
+shared Rust application loop, 51 runtime component families, the versioned UI
 document/Viewer path, feature pruning, native services, final platform surfaces,
 structured interaction evidence, and fixed Win32/AppKit/GTK4/Linux CI. The
 percentages below describe optional post-v0.2 breadth and longer-term framework
@@ -15,8 +15,8 @@ work; they must not be used to report v0.2 as incomplete.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: 100% first-pass runtime coverage (49 runtime surfaces out
-  of 49 catalogued component families); readiness gaps remain per component.
+- Component library: 100% first-pass runtime coverage (51 runtime surfaces out
+  of 51 catalogued component families); readiness gaps remain per component.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
@@ -42,7 +42,7 @@ work; they must not be used to report v0.2 as incomplete.
   deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
   the same controlled-scroll document on fixed AppKit and Linux jobs, with one
   handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. All 49 catalog components are document-ready,
+  runtime memory evidence. All 51 catalog components are document-ready,
   including Toast, InfoBar, ContentDialog, Image, ItemsRepeater, SettingsCard
   and the typed Workbench composition; NumberBox
   adds a nullable numeric contract, while ComboBox adds homogeneous string
@@ -91,7 +91,7 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: all 49 families
+Use `zsui_component_catalog_summary()` for component coverage: all 51 families
 have a first-pass runtime surface; none are contract-only or not started. A
 composite workbench does not make its underlying contract-only controls
 complete. WebView is intentionally outside the v0.2 product boundary.
@@ -263,7 +263,7 @@ in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
 GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
 AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
 dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 49 component families, all with a first-pass
+`src/component_catalog.rs` tracks 51 component families, all with a first-pass
 runtime surface. The optional
 Canvas surface retains backend-neutral primitives in local `Dp` coordinates,
 uses semantic color and text roles, emits a balanced clipped native draw plan
@@ -419,6 +419,12 @@ selections on Unicode extended-grapheme boundaries; Uniscribe, Core Text and
 Pango provide the proportional advances, visual cluster boxes and primary/secondary
 caret offsets consumed by paint, selection, hit testing, wrap, horizontal reveal
 and candidate-window anchoring.
+TextBox, multiline TextEditor, PasswordBox, NumberBox, AutoSuggestBox, ComboBox
+and CommandPalette share one value-independent placeholder builder. Empty hints
+use semantic secondary text, remain visible behind a focused caret, disappear
+for typed or IME preedit content and never enter value, selection, clipboard,
+undo or password secure storage. UiDocument routes textbox, password_box and
+number_box placeholder strings through the same View implementation.
 The optional `accessibility` feature adds a native focused-text semantic bridge
 without embedding a platform editor or browser surface. Win32 answers UI
 Automation root requests from `WM_GETOBJECT` with one complete retained

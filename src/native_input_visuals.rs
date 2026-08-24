@@ -1,9 +1,12 @@
 use crate::native_text_edit::{
-    char_count, grapheme_boundaries, move_selection, move_selection_to, snap_grapheme_index,
-    NativeTextEditResult, NativeTextMovement, NativeTextSelection,
+    char_count, grapheme_boundaries, snap_grapheme_index, NativeTextSelection,
 };
 #[cfg(test)]
 use crate::native_text_edit::{grapheme_count_in_range, grapheme_index_for_column};
+#[cfg(any(test, feature = "text-input-core"))]
+use crate::native_text_edit::{
+    move_selection, move_selection_to, NativeTextEditResult, NativeTextMovement,
+};
 use crate::{
     ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawPlan, Point, Rect,
     ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, WidgetId,
@@ -317,12 +320,14 @@ pub(crate) struct NativeTextVisualGeometry {
     pub selections: Vec<Rect>,
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeTextVisualDirection {
     Up,
     Down,
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeTextVisualHorizontalDirection {
     Left,
@@ -749,6 +754,7 @@ fn native_text_index_for_vertical_row_delta(
     )
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn native_text_index_for_vertical_move_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -772,6 +778,7 @@ pub(crate) fn native_text_index_for_vertical_move_with_backend(
     )
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn native_text_index_for_horizontal_move_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -829,6 +836,7 @@ pub(crate) fn native_text_index_for_horizontal_move_with_backend(
     candidate.map(|stop| stop.index).unwrap_or(caret)
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn move_native_text_selection_horizontally_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -863,6 +871,7 @@ pub(crate) fn move_native_text_selection_horizontally_with_backend(
     move_selection_to(value, selection, target_index, extend)
 }
 
+#[cfg(feature = "text-input-core")]
 pub(crate) fn native_text_index_for_vertical_page_move_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -913,6 +922,7 @@ pub(crate) fn native_text_index_for_vertical_page_move_with_backend(
     (target_index, preferred_x, first_visible_row)
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 fn native_text_index_for_vertical_row_delta_with_backend(
     target: ViewHitTarget,
     value: &str,
@@ -1348,6 +1358,12 @@ fn decorate_native_text_editor_viewport_with_backend(
     geometry: &NativeTextVisualGeometry,
     backend: &NativeTextShapingBackend,
 ) {
+    let original_text = plan.commands.iter().find_map(|command| match command {
+        NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds) => {
+            Some(text.clone())
+        }
+        _ => None,
+    });
     let text_index = plan.commands.iter().position(|command| {
         matches!(command, NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds))
     });
@@ -1397,27 +1413,33 @@ fn decorate_native_text_editor_viewport_with_backend(
                 },
             }),
     );
-    for (row, line) in lines
-        .iter()
-        .enumerate()
-        .skip(first_visible_row)
-        .take(visible_rows)
-    {
-        commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
-            char_slice(value, line.start, line.end),
-            Rect {
-                x: metrics.text_bounds.x.saturating_sub(horizontal_scroll_px),
-                y: visual_row_y(
-                    metrics.text_bounds.y,
-                    row,
-                    first_visible_row,
-                    metrics.line_height,
-                ),
-                width: line.width.max(metrics.text_bounds.width),
-                height: metrics.line_height,
-            },
-            style,
-        )));
+    if value.is_empty() {
+        if let Some(placeholder) = original_text.filter(|text| !text.text.is_empty()) {
+            commands.push(NativeDrawCommand::Text(placeholder));
+        }
+    } else {
+        for (row, line) in lines
+            .iter()
+            .enumerate()
+            .skip(first_visible_row)
+            .take(visible_rows)
+        {
+            commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                char_slice(value, line.start, line.end),
+                Rect {
+                    x: metrics.text_bounds.x.saturating_sub(horizontal_scroll_px),
+                    y: visual_row_y(
+                        metrics.text_bounds.y,
+                        row,
+                        first_visible_row,
+                        metrics.line_height,
+                    ),
+                    width: line.width.max(metrics.text_bounds.width),
+                    height: metrics.line_height,
+                },
+                style,
+            )));
+        }
     }
     commands.push(NativeDrawCommand::FillRect {
         rect: geometry.caret,
@@ -1431,6 +1453,7 @@ pub(crate) fn decorate_native_focus_ring(
     plan: &mut NativeDrawPlan,
     interaction_plan: &ViewInteractionPlan,
     focused_widget: Option<WidgetId>,
+    show_outline: bool,
     dpi: Dpi,
 ) -> Option<Rect> {
     #[allow(unused_mut)]
@@ -1538,6 +1561,9 @@ pub(crate) fn decorate_native_focus_ring(
             });
             return Some(indicator);
         }
+    }
+    if !show_outline {
+        return None;
     }
     let requested_inset = focus_profile.outline_inset.to_px(dpi).round_i32().max(1);
     let maximum_inset = (target.bounds.width.min(target.bounds.height).max(1) - 1) / 2;
@@ -1843,6 +1869,7 @@ struct NativeTextLine {
     soft_wrap_after: bool,
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct NativeTextVisualCaretStop {
     index: usize,
@@ -1909,6 +1936,7 @@ impl NativeTextLine {
             .unwrap_or(self.end)
     }
 
+    #[cfg(any(test, feature = "text-input-core"))]
     fn visual_caret_stops(&self) -> Vec<NativeTextVisualCaretStop> {
         let mut stops = self
             .carets
@@ -2487,9 +2515,14 @@ mod tests {
         )]);
         let mut plan = NativeDrawPlan::default();
 
-        let ring =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused target should produce a ring");
+        let ring = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            true,
+            Dpi::standard(),
+        )
+        .expect("keyboard-focused target should produce a ring");
 
         assert_eq!(ring.x, 11);
         assert_eq!(ring.y, 21);
@@ -2503,6 +2536,34 @@ mod tests {
                 width: 2,
             }] if *rect == ring
         ));
+    }
+
+    #[test]
+    fn pointer_focus_keeps_logical_focus_without_an_outline() {
+        let widget = WidgetId::new(92);
+        let interaction_plan = ViewInteractionPlan::new([ViewHitTarget::with_kind(
+            widget,
+            Rect {
+                x: 10,
+                y: 20,
+                width: 120,
+                height: 32,
+            },
+            ViewHitTargetKind::Button,
+        )]);
+        let mut plan = NativeDrawPlan::default();
+
+        assert_eq!(
+            decorate_native_focus_ring(
+                &mut plan,
+                &interaction_plan,
+                Some(widget),
+                false,
+                Dpi::standard(),
+            ),
+            None
+        );
+        assert!(plan.commands.is_empty());
     }
 
     #[test]
@@ -2533,9 +2594,14 @@ mod tests {
         ]);
         let mut plan = NativeDrawPlan::default();
 
-        let ring =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused grid view should outline its selected tile");
+        let ring = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            true,
+            Dpi::standard(),
+        )
+        .expect("keyboard-focused grid view should outline its selected tile");
 
         assert_eq!(
             ring,
@@ -2577,6 +2643,7 @@ mod tests {
                 &mut focus_plan,
                 &interaction_plan,
                 Some(widget),
+                true,
                 Dpi::standard(),
             ),
             None
@@ -2640,7 +2707,13 @@ mod tests {
         let mut plan = NativeDrawPlan::default();
 
         assert_eq!(
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard(),),
+            decorate_native_focus_ring(
+                &mut plan,
+                &interaction_plan,
+                Some(widget),
+                true,
+                Dpi::standard(),
+            ),
             None
         );
         assert!(plan.commands.is_empty());
@@ -2663,9 +2736,14 @@ mod tests {
         )]);
         let mut plan = NativeDrawPlan::default();
 
-        let indicator =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused auto-suggest should produce an indicator");
+        let indicator = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            false,
+            Dpi::standard(),
+        )
+        .expect("pointer-focused auto-suggest should keep its input indicator");
 
         assert_eq!(
             indicator,
@@ -3678,6 +3756,58 @@ mod tests {
             plan.commands.last(),
             Some(NativeDrawCommand::PopClip)
         ));
+    }
+
+    #[test]
+    fn focused_empty_text_editor_retains_its_placeholder_behind_the_caret() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(1001),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 180,
+                height: 72,
+            },
+            ViewHitTargetKind::TextEditor,
+        );
+        let mut placeholder_style = crate::SemanticTextStyle::body();
+        placeholder_style.color = ColorRole::SecondaryText;
+        let mut plan =
+            NativeDrawPlan::new([NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+                "Describe the change",
+                Rect {
+                    x: 8,
+                    y: 8,
+                    width: 164,
+                    height: 56,
+                },
+                placeholder_style,
+            ))]);
+
+        decorate_native_text_edit_visuals_in_viewport(
+            &mut plan,
+            target,
+            "",
+            NativeTextSelection::collapsed(0),
+            0,
+            0,
+            crate::TextWrap::Word,
+            Dpi::standard(),
+        );
+
+        assert!(plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == "Describe the change"
+                    && text.style.color == ColorRole::SecondaryText
+        )));
+        assert!(plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::FillRect {
+                fill: NativeDrawFill::Role(ColorRole::Accent),
+                ..
+            }
+        )));
     }
 
     #[test]

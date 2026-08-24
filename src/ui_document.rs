@@ -303,6 +303,8 @@ pub struct UiLayout {
     pub gap_token: Option<UiSpacingToken>,
     pub flex: Option<f32>,
     pub direction: Option<UiAxis>,
+    pub justify: Option<UiJustify>,
+    pub align: Option<UiAlign>,
 }
 
 impl UiLayout {
@@ -316,6 +318,29 @@ impl UiLayout {
 pub enum UiAxis {
     Horizontal,
     Vertical,
+}
+
+/// Main-axis distribution for document-backed rows and columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiJustify {
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+/// Cross-axis placement for document-backed rows and columns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiAlign {
+    Auto,
+    Start,
+    Center,
+    End,
+    Stretch,
 }
 
 /// Platform-neutral spacing references resolved by the active desktop
@@ -7534,6 +7559,11 @@ const PASSWORD_BOX_PROPERTIES: &[PropertySpec] = &[
         required: false,
     },
     PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: false,
+    },
+    PropertySpec {
         name: "reveal_mode",
         value_type: UiValueType::String,
         required: false,
@@ -7573,6 +7603,11 @@ const NUMBER_BOX_PROPERTIES: &[PropertySpec] = &[
         name: "value",
         value_type: UiValueType::NullableNumber,
         required: true,
+    },
+    PropertySpec {
+        name: "placeholder",
+        value_type: UiValueType::String,
+        required: false,
     },
     PropertySpec {
         name: "minimum",

@@ -39,7 +39,7 @@ and is not part of normal task context.
 - Win32, AppKit, Linux Direct and the optional GTK4 compatibility host satisfy
   the v0.2 desktop runtime gate with fixed target proof. Their post-v0.2 feature
   breadth may still differ.
-- The component catalog currently tracks 49 families: all 49 have runtime
+- The component catalog currently tracks 51 families: all 51 have runtime
   surfaces, with none contract-only or not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
 

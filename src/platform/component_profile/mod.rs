@@ -88,6 +88,8 @@ pub(crate) struct PlatformComponentProfile {
     pub button: PlatformButtonProfile,
     #[cfg(feature = "button")]
     pub command_bar: PlatformCommandBarProfile,
+    #[cfg(feature = "accordion")]
+    pub accordion: PlatformAccordionProfile,
     #[cfg(feature = "tabs")]
     pub tabs: PlatformTabProfile,
     #[cfg(feature = "dialog")]
@@ -527,6 +529,24 @@ pub(crate) struct PlatformCommandBarProfile {
 impl PlatformCommandBarProfile {
     pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
         PlatformComponentProfile::for_style(platform).command_bar
+    }
+}
+
+#[cfg(feature = "accordion")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlatformAccordionProfile {
+    pub header_height: Dp,
+    pub header_padding_left: Dp,
+    pub chevron_gap: Dp,
+    pub chevron_button_size: Dp,
+    pub chevron_glyph_size: Dp,
+    pub chevron_margin_right: Dp,
+}
+
+#[cfg(feature = "accordion")]
+impl PlatformAccordionProfile {
+    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
+        PlatformComponentProfile::for_style(platform).accordion
     }
 }
 
@@ -1344,7 +1364,10 @@ mod tests {
             gtk.typography.metrics(TextRole::BodyLarge),
             ZsTypographyMetrics::new(16.5, 22.0, TextWeight::Bold)
         );
-        assert_eq!(windows.typography.fallback().small_font_family, "Segoe UI");
+        assert_eq!(
+            windows.typography.fallback().small_font_family,
+            "Segoe UI Variable Small"
+        );
         assert_eq!(macos.typography.fallback().monospace_font_family, "Menlo");
         assert_eq!(gtk.typography.fallback().rasterization, "pango_cairo");
         assert_eq!(

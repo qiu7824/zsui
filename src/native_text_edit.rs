@@ -1,12 +1,15 @@
+#[cfg(any(test, feature = "text-input-core"))]
 use std::ops::Range;
 
 use crate::WidgetId;
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 use crate::{ClipboardData, ClipboardService, ZsTextEditCommand, ZsuiResult};
 #[cfg(feature = "text-input-core")]
 use unicode_segmentation::UnicodeSegmentation;
+#[cfg(feature = "password-box")]
+use zeroize::Zeroizing;
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 const NATIVE_TEXT_UNDO_LIMIT: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,6 +34,7 @@ impl NativeTextSelection {
         }
     }
 
+    #[cfg(any(test, feature = "text-input-core"))]
     pub(crate) const fn is_collapsed(self) -> bool {
         self.anchor == self.caret
     }
@@ -44,7 +48,7 @@ impl NativeTextSelection {
     }
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 impl From<NativeTextSelection> for crate::ZsTextSelection {
     fn from(selection: NativeTextSelection) -> Self {
         Self {
@@ -91,6 +95,7 @@ impl NativeTextEditState {
     }
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeTextMovement {
     Left,
@@ -106,22 +111,67 @@ pub(crate) struct NativeTextEditResult {
     pub selection_changed: bool,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum NativeTextHistoryValue {
+    Plain(String),
+    #[cfg(feature = "password-box")]
+    Secure(Zeroizing<String>),
+}
+
+#[cfg(feature = "text-input-core")]
+impl NativeTextHistoryValue {
+    fn new(value: &str, secure: bool) -> Self {
+        #[cfg(feature = "password-box")]
+        if secure {
+            return Self::Secure(Zeroizing::new(value.to_string()));
+        }
+        #[cfg(not(feature = "password-box"))]
+        let _ = secure;
+        Self::Plain(value.to_string())
+    }
+
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Plain(value) => value,
+            #[cfg(feature = "password-box")]
+            Self::Secure(value) => value.as_str(),
+        }
+    }
+
+    fn is_secure(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            #[cfg(feature = "password-box")]
+            Self::Secure(_) => true,
+        }
+    }
+
+    fn into_string(self) -> String {
+        match self {
+            Self::Plain(value) => value,
+            #[cfg(feature = "password-box")]
+            Self::Secure(mut value) => std::mem::take(&mut *value),
+        }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NativeTextSnapshot {
-    value: String,
+    value: NativeTextHistoryValue,
     selection: NativeTextSelection,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct NativeTextHistory {
     widget: Option<WidgetId>,
-    tracked_value: Option<String>,
+    tracked_value: Option<NativeTextHistoryValue>,
     undo: Vec<NativeTextSnapshot>,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 impl NativeTextHistory {
     pub(crate) fn record_text_change(
         &mut self,
@@ -129,8 +179,9 @@ impl NativeTextHistory {
         before_value: &str,
         before_selection: NativeTextSelection,
         after_value: &str,
+        secure: bool,
     ) {
-        self.synchronize(widget, before_value);
+        self.synchronize(widget, before_value, secure);
         if before_value == after_value {
             return;
         }
@@ -138,29 +189,39 @@ impl NativeTextHistory {
             self.undo.remove(0);
         }
         self.undo.push(NativeTextSnapshot {
-            value: before_value.to_string(),
+            value: NativeTextHistoryValue::new(before_value, secure),
             selection: before_selection.clamp(before_value),
         });
-        self.tracked_value = Some(after_value.to_string());
+        self.tracked_value = Some(NativeTextHistoryValue::new(after_value, secure));
     }
 
-    fn synchronize(&mut self, widget: WidgetId, value: &str) {
-        if self.widget != Some(widget) || self.tracked_value.as_deref() != Some(value) {
+    fn synchronize(&mut self, widget: WidgetId, value: &str, secure: bool) {
+        let synchronized = self.widget == Some(widget)
+            && self
+                .tracked_value
+                .as_ref()
+                .is_some_and(|tracked| tracked.as_str() == value && tracked.is_secure() == secure);
+        if !synchronized {
             self.widget = Some(widget);
-            self.tracked_value = Some(value.to_string());
+            self.tracked_value = Some(NativeTextHistoryValue::new(value, secure));
             self.undo.clear();
         }
     }
 
-    fn undo(&mut self, widget: WidgetId, value: &str) -> Option<(String, NativeTextSelection)> {
-        self.synchronize(widget, value);
+    fn undo(
+        &mut self,
+        widget: WidgetId,
+        value: &str,
+        secure: bool,
+    ) -> Option<(String, NativeTextSelection)> {
+        self.synchronize(widget, value, secure);
         let snapshot = self.undo.pop()?;
         self.tracked_value = Some(snapshot.value.clone());
-        Some((snapshot.value, snapshot.selection))
+        Some((snapshot.value.into_string(), snapshot.selection))
     }
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct NativeTextCommandResult {
     pub handled: bool,
@@ -172,7 +233,7 @@ pub(crate) struct NativeTextCommandResult {
 }
 
 #[cfg(all(
-    feature = "textbox",
+    feature = "text-input-core",
     any(
         all(target_os = "windows", feature = "windows-win32"),
         all(target_os = "macos", feature = "macos-appkit"),
@@ -195,9 +256,11 @@ pub(crate) fn text_edit_command_for_shortcut_character(
     }
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 pub(crate) fn apply_text_edit_command(
     command: ZsTextEditCommand,
+    capabilities: crate::view::ViewTextEditCapabilities,
+    secure: bool,
     widget: WidgetId,
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -205,16 +268,19 @@ pub(crate) fn apply_text_edit_command(
     clipboard: &mut impl ClipboardService,
 ) -> ZsuiResult<NativeTextCommandResult> {
     *selection = selection.clamp(value);
-    let before_value = value.clone();
-    let before_selection = *selection;
     let mut result = NativeTextCommandResult {
         handled: true,
         ..NativeTextCommandResult::default()
     };
+    if !capabilities.allows(command) {
+        return Ok(result);
+    }
+    let before_value = NativeTextHistoryValue::new(value, secure);
+    let before_selection = *selection;
 
     match command {
         ZsTextEditCommand::Undo => {
-            if let Some((next_value, next_selection)) = history.undo(widget, value) {
+            if let Some((next_value, next_selection)) = history.undo(widget, value, secure) {
                 *value = next_value;
                 *selection = next_selection.clamp(value);
                 result.undo_applied = true;
@@ -225,7 +291,13 @@ pub(crate) fn apply_text_edit_command(
                 clipboard.write_clipboard(&ClipboardData::text(selected))?;
                 result.clipboard_write = true;
                 delete_selection(value, selection);
-                history.record_text_change(widget, &before_value, before_selection, value);
+                history.record_text_change(
+                    widget,
+                    before_value.as_str(),
+                    before_selection,
+                    value,
+                    secure,
+                );
             }
         }
         ZsTextEditCommand::Copy => {
@@ -237,9 +309,17 @@ pub(crate) fn apply_text_edit_command(
         ZsTextEditCommand::Paste => {
             result.clipboard_read = true;
             if let Some(ClipboardData::Text(text)) = clipboard.read_clipboard()? {
+                #[cfg(feature = "password-box")]
+                let text = Zeroizing::new(text);
                 if !text.is_empty() {
                     insert_text(value, selection, &text);
-                    history.record_text_change(widget, &before_value, before_selection, value);
+                    history.record_text_change(
+                        widget,
+                        before_value.as_str(),
+                        before_selection,
+                        value,
+                        secure,
+                    );
                 }
             }
         }
@@ -251,11 +331,12 @@ pub(crate) fn apply_text_edit_command(
         }
     }
 
-    result.text_changed = *value != before_value;
+    result.text_changed = value != before_value.as_str();
     result.selection_changed = *selection != before_selection;
     Ok(result)
 }
 
+#[cfg(feature = "text-input-core")]
 pub(crate) fn apply_text_input(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -291,6 +372,7 @@ pub(crate) fn apply_text_input(
     result
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn insert_text(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -302,7 +384,7 @@ pub(crate) fn insert_text(
     replace_selection(value, selection, text)
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 pub(crate) fn delete_selection(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -310,6 +392,7 @@ pub(crate) fn delete_selection(
     replace_selection(value, selection, "")
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn delete_backward(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -329,6 +412,7 @@ pub(crate) fn delete_backward(
     replace_char_range(value, selection, previous..start, "")
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn delete_forward(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -349,6 +433,7 @@ pub(crate) fn delete_forward(
     replace_char_range(value, selection, end..next, "")
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn move_selection(
     value: &str,
     selection: &mut NativeTextSelection,
@@ -373,6 +458,7 @@ pub(crate) fn move_selection(
     move_selection_to(value, selection, target, extend)
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn move_selection_to(
     value: &str,
     selection: &mut NativeTextSelection,
@@ -456,6 +542,7 @@ fn snap_grapheme_index_with_len(value: &str, index: usize, len: usize) -> usize 
     }
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn previous_grapheme_boundary(value: &str, index: usize) -> usize {
     let index = index.min(char_count(value));
     let boundaries = grapheme_boundaries(value);
@@ -465,6 +552,7 @@ pub(crate) fn previous_grapheme_boundary(value: &str, index: usize) -> usize {
     }
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 pub(crate) fn next_grapheme_boundary(value: &str, index: usize) -> usize {
     let index = index.min(char_count(value));
     let boundaries = grapheme_boundaries(value);
@@ -514,7 +602,7 @@ pub(crate) fn char_to_byte_index(value: &str, char_index: usize) -> usize {
         .unwrap_or(value.len())
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 fn selected_text(value: &str, selection: NativeTextSelection) -> Option<&str> {
     let (start, end) = selection.clamp(value).ordered();
     if start == end {
@@ -523,6 +611,7 @@ fn selected_text(value: &str, selection: NativeTextSelection) -> Option<&str> {
     value.get(char_to_byte_index(value, start)..char_to_byte_index(value, end))
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 fn replace_selection(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -533,6 +622,7 @@ fn replace_selection(
     replace_char_range(value, selection, start..end, replacement)
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 fn replace_char_range(
     value: &mut String,
     selection: &mut NativeTextSelection,
@@ -555,6 +645,7 @@ fn replace_char_range(
     }
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 fn line_start(value: &str, caret: usize) -> usize {
     value
         .chars()
@@ -565,6 +656,7 @@ fn line_start(value: &str, caret: usize) -> usize {
         .unwrap_or(0)
 }
 
+#[cfg(any(test, feature = "text-input-core"))]
 fn line_end(value: &str, caret: usize) -> usize {
     value
         .chars()
@@ -578,13 +670,13 @@ fn line_end(value: &str, caret: usize) -> usize {
 mod tests {
     use super::*;
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     #[derive(Default)]
     struct TestClipboard {
         value: Option<ClipboardData>,
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     impl ClipboardService for TestClipboard {
         fn read_clipboard(&mut self) -> ZsuiResult<Option<ClipboardData>> {
             Ok(self.value.clone())
@@ -726,7 +818,7 @@ mod tests {
 
     #[test]
     #[cfg(all(
-        feature = "textbox",
+        feature = "text-input-core",
         any(
             all(target_os = "windows", feature = "windows-win32"),
             all(target_os = "macos", feature = "macos-appkit"),
@@ -762,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     fn typed_edit_commands_share_unicode_selection_clipboard_and_undo_history() {
         let widget = WidgetId::new(9);
         let mut value = "A中文Z".to_string();
@@ -775,6 +867,8 @@ mod tests {
 
         let copied = apply_text_edit_command(
             ZsTextEditCommand::Copy,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
             widget,
             &mut value,
             &mut selection,
@@ -787,6 +881,8 @@ mod tests {
 
         let cut = apply_text_edit_command(
             ZsTextEditCommand::Cut,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
             widget,
             &mut value,
             &mut selection,
@@ -800,6 +896,8 @@ mod tests {
 
         let undone = apply_text_edit_command(
             ZsTextEditCommand::Undo,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
             widget,
             &mut value,
             &mut selection,
@@ -815,6 +913,8 @@ mod tests {
         clipboard.value = Some(ClipboardData::text("🙂"));
         let pasted = apply_text_edit_command(
             ZsTextEditCommand::Paste,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
             widget,
             &mut value,
             &mut selection,
@@ -827,6 +927,8 @@ mod tests {
 
         let selected = apply_text_edit_command(
             ZsTextEditCommand::SelectAll,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
             widget,
             &mut value,
             &mut selection,
@@ -836,5 +938,72 @@ mod tests {
         .unwrap();
         assert!(selected.selection_changed);
         assert_eq!(selection.ordered(), (0, 3));
+    }
+
+    #[test]
+    #[cfg(feature = "password-box")]
+    fn protected_edit_policy_pastes_and_undoes_without_copying_or_plain_history() {
+        let widget = WidgetId::new(10);
+        let mut value = "vault中".to_string();
+        let mut selection = NativeTextSelection {
+            anchor: 0,
+            caret: value.chars().count(),
+        };
+        let mut history = NativeTextHistory::default();
+        let mut clipboard = TestClipboard {
+            value: Some(ClipboardData::text("next🙂")),
+        };
+        let protected = crate::view::ViewTextEditCapabilities::PROTECTED;
+
+        let copied = apply_text_edit_command(
+            ZsTextEditCommand::Copy,
+            protected,
+            true,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(copied.handled);
+        assert!(!copied.clipboard_write);
+        assert_eq!(value, "vault中");
+
+        let pasted = apply_text_edit_command(
+            ZsTextEditCommand::Paste,
+            protected,
+            true,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(pasted.text_changed);
+        assert_eq!(value, "next🙂");
+        assert!(matches!(
+            history.tracked_value,
+            Some(NativeTextHistoryValue::Secure(_))
+        ));
+        assert!(history
+            .undo
+            .iter()
+            .all(|snapshot| matches!(snapshot.value, NativeTextHistoryValue::Secure(_))));
+
+        let undone = apply_text_edit_command(
+            ZsTextEditCommand::Undo,
+            protected,
+            true,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(undone.undo_applied);
+        assert_eq!(value, "vault中");
     }
 }

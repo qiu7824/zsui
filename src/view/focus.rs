@@ -4,7 +4,7 @@ pub struct LiveViewUpdate {
     pub message_count: usize,
     pub commands: Vec<Command>,
     pub ui_commands: Vec<UiCommand>,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
     pub revision: u64,
@@ -26,7 +26,12 @@ trait LiveViewDriver: Send {
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
+    fn widget_editable_text_descriptor(
+        &self,
+        widget: WidgetId,
+    ) -> Option<ViewEditableTextDescriptor>;
+    #[cfg(feature = "text-input-core")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap>;
     #[cfg(feature = "password-box")]
     fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword>;
@@ -198,7 +203,15 @@ impl SharedLiveViewRuntime {
         self.lock().widget_text_value(widget)
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
+    pub(crate) fn widget_editable_text_descriptor(
+        &self,
+        widget: WidgetId,
+    ) -> Option<ViewEditableTextDescriptor> {
+        self.lock().widget_editable_text_descriptor(widget)
+    }
+
+    #[cfg(feature = "text-input-core")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.lock().widget_text_wrap(widget)
     }
@@ -543,7 +556,7 @@ where
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),
-            #[cfg(feature = "textbox")]
+            #[cfg(feature = "text-input-core")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
             revision: self.revision,
@@ -737,7 +750,15 @@ where
         self.view.widget_text_value(widget).map(str::to_string)
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
+    fn widget_editable_text_descriptor(
+        &self,
+        widget: WidgetId,
+    ) -> Option<ViewEditableTextDescriptor> {
+        self.view.widget_editable_text_descriptor(widget)
+    }
+
+    #[cfg(feature = "text-input-core")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.view.widget_text_wrap(widget)
     }

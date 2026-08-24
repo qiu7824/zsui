@@ -28,9 +28,9 @@ impl WindowsWin32ViewInputRoute {
         alt: bool,
         super_key: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
-        #[cfg(not(feature = "textbox"))]
+        #[cfg(not(feature = "text-input-core"))]
         let _ = (alt, super_key);
-        #[cfg(feature = "textbox")]
+        #[cfg(feature = "text-input-core")]
         if let Some(command) =
             windows_text_edit_shortcut(virtual_key, shift, control, alt, super_key)
         {
@@ -58,7 +58,7 @@ impl WindowsWin32ViewInputRoute {
     }
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 fn windows_text_edit_shortcut(
     virtual_key: u32,
     shift: bool,

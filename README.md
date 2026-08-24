@@ -268,6 +268,7 @@ enum Msg { AmountChanged(Option<f64>) }
 
 fn amount_control(value: Option<f64>) -> ViewNode<Msg> {
     number_box(value, ZsNumberRange::new(0.0, 1000.0).step(0.5).large_step(10.0))
+        .placeholder("Optional amount")
         .fraction_digits(1)
         .on_number_change(Msg::AmountChanged)
 }
@@ -292,10 +293,17 @@ enum Msg { PasswordChanged(ZsPassword) }
 
 fn password_control(value: &ZsPassword) -> ViewNode<Msg> {
     password_box(value)
+        .placeholder("Password")
         .reveal_mode(ZsPasswordRevealMode::Peek)
         .on_password_change(Msg::PasswordChanged)
 }
 ```
+
+`textbox`、多行 `text_editor`、`password_box`、`number_box`、`auto_suggest_box`、
+`combo_box` 与 `command_palette` 统一支持 `.placeholder(...)`。提示只在真实值为空时
+以主题次要文字显示，不会进入输入值、文本选择、剪贴板、IME 提交或密码安全通道。
+阶段化的后续字段语义与三平台证据计划见
+[`docs/v0.3-input-experience.md`](docs/v0.3-input-experience.md)。
 
 RadioButton 不维护全局注册表；同一 `row` 或 `column` 的直接子项会形成局部分组，
 框架即时保证互斥，并按 WinUI 规则提供单一 Tab 停靠点和不循环的方向键导航；
@@ -939,9 +947,11 @@ Linux 的“原生”指真实系统窗口、窗口管理器事件、系统字�
 可选 `clipboard` feature 通过统一的 `ClipboardData`/`ClipboardService` API 在
 Win32、AppKit 和 Linux 后端读写 UTF-8 文本及经过尺寸与字节数校验的 RGBA 图像；
 应用代码不接触平台剪贴板对象。文件列表传输仍保持明确的不支持状态。
-获得焦点的 `TextBox` 和 `TextEditor` 默认响应平台主修饰键的全选、复制、粘贴、
-剪切和撤销快捷键：Windows/Linux 使用 `Ctrl+A/C/V/X/Z`，macOS 使用
-`Command+A/C/V/X/Z`；其中复制、粘贴和剪切需要启用 `clipboard` feature。
+可编辑文本能力统一提供平台主修饰键快捷键：Windows/Linux 使用
+`Ctrl+A/C/V/X/Z`，macOS 使用 `Command+A/C/V/X/Z`。`TextBox`、`TextEditor`、
+`NumberBox`、`AutoSuggestBox` 和 `CommandPalette` 启用完整编辑策略；`PasswordBox`
+允许全选、粘贴和安全撤销，但禁止复制与剪切。复制、粘贴和剪切需要启用
+`clipboard` feature。新增文本组件只需组合该能力，不修改平台快捷键路由。
 
 ## 目录
 

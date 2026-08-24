@@ -18,11 +18,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         width: 1280,
         height: 800,
     };
-    let layout = workbench.layout(surface, Dpi::standard());
+    let manifest_layout = args
+        .iter()
+        .any(|arg| arg == "--manifest")
+        .then(|| workbench.layout(surface, Dpi::standard()));
+    let manifest_title = manifest_layout.as_ref().map(|_| workbench.title.clone());
     let builder = native_window("ZSUI Workbench")
         .size(surface.width as u32, surface.height as u32)
         .min_size(760, 600)
-        .workbench(workbench.clone());
+        .workbench(workbench);
 
     if args.iter().any(|arg| arg == "--smoke") {
         let artifact_dir = "target/zsui-workbench";
@@ -37,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.iter().any(|arg| arg == "--manifest") {
+        let layout = manifest_layout.expect("manifest layout should be prepared");
         let draw_plan = builder
             .native_draw_plan()
             .expect("workbench builder should carry a draw plan");
@@ -47,9 +52,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "draw_command_count": draw_plan.command_count(),
                 "inspector_visible": layout.metrics.inspector.is_some(),
                 "message_count": layout.messages.len(),
+                "message_scroll_max": layout.message_scroll_max,
+                "message_scrollbar_visible": layout.message_scrollbar.is_some(),
                 "region_count": layout.regions.len(),
                 "text_command_count": draw_plan.text_count(),
-                "title": workbench.title,
+                "title": manifest_title.expect("manifest title should be prepared"),
             }))?
         );
         return Ok(());
@@ -147,6 +154,30 @@ fn sample_workbench() -> ZsWorkbenchShellSpec {
                 "retry",
                 "Retry",
                 ZsWorkbenchIcon::Retry,
+            )),
+        )
+        .message(
+            ZsWorkbenchMessageSpec::new(
+                "message-native-runtime",
+                ZsWorkbenchMessageRole::Assistant,
+            )
+            .block(ZsWorkbenchContentBlock::paragraph(
+                "The retained View runtime updates only the affected native window, keeps the buffered paint path, and materializes just the visible timeline range plus a small overscan window.",
+            ))
+            .block(ZsWorkbenchContentBlock::tool_with_status_label(
+                "Verify native runtime",
+                "Semantic icons, overlay scrollbars and retained layout are active",
+                ZsWorkbenchToolStatus::Succeeded,
+                "Ready",
+            ))
+            .block(ZsWorkbenchContentBlock::code(
+                "rust",
+                "native_window(\"Workbench\")\n    .workbench(spec)\n    .invalidation_handle(handle)\n    .run()?;",
+            ))
+            .action(ZsWorkbenchActionSpec::new(
+                "copy-runtime",
+                "Copy",
+                ZsWorkbenchIcon::Copy,
             )),
         );
     let inspector = inspector_panel("Inspector")

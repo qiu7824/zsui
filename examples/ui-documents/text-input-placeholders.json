@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "text-input-placeholders",
+    "component": "stack",
+    "layout": {
+      "direction": "vertical",
+      "gap_token": "content_gap",
+      "padding_token": "page_padding"
+    },
+    "children": [
+      {
+        "id": "account-name",
+        "component": "textbox",
+        "properties": {
+          "value": "",
+          "placeholder": "账户名称 / Account name"
+        }
+      },
+      {
+        "id": "notes",
+        "component": "textbox",
+        "properties": {
+          "value": "",
+          "multiline": true,
+          "placeholder": "补充说明 / Notes"
+        },
+        "layout": {
+          "height": 96
+        }
+      },
+      {
+        "id": "account-password",
+        "component": "password_box",
+        "properties": {
+          "placeholder": "密码 / Password",
+          "reveal_mode": "peek"
+        }
+      },
+      {
+        "id": "optional-amount",
+        "component": "number_box",
+        "properties": {
+          "value": null,
+          "placeholder": "可选金额 / Optional amount",
+          "minimum": 0,
+          "maximum": 10000,
+          "fraction_digits": 2
+        }
+      }
+    ]
+  }
+}

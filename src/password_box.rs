@@ -178,6 +178,16 @@ pub fn zs_password_box_native_draw_plan(
     reveal_mode: ZsPasswordRevealMode,
     peek_revealed: bool,
 ) -> NativeDrawPlan {
+    zs_password_box_native_draw_plan_with_placeholder(plan, value, reveal_mode, peek_revealed, None)
+}
+
+pub fn zs_password_box_native_draw_plan_with_placeholder(
+    plan: &ZsPasswordBoxRenderPlan,
+    value: &ZsPassword,
+    reveal_mode: ZsPasswordRevealMode,
+    peek_revealed: bool,
+    placeholder: Option<&str>,
+) -> NativeDrawPlan {
     let revealed = reveal_mode == ZsPasswordRevealMode::Visible
         || (reveal_mode == ZsPasswordRevealMode::Peek && peek_revealed);
     let mut commands = vec![NativeDrawCommand::RoundRect {
@@ -186,7 +196,15 @@ pub fn zs_password_box_native_draw_plan(
         stroke: Some(NativeDrawFill::Role(ColorRole::Control)),
         radius: plan.radius,
     }];
-    if revealed {
+    if value.is_empty() {
+        let mut style = SemanticTextStyle::body();
+        style.color = ColorRole::SecondaryText;
+        commands.push(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            placeholder.unwrap_or_default(),
+            plan.text_bounds,
+            style,
+        )));
+    } else if revealed {
         commands.push(NativeDrawCommand::SecureText(
             NativeDrawSecureTextCommand::new(
                 value.clone(),
@@ -248,6 +266,40 @@ mod tests {
             command,
             NativeDrawCommand::SecureText(command) if command.character_count() == 7
         )));
+    }
+
+    #[test]
+    fn empty_password_uses_secondary_placeholder_without_secure_text() {
+        let render = zs_password_box_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 32,
+            },
+            ZsPasswordRevealMode::Peek,
+            false,
+            ZsPasswordBoxPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let draw = zs_password_box_native_draw_plan_with_placeholder(
+            &render,
+            &ZsPassword::default(),
+            ZsPasswordRevealMode::Peek,
+            false,
+            Some("Enter password"),
+        );
+
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == "Enter password"
+                    && text.style.color == ColorRole::SecondaryText
+        )));
+        assert!(!draw
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::SecureText(_))));
     }
 
     #[test]

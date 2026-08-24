@@ -69,10 +69,10 @@ history remain authoritative for implementation status.
   validation. `zsui-uic check` consumes an application-exported binding schema;
   component availability remains tied to Cargo features and the framework
   component catalog.
-- Typography is a framework contract, not a Demo detail. Windows resolves the
-  Win32 `SPI_GETNONCLIENTMETRICS.message_font` at runtime, matching the ZSClip
-  system message font (currently `Microsoft YaHei UI` on the proof host); the
-  Segoe UI profile is only a fallback when the system family cannot be loaded.
+- Typography is a framework contract, not a Demo detail. The default Win32 host
+  uses the ZSUI HarfRust/Swash engine and the installed Segoe UI Variable Small,
+  Text and Display optical families; CJK and complex scripts resolve through
+  per-glyph system-font fallback, with classic Segoe UI for older systems.
   AppKit and GTK similarly resolve their host system families. `text` and
   `styled_text` keep Demo code on semantic `TextRole` values, while the shared
   `resolve_semantic_text_style` path supplies the same family, metrics,
@@ -402,9 +402,13 @@ history remain authoritative for implementation status.
   focused editor or an explicit strong `WidgetId`. The per-window input runtime
   may retain bounded undo snapshots as transient interaction state, but every
   resulting value and selection returns through typed View messages so the
-  application remains authoritative. Focused TextBox/TextEditor controls map
-  the exact platform-primary A/C/V/X/Z chords to select-all/copy/paste/cut/undo
-  before ordinary text input: Control on Windows/Linux and Command on macOS.
+  application remains authoritative. Editable text is a compositional ViewNode
+  capability rather than a hit-target-kind whitelist. TextBox/TextEditor,
+  NumberBox drafts, AutoSuggestBox queries and CommandPalette queries use the
+  full select-all/copy/paste/cut/undo policy; PasswordBox uses a protected
+  select-all/paste/undo policy whose history is zeroized and whose copy/cut
+  commands are consumed without clipboard access. Platform hosts map the exact
+  primary A/C/V/X/Z chords once: Control on Windows/Linux and Command on macOS.
   Cut/copy/paste require the optional `clipboard` feature and use target-native
   clipboard services; examples do not call platform clipboard APIs directly.
 - Shared multiline editors default to `TextWrap::Word` and accept runtime
@@ -763,8 +767,8 @@ history remain authoritative for implementation status.
   bars, tabs, content-dialog action order/sizing/alignment/scrim/focus
   traversal, feature-gated InfoBar/TeachingTip/Toast/BreadcrumbBar/
   ToggleButton/NumberBox/PasswordBox/ToolTip/ProgressRing/AutoSuggestBox/
-  GridView/TreeView/DataGrid/TimePicker/ColorPicker/CommandPalette metrics and
-  interaction treatments, global radius/spacing/control-density tokens,
+  Accordion/GridView/TreeView/DataGrid/TimePicker/ColorPicker/CommandPalette
+  metrics and interaction treatments, global radius/spacing/control-density tokens,
   semantic typography defaults and shared focus visuals, and the legacy
   navigation/card shell. Feature-gated Document Shell and Calculator Shell
   direct-draw compatibility layouts also resolve through dedicated profiles.
@@ -773,7 +777,10 @@ history remain authoritative for implementation status.
   Target backends continue to own installed-font discovery, shaping,
   rasterization and native resources. Production shared component, token,
   typography and focus code contains no direct Windows, macOS or GTK variant
-  branch.
+  branch. Pointer focus retains logical keyboard/accessibility ownership
+  without the keyboard outline; Tab and keyboard navigation reveal that
+  outline, while focused text inputs keep their platform indicator for either
+  input modality.
   One `ZsShellLayoutSpec` therefore resolves to a Fluent pane/card composition,
   AppKit source-list/forms composition or GTK sidebar/boxed-list composition
   without exposing a platform selector in the application API.
@@ -927,9 +934,9 @@ history remain authoritative for implementation status.
   Windows follows the Microsoft type ramp (12/16 caption, 14/20 body, 18/24
   body large, 20/28 subtitle, 28/36 content title, 40/52 title large and 68/92
   display), plus a compact framework `WindowTitle` role at 24/32. It uses
-  regular 400 or semibold 600, resolves all UI text roles to the live
-  `SPI_GETNONCLIENTMETRICS` message font with a Segoe UI failure fallback, and
-  scales `HFONT` height from the active window DPI. This is a backend-owned
+  regular 400 or semibold 600, resolves semantic roles to Segoe UI Variable
+  Small/Text/Display with per-glyph fallback, and scales retained layout and
+  rasterization from the active window DPI. This is a backend-owned
   framework rule shared by Gallery, Notepad, Viewer and normal applications;
   demos must not declare a replacement family. Do not restore raw per-widget
   title sizes or use ClearType color filtering for icon-font glyphs.
@@ -968,7 +975,10 @@ history remain authoritative for implementation status.
 - `ViewStyle::flex` distributes only a Stack's main axis. Text fills the column
   cross-axis width even when wrapped text is content-height (`flex(0)`), while
   a wrapping label beside a fixed action uses explicit main-axis flex when it
-  must receive the remaining row width.
+  must receive the remaining row width. The framework default is content-sized
+  `flex(0)`; filling remaining space is always explicit. `ViewJustify` owns
+  main-axis distribution and `ViewAlign` owns cross-axis placement; `Auto`
+  preserves native intrinsic sizing, row centering and column start placement.
 - UiDocument page/content spacing uses `UiSpacingToken` rather than copied
   Windows constants. Text documents expose semantic role, wrap, ellipsis,
   weight and alignment; enum bindings are validated after value resolution.
@@ -1019,8 +1029,9 @@ history remain authoritative for implementation status.
   surface/DPI/typography context and reuses it for paint, hit testing, text
   input and accessibility. Paragraphs, code, notices and dynamic action labels
   consume backend text measurements; multiline text aligns to the top. Sidebar
-  history and inspector bodies own clipped wheel-scroll viewports, narrow
-  windows auto-collapse without disabling explicit expansion, and Composer
+  history, the message timeline and inspector bodies own clipped wheel-scroll
+  viewports and share target shell overlay-scrollbar metrics; narrow windows
+  auto-collapse without disabling explicit expansion, and Composer
   height grows within platform-profile bounds while preserving both mode and
   model labels. The message timeline materializes the viewport plus one
   viewport of overscan on each side while retaining the total scroll extent.
@@ -1559,9 +1570,11 @@ history remain authoritative for implementation status.
   spaces for caret/selection identity, and carries visible-glyph synthetic bold
   through advances, rasterization and cache keys. All non-emoji single-family
   script corpora now pass; five weighted emoji and mixed semibold cases remain
-  because DirectWrite and fontdb choose different physical fallback faces. Keep
-  `windows-rust-text` experimental and GDI/DirectWrite fallback active until
-  the full matrix is stable.
+  because DirectWrite and fontdb choose different physical fallback faces.
+  `windows-win32` now selects `windows-rust-text`; GDI remains only the bounded
+  runtime fallback and DirectWrite remains a proof oracle. The five weighted
+  emoji/mixed-semibold deviations stay explicit release gaps until the full
+  matrix is stable.
 - The declarative View is temporary input to type+key reconciliation. The
   retained architecture separates Element state/identity, RenderObject
   geometry/paint invalidation, repaint-boundary DisplayLists and sparse
@@ -1606,10 +1619,11 @@ history remain authoritative for implementation status.
   Win32 Viewer proof at 1200x720 routed one real row click into one typed Viewer
   message with zero unhandled clicks; RSS at teardown was 17,022,976 bytes and
   Windows private bytes were 5,955,584.
-- Accordion is an opt-in composition over semantic toolbar buttons and arbitrary
-  View content. `ZsAccordionItemId` is stable, single mode owns `collapsible`,
-  multiple mode toggles independently, and every action carries the complete
-  next expanded-ID set. Content may nest another Accordion. Its UiDocument
+- Accordion is an opt-in composition over dedicated semantic expander headers
+  and arbitrary View content. Platform profiles own header height, trailing
+  chevron slot and glyph metrics. `ZsAccordionItemId` is stable, single mode
+  owns `collapsible`, multiple mode toggles independently, and every action
+  carries the complete next expanded-ID set. Content may nest another Accordion. Its UiDocument
   contract uses direct child IDs, a complete `labels` map and paired
   `expanded`/`expanded_change` bindings.
 - ContextMenu is the secondary-click invocation policy for MenuFlyout, not a
@@ -1623,6 +1637,14 @@ history remain authoritative for implementation status.
   removes that identity. Result handlers may record the timeout without
   clearing state immediately, and the same ID can be presented again after an
   absent declaration.
+- TextBox, multiline TextEditor, PasswordBox, NumberBox, AutoSuggestBox,
+  ComboBox and CommandPalette share the `.placeholder(...)` View contract.
+  Placeholder text is a themed secondary hint for an empty semantic value; it
+  never enters the value, selection, clipboard, undo, IME commit or password
+  secure channel. Focus retains the hint behind the caret, while typed or IME
+  preedit content replaces it. UiDocument uses the same `placeholder` string
+  property for textbox, password_box and number_box, and accessibility projects
+  the basic input hint as a description rather than inventing a value.
 
 ## Acceptance applications
 

@@ -230,7 +230,7 @@ impl ZsIcon {
             Self::Tool => "\u{E90F}",
             Self::Check => "\u{E73E}",
             Self::Info => "\u{E946}",
-            Self::Success => "\u{E73E}",
+            Self::Success => "\u{E930}",
             Self::Warning => "\u{E7BA}",
             Self::Error => "\u{E783}",
             Self::Minimize => "\u{E921}",
@@ -279,7 +279,7 @@ impl ZsIcon {
             Self::Send => "send.svg",
             Self::Stop => "stop.svg",
             Self::Refresh => "refresh.svg",
-            Self::Retry => "retry.svg",
+            Self::Retry => "refresh.svg",
             Self::Code => "code.svg",
             Self::Tool => "tool.svg",
             Self::Check => "check.svg",
@@ -302,7 +302,7 @@ impl ZsIcon {
             Self::Paste => "paste.svg",
             Self::Edit => "edit.svg",
             Self::Group => "group.svg",
-            Self::Phrase => "phrase.svg",
+            Self::Phrase => "text.svg",
             Self::ChevronUp => "chevron-up.svg",
             Self::ChevronDown => "chevron-down.svg",
             Self::Calendar => "calendar.svg",
@@ -345,7 +345,7 @@ impl ZsIcon {
             Self::Send => include_bytes!("../assets/fluent-system-icons/regular/send.svg"),
             Self::Stop => include_bytes!("../assets/fluent-system-icons/regular/stop.svg"),
             Self::Refresh => include_bytes!("../assets/fluent-system-icons/regular/refresh.svg"),
-            Self::Retry => include_bytes!("../assets/fluent-system-icons/regular/retry.svg"),
+            Self::Retry => include_bytes!("../assets/fluent-system-icons/regular/refresh.svg"),
             Self::Code => include_bytes!("../assets/fluent-system-icons/regular/code.svg"),
             Self::Tool => include_bytes!("../assets/fluent-system-icons/regular/tool.svg"),
             Self::Check => include_bytes!("../assets/fluent-system-icons/regular/check.svg"),
@@ -370,7 +370,7 @@ impl ZsIcon {
             Self::Paste => include_bytes!("../assets/fluent-system-icons/regular/paste.svg"),
             Self::Edit => include_bytes!("../assets/fluent-system-icons/regular/edit.svg"),
             Self::Group => include_bytes!("../assets/fluent-system-icons/regular/group.svg"),
-            Self::Phrase => include_bytes!("../assets/fluent-system-icons/regular/phrase.svg"),
+            Self::Phrase => include_bytes!("../assets/fluent-system-icons/regular/text.svg"),
             Self::ChevronUp => {
                 include_bytes!("../assets/fluent-system-icons/regular/chevron-up.svg")
             }
@@ -407,7 +407,7 @@ impl ZsIcon {
             Self::Send => "paperplane",
             Self::Stop => "stop.fill",
             Self::Refresh => "arrow.clockwise",
-            Self::Retry => "arrow.counterclockwise",
+            Self::Retry => "arrow.clockwise",
             Self::Code => "chevron.left.forwardslash.chevron.right",
             Self::Tool => "wrench.and.screwdriver",
             Self::Check => "checkmark",
@@ -548,6 +548,21 @@ mod tests {
     }
 
     #[test]
+    fn semantic_icon_sources_keep_retry_success_and_phrase_shapes_aligned() {
+        assert_eq!(ZsIcon::Retry.windows_fluent_glyph(), "\u{E72C}");
+        assert_eq!(ZsIcon::Retry.sf_symbol_name(), "arrow.clockwise");
+        assert_eq!(ZsIcon::Retry.fluent_svg_asset_name(), "refresh.svg");
+
+        assert_eq!(ZsIcon::Success.windows_fluent_glyph(), "\u{E930}");
+        assert_eq!(ZsIcon::Success.sf_symbol_name(), "checkmark.circle");
+        assert_eq!(ZsIcon::Success.fluent_svg_asset_name(), "success.svg");
+
+        assert_eq!(ZsIcon::Phrase.windows_fluent_glyph(), "\u{E8D2}");
+        assert_eq!(ZsIcon::Phrase.sf_symbol_name(), "textformat");
+        assert_eq!(ZsIcon::Phrase.fluent_svg_asset_name(), "text.svg");
+    }
+
+    #[test]
     #[cfg(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),
@@ -561,5 +576,9 @@ mod tests {
             assert!(icon.fluent_svg_asset_name().ends_with(".svg"));
             assert!(icon.fluent_svg_bytes().starts_with(b"<svg"));
         }
+        assert!(ZsIcon::ChevronUp
+            .fluent_svg_bytes()
+            .windows(b"M4.14708 12.3534".len())
+            .any(|window| window == b"M4.14708 12.3534"));
     }
 }

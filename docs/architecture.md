@@ -328,13 +328,14 @@ Windows font code point in component code.
 Text nodes carry `SemanticTextStyle` rather than raw widget-local sizes. The
 shared semantic type ramp exposes caption 12/16, body 14/20, body-large 18/24,
 subtitle 20/28, compact `WindowTitle` 24/32, title 28/36, title-large 40/52
-and display 68/92 roles. Heading roles default to semibold 600. On Windows, the GDI sink resolves every UI text
-role through the configured `SPI_GETNONCLIENTMETRICS` message font, matching
-native ZSUI applications and Windows system settings on both Latin and CJK
-installations; classic Segoe UI is the failure fallback. The semantic role
-still selects size, line height and weight, while the family remains the live
-system UI family. The sink converts the DIP font size with the current window
-DPI before creating an `HFONT`; text and icon glyphs use ClearType quality.
+and display 68/92 roles. Heading roles default to semibold 600. The Win32 host
+selects the ZSUI-owned HarfRust/Swash path and resolves caption, body and heading
+roles through the installed Segoe UI Variable Small, Text and Display optical
+families. Font fallback selects the appropriate CJK and complex-script face per
+glyph instead of assigning one locale message font to the whole run; classic
+Segoe UI is the older-system fallback. GDI remains the bounded fallback for
+unsupported ellipsis behavior. Text uses subpixel rasterization while semantic
+icon-font glyphs use grayscale coverage to avoid color fringes.
 AppKit keeps the system `NSFont` family and GTK4 keeps its configured Pango
 system family.
 
@@ -410,11 +411,11 @@ zsui = { version = "0.1", default-features = false, features = [
 Optional dependencies must stay behind explicit feature gates: `clipboard`
 enables `arboard`, `image` enables `png`, `calculator` enables `rust_decimal`,
 `desktop-winit` enables `winit`, `windows-gdi` enables `windows-sys`,
-`windows-directwrite` optionally replaces GDI text measurement and drawing with
-the system DirectWrite factory while retaining the same buffered Win32 DIB,
-`rust-text` enables the platform-neutral ZSUI-owned HarfRust/Swash text engine,
-`windows-rust-text` connects that engine to the buffered Win32 DIB, and
-`rust-text-proof` adds development-only geometry/serialization/difference code.
+`windows-win32` selects `windows-rust-text`, which connects the platform-neutral
+ZSUI-owned HarfRust/Swash engine to the buffered Win32 DIB. `windows-gdi`
+retains the fallback paint foundation, while `windows-directwrite` remains an
+explicit comparison backend and proof oracle. `rust-text-proof` adds
+development-only geometry/serialization/difference code.
 `windows-text-proof` builds the multi-font DirectWrite JSON/SVG/PNG oracle in
 `docs/text-rendering.md`; neither proof feature belongs in application builds.
 The production text layout retains exact shaped geometry with unique visual-line

@@ -52,14 +52,14 @@ system DirectWrite implementation for layout, fallback and glyph rasterization,
 then composites the result into ZSUI's existing buffered Win32 surface. It does
 not enable Direct2D, a second application runtime or a WebView.
 
-`rust-text` is the optional production platform-neutral ZSUI text engine;
-`windows-rust-text` selects it for Win32 measurement and drawing without
-changing application UI code. `rust-text-proof` adds development-only geometry,
+`rust-text` is the production platform-neutral ZSUI text engine;
+`windows-win32` selects it through `windows-rust-text` for Win32 measurement and
+drawing without changing application UI code. `rust-text-proof` adds development-only geometry,
 serialization and difference output; `windows-text-proof` keeps DirectWrite
 available as its reference oracle and generates the multi-font JSON, SVG and
 PNG evidence defined in `docs/text-rendering.md`. Neither proof feature is an
-application capability. The Rust path remains experimental until that matrix,
-rather than a single-font sample, passes.
+application capability. Geometry and fallback deviations found by that matrix
+remain release gaps even though DirectWrite is not part of the production path.
 Production adapters consume the engine's exact retained glyph placement and
 unique visual-line indices. Quantized raster-cache coordinates are private to
 pixel generation and must not drive measurement, hit testing or caret geometry.

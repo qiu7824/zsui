@@ -1,0 +1,162 @@
+name: DataViewer Comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "comparisons/zsui_dataviewer/**"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/dataviewer-comparison.yml"
+  pull_request:
+    paths:
+      - "comparisons/zsui_dataviewer/**"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/dataviewer-comparison.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dataviewer-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows 2025 Win32
+    runs-on: windows-2025
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: comparisons/zsui_dataviewer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: comparisons/zsui_dataviewer -> target
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Capture real Win32 window
+        shell: pwsh
+        run: |
+          $proof = "target/dataviewer-proof/windows-2025-x86_64"
+          New-Item -ItemType Directory -Force $proof | Out-Null
+          cargo run --release --locked -- `
+            --sample --smoke `
+            --screenshot "$proof/loaded-default.png" `
+            --report "$proof/loaded-default.json"
+          if (-not (Test-Path "$proof/loaded-default.png")) {
+            throw "Win32 screenshot was not produced"
+          }
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dataviewer-windows-2025-x86_64
+          path: comparisons/zsui_dataviewer/target/dataviewer-proof/windows-2025-x86_64
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS 15 AppKit
+    runs-on: macos-15
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: comparisons/zsui_dataviewer
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: comparisons/zsui_dataviewer -> target
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Capture real AppKit window
+        run: |
+          proof=target/dataviewer-proof/macos-15-arm64
+          mkdir -p "$proof"
+          cargo run --release --locked -- \
+            --sample --smoke \
+            --screenshot "$proof/loaded-default.png" \
+            --report "$proof/loaded-default.json"
+          test -s "$proof/loaded-default.png"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dataviewer-macos-15-arm64
+          path: comparisons/zsui_dataviewer/target/dataviewer-proof/macos-15-arm64
+          if-no-files-found: error
+          retention-days: 30
+
+  ubuntu-x11:
+    name: Ubuntu 24.04 Linux Direct X11
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      ZSUI_LINUX_ICON_THEME: Adwaita
+      ZSUI_LINUX_UI_FONT: Ubuntu Sans 11
+    defaults:
+      run:
+        working-directory: comparisons/zsui_dataviewer
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux window and font runtime
+        working-directory: .
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            adwaita-icon-theme \
+            dbus-x11 \
+            fonts-noto-cjk \
+            fonts-ubuntu \
+            libfontconfig1-dev \
+            libcairo2-dev \
+            libdbus-1-dev \
+            libgdk-pixbuf-2.0-dev \
+            libpango1.0-dev \
+            libx11-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            librsvg2-common \
+            xauth \
+            xvfb
+          fc-cache --force
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: comparisons/zsui_dataviewer -> target
+      - run: cargo fmt --check
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Capture real Linux Direct X11 window
+        run: |
+          proof=target/dataviewer-proof/ubuntu-24.04-x86_64
+          mkdir -p "$proof"
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' \
+            cargo run --release --locked -- \
+              --sample --smoke \
+              --screenshot "$proof/loaded-default.png" \
+              --report "$proof/loaded-default.json"
+          test -s "$proof/loaded-default.png"
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dataviewer-ubuntu-24.04-x86_64
+          path: comparisons/zsui_dataviewer/target/dataviewer-proof/ubuntu-24.04-x86_64
+          if-no-files-found: error
+          retention-days: 30

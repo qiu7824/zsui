@@ -749,7 +749,8 @@ pub use paged_list::{
 #[cfg(feature = "password-box")]
 #[doc(hidden)]
 pub use password_box::{
-    mask_password, zs_password_box_native_draw_plan, zs_password_box_render_plan, ZsPassword,
+    mask_password, zs_password_box_native_draw_plan,
+    zs_password_box_native_draw_plan_with_placeholder, zs_password_box_render_plan, ZsPassword,
     ZsPasswordBoxMetrics, ZsPasswordBoxPlatformStyle, ZsPasswordBoxRenderPlan,
     ZsPasswordRevealMode,
 };
@@ -1008,9 +1009,10 @@ pub use view::{calculator_view, ZsCalculatorViewIds};
 #[doc(hidden)]
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
-    LiveViewUpdate, SharedLiveViewRuntime, View, ViewEvent, ViewEventCx, ViewFocusBehavior,
-    ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewLayoutCx, ViewNode, ViewNodeKind,
-    ViewOverflow, ViewPaintCx, ViewStackDirection, ViewStyle, WidgetId,
+    LiveViewUpdate, SharedLiveViewRuntime, View, ViewAlign, ViewEvent, ViewEventCx,
+    ViewFocusBehavior, ViewHitTarget, ViewHitTargetKind, ViewInteractionPlan, ViewJustify,
+    ViewLayoutCx, ViewNode, ViewNodeKind, ViewOverflow, ViewPaintCx, ViewStackDirection, ViewStyle,
+    WidgetId,
 };
 #[cfg(feature = "button")]
 #[doc(hidden)]
@@ -1058,7 +1060,7 @@ pub use view::{ZsGridCell, ZsGridFraction, ZsGridPlacement, ZsGridSpan, ZsGridTr
 #[cfg(feature = "number-box")]
 #[doc(hidden)]
 pub use view::{ZsNumberBoxState, ZsNumberFormat, ZsNumberRange};
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[doc(hidden)]
 pub use view::{ZsTextEditCommand, ZsTextEditCommandRequest, ZsTextSelection};
 #[cfg(any(
@@ -1144,8 +1146,8 @@ pub use widget_render::{
 #[cfg(feature = "number-box")]
 #[doc(hidden)]
 pub use widget_render::{
-    zs_number_box_native_draw_plan, zs_number_box_render_plan, ZsNumberBoxMetrics,
-    ZsNumberBoxPlatformStyle, ZsNumberBoxRenderPlan,
+    zs_number_box_native_draw_plan, zs_number_box_native_draw_plan_with_placeholder,
+    zs_number_box_render_plan, ZsNumberBoxMetrics, ZsNumberBoxPlatformStyle, ZsNumberBoxRenderPlan,
 };
 #[cfg(feature = "progress")]
 #[doc(hidden)]

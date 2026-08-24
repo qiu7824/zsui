@@ -5,11 +5,13 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     );
     ViewNode::new(ViewNodeKind::Textbox {
         value: value.into(),
+        placeholder: None,
         multiline: false,
         wrap: crate::TextWrap::NoWrap,
         on_change: None,
         on_selection_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::textbox(false))
     .min_width(metrics.text_input_minimum_width)
     .native_typography_height(metrics.text_input_height)
 }
@@ -18,11 +20,13 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
 pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
     ViewNode::new(ViewNodeKind::Textbox {
         value: value.into(),
+        placeholder: None,
         multiline: true,
         wrap: crate::TextWrap::Word,
         on_change: None,
         on_selection_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::textbox(true))
 }
 
 #[cfg(feature = "password-box")]
@@ -35,9 +39,11 @@ pub fn password_box<Msg>(value: impl Into<crate::ZsPassword>) -> ViewNode<Msg> {
     );
     ViewNode::new(ViewNodeKind::PasswordBox {
         value: value.into(),
+        placeholder: None,
         reveal_mode: crate::ZsPasswordRevealMode::platform_default(),
         on_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::password())
     .min_width(base.text_input_minimum_width)
     .native_typography_height(metrics.minimum_height)
 }
@@ -74,11 +80,13 @@ pub fn number_box<Msg>(
     ViewNode::new(ViewNodeKind::NumberBox {
         value,
         draft: format.format(value),
+        placeholder: None,
         range,
         format,
         wraps: false,
         on_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::plain_text_changed())
     .min_width(metrics.button_minimum_width)
     .native_typography_height(metrics.text_input_height)
 }
@@ -106,6 +114,7 @@ where
         on_query_submit: None,
         on_expanded_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::plain_text_changed())
     .native_typography_height(metrics.control_height)
 }
 

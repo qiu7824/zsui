@@ -88,6 +88,14 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "expand typed message builders across list, menu, tray and text input surfaces",
         ),
         ZsuiRustFirstGoal::new(
+            "input_experience_consistency",
+            "Keep editable controls aligned on value-independent hints, field semantics, IME behavior, accessibility projection and target-native proof.",
+            "one .placeholder(...) contract for text-capable View controls, application-owned validation, themed secondary hints, typed UiDocument properties and shared three-platform input scenarios",
+            "placeholder text entering values or secure channels, backend-local validation state, global form registries, or platform-specific application view branches",
+            "src/view, src/password_box.rs, src/widget_render.rs, src/ui_document.rs, src/ui_document_runtime.rs, docs/v0.3-input-experience.md",
+            "compose typed labels/help/errors around inputs, then add one-source Win32/AppKit/Linux Native Proof for empty, focused, IME, invalid and secure states",
+        ),
+        ZsuiRustFirstGoal::new(
             "raii_native_resources",
             "Own native windows, fonts, bitmaps, tray icons and handles with RAII wrappers.",
             "owned Window/Icon/Tray/Font/Bitmap values and internal Drop-backed HWND/GDI/HDC/HBITMAP objects",
@@ -242,7 +250,7 @@ mod tests {
     fn rust_first_goal_manifest_tracks_core_direction() {
         let names = zsui_rust_first_goal_names();
 
-        assert_eq!(names.len(), 24);
+        assert_eq!(names.len(), 25);
         assert!(names.contains(&"unified_application_authoring"));
         assert!(names.contains(&"native_proof_ci"));
         assert!(names.contains(&"runnable_vertical_slices"));
@@ -258,6 +266,7 @@ mod tests {
         assert!(names.contains(&"platform_api_on_demand"));
         assert!(names.contains(&"strong_typed_ids"));
         assert!(names.contains(&"reloadable_ui_documents"));
+        assert!(names.contains(&"input_experience_consistency"));
 
         let goals = zsui_rust_first_goals();
         let unified_authoring = goals

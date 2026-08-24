@@ -636,10 +636,13 @@ define_class!(
             let modifiers = event.modifierFlags();
             let shift = modifiers.contains(NSEventModifierFlags::Shift);
             let control = modifiers.contains(NSEventModifierFlags::Control);
+            #[cfg(feature = "text-input-core")]
             let command = modifiers.contains(NSEventModifierFlags::Command);
+            #[cfg(feature = "text-input-core")]
             let option = modifiers.contains(NSEventModifierFlags::Option);
             let command_or_control = modifiers
                 .intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
+            #[cfg(feature = "text-input-core")]
             let text_edit_shortcut = command && !shift && !control && !option;
             let unmodified = event
                 .charactersIgnoringModifiers()
@@ -718,7 +721,7 @@ define_class!(
                     runtime.dispatch_text_input("\u{8}")
                 }
                 Some(code) if code == NSDeleteCharacter => runtime.dispatch_text_input("\u{7f}"),
-                #[cfg(feature = "textbox")]
+                #[cfg(feature = "text-input-core")]
                 _ if text_edit_shortcut => unmodified
                     .chars()
                     .next()

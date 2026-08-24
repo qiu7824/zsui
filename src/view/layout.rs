@@ -406,6 +406,8 @@ fn split_child_bounds<Msg>(
     kind: &ViewNodeKind<Msg>,
     children: &[ViewNode<Msg>],
     gap: Option<Dp>,
+    justify: ViewJustify,
+    align: ViewAlign,
     dpi: Dpi,
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
@@ -435,14 +437,16 @@ fn split_child_bounds<Msg>(
                 text_measurements,
                 bounds.height,
             );
-            let mut x = bounds.x;
+            let offsets = justified_axis_offsets(bounds.width, gap, &widths, justify);
             widths
                 .into_iter()
+                .zip(offsets)
                 .zip(children)
-                .map(|(width, child)| {
+                .map(|((width, offset), child)| {
                     let height = cross_axis_length(
                         bounds.height,
                         child,
+                        align,
                         dpi,
                         true,
                         typography_scale,
@@ -450,14 +454,18 @@ fn split_child_bounds<Msg>(
                         width,
                     );
                     let rect = Rect {
-                        x,
+                        x: bounds.x.saturating_add(offset),
                         y: bounds
                             .y
-                            .saturating_add(bounds.height.saturating_sub(height) / 2),
+                            .saturating_add(cross_axis_offset(
+                                bounds.height,
+                                height,
+                                align,
+                                true,
+                            )),
                         width,
                         height,
                     };
-                    x += width + gap;
                     rect
                 })
                 .collect()
@@ -468,6 +476,8 @@ fn split_child_bounds<Msg>(
             bounds,
             children,
             gap,
+            justify,
+            align,
             dpi,
             typography_scale,
             text_measurements,
@@ -478,6 +488,8 @@ fn split_child_bounds<Msg>(
                 bounds,
                 children,
                 gap,
+                justify,
+                align,
                 dpi,
                 typography_scale,
                 text_measurements,
@@ -1059,6 +1071,8 @@ fn split_column_child_bounds<Msg>(
     bounds: Rect,
     children: &[ViewNode<Msg>],
     gap: i32,
+    justify: ViewJustify,
+    align: ViewAlign,
     dpi: Dpi,
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
@@ -1075,14 +1089,16 @@ fn split_column_child_bounds<Msg>(
         text_measurements,
         bounds.width,
     );
-    let mut y = bounds.y;
+    let offsets = justified_axis_offsets(bounds.height, gap, &heights, justify);
     heights
         .into_iter()
+        .zip(offsets)
         .zip(children)
-        .map(|(height, child)| {
+        .map(|((height, offset), child)| {
             let width = cross_axis_length(
                 bounds.width,
                 child,
+                align,
                 dpi,
                 false,
                 typography_scale,
@@ -1090,15 +1106,79 @@ fn split_column_child_bounds<Msg>(
                 height,
             );
             let rect = Rect {
-                x: bounds.x,
-                y,
+                x: bounds.x.saturating_add(cross_axis_offset(
+                    bounds.width,
+                    width,
+                    align,
+                    false,
+                )),
+                y: bounds.y.saturating_add(offset),
                 width,
                 height,
             };
-            y += height + gap;
             rect
         })
         .collect()
+}
+
+fn justified_axis_offsets(
+    available: i32,
+    gap: i32,
+    lengths: &[i32],
+    justify: ViewJustify,
+) -> Vec<i32> {
+    let gap = gap.max(0);
+    let item_total = lengths
+        .iter()
+        .copied()
+        .fold(0i32, i32::saturating_add);
+    let gap_total = gap.saturating_mul(lengths.len().saturating_sub(1) as i32);
+    let remaining = available
+        .max(0)
+        .saturating_sub(item_total.saturating_add(gap_total));
+    let count = lengths.len() as i64;
+    let mut cursor = 0i32;
+
+    lengths
+        .iter()
+        .enumerate()
+        .map(|(index, length)| {
+            let index = index as i64;
+            let extra = match justify {
+                ViewJustify::Start => 0,
+                ViewJustify::Center => remaining / 2,
+                ViewJustify::End => remaining,
+                ViewJustify::SpaceBetween if count > 1 => {
+                    (i64::from(remaining) * index / (count - 1)) as i32
+                }
+                ViewJustify::SpaceAround if count > 0 => {
+                    (i64::from(remaining) * (index * 2 + 1) / (count * 2)) as i32
+                }
+                ViewJustify::SpaceEvenly if count > 0 => {
+                    (i64::from(remaining) * (index + 1) / (count + 1)) as i32
+                }
+                _ => 0,
+            };
+            let offset = cursor.saturating_add(extra);
+            cursor = cursor.saturating_add(*length).saturating_add(gap);
+            offset
+        })
+        .collect()
+}
+
+fn cross_axis_offset(
+    available: i32,
+    length: i32,
+    align: ViewAlign,
+    auto_centers: bool,
+) -> i32 {
+    let remaining = available.saturating_sub(length).max(0);
+    match align {
+        ViewAlign::Auto if auto_centers => remaining / 2,
+        ViewAlign::Center => remaining / 2,
+        ViewAlign::End => remaining,
+        ViewAlign::Auto | ViewAlign::Start | ViewAlign::Stretch => 0,
+    }
 }
 
 #[cfg(feature = "label")]
@@ -1287,6 +1367,7 @@ fn allocate_axis_lengths<Msg>(
 fn cross_axis_length<Msg>(
     available: i32,
     child: &ViewNode<Msg>,
+    align: ViewAlign,
     dpi: Dpi,
     vertical: bool,
     typography_scale: f32,
@@ -1344,13 +1425,20 @@ fn cross_axis_length<Msg>(
                 vertical && child.typography_scaled_height,
                 typography_scale,
             )
-                .max(minimum)
+            .max(minimum)
         })
-        .or_else(|| {
-            (child.style.flex <= f32::EPSILON && minimum > 0 && !stretches_cross_axis)
-                .then_some(minimum)
+        .unwrap_or_else(|| match align {
+            ViewAlign::Stretch => available.max(minimum),
+            ViewAlign::Start | ViewAlign::Center | ViewAlign::End => minimum,
+            ViewAlign::Auto
+                if child.style.flex <= f32::EPSILON
+                    && minimum > 0
+                    && !stretches_cross_axis =>
+            {
+                minimum
+            }
+            ViewAlign::Auto => available.max(minimum),
         })
-        .unwrap_or_else(|| available.max(minimum))
 }
 
 fn intrinsic_min_width_px<Msg>(

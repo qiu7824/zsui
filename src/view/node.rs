@@ -630,6 +630,32 @@ pub enum ViewStackDirection {
     Column,
 }
 
+/// Distribution of children along a row or column's main axis.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ViewJustify {
+    #[default]
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+/// Placement of children along a row or column's cross axis.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ViewAlign {
+    /// Keeps native controls at their intrinsic size. Rows center them while
+    /// columns start-align them; wrapping text and nested stacks keep filling
+    /// the available width.
+    #[default]
+    Auto,
+    Start,
+    Center,
+    End,
+    Stretch,
+}
+
 #[cfg(feature = "grid")]
 /// A validated positive weight for a fractional Grid track.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -855,6 +881,10 @@ pub enum ZsButtonPresentation {
         icon: crate::ZsIcon,
         show_label: bool,
     },
+    #[cfg(feature = "accordion")]
+    ExpanderHeader {
+        expanded: bool,
+    },
     NavigationItem {
         icon: crate::ZsIcon,
         selected: bool,
@@ -945,6 +975,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "textbox")]
     Textbox {
         value: String,
+        placeholder: Option<String>,
         multiline: bool,
         wrap: crate::TextWrap,
         on_change: Option<ViewMessageMapper<String, Msg>>,
@@ -953,6 +984,7 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "password-box")]
     PasswordBox {
         value: crate::ZsPassword,
+        placeholder: Option<String>,
         reveal_mode: crate::ZsPasswordRevealMode,
         on_change: Option<ViewMessageMapper<crate::ZsPassword, Msg>>,
     },
@@ -983,6 +1015,7 @@ pub enum ViewNodeKind<Msg> {
     NumberBox {
         value: Option<f64>,
         draft: String,
+        placeholder: Option<String>,
         range: ZsNumberRange,
         format: ZsNumberFormat,
         wraps: bool,
@@ -1202,6 +1235,8 @@ pub struct ViewStyle {
     pub min_height: Option<Dp>,
     pub flex: f32,
     pub gap: Option<Dp>,
+    pub justify: ViewJustify,
+    pub align: ViewAlign,
     pub theme_mode: Option<ZsuiThemeMode>,
     #[cfg(feature = "scroll")]
     pub overflow_y: ViewOverflow,
@@ -1217,8 +1252,10 @@ impl Default for ViewStyle {
             height: None,
             min_width: None,
             min_height: None,
-            flex: 1.0,
+            flex: 0.0,
             gap: None,
+            justify: ViewJustify::Start,
+            align: ViewAlign::Auto,
             theme_mode: None,
             #[cfg(feature = "scroll")]
             overflow_y: ViewOverflow::Visible,
@@ -1261,6 +1298,8 @@ pub struct ViewNode<Msg> {
     pub kind: ViewNodeKind<Msg>,
     pub style: ViewStyle,
     pub children: Vec<ViewNode<Msg>>,
+    #[cfg(feature = "text-input-core")]
+    editable_text: Option<ViewEditableTextDescriptor>,
     #[cfg(feature = "tooltip")]
     tooltip: Option<crate::ZsTooltipSpec>,
     #[cfg(feature = "accessibility")]
@@ -1295,6 +1334,8 @@ pub struct ViewNode<Msg> {
     workbench_layout: Option<ViewWorkbenchLayoutCache>,
     #[cfg(feature = "workbench")]
     workbench_transient_source: Option<ViewWorkbenchTransientSource>,
+    #[cfg(feature = "workbench")]
+    workbench_owner_applies_interaction: bool,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -1312,6 +1353,8 @@ impl<Msg> ViewNode<Msg> {
             kind,
             style: ViewStyle::default(),
             children: Vec::new(),
+            #[cfg(feature = "text-input-core")]
+            editable_text: None,
             #[cfg(feature = "tooltip")]
             tooltip: None,
             #[cfg(feature = "accessibility")]
@@ -1346,8 +1389,22 @@ impl<Msg> ViewNode<Msg> {
             workbench_layout: None,
             #[cfg(feature = "workbench")]
             workbench_transient_source,
+            #[cfg(feature = "workbench")]
+            workbench_owner_applies_interaction: false,
             message: PhantomData,
         }
+    }
+
+    #[cfg(any(
+        feature = "textbox",
+        feature = "password-box",
+        feature = "number-box",
+        feature = "auto-suggest",
+        feature = "command-palette"
+    ))]
+    pub(crate) fn editable_text(mut self, descriptor: ViewEditableTextDescriptor) -> Self {
+        self.editable_text = Some(descriptor);
+        self
     }
 
     #[cfg(feature = "toast")]
@@ -1866,6 +1923,18 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn gap(mut self, gap: Dp) -> Self {
         self.style.gap = Some(gap);
+        self
+    }
+
+    /// Distributes this container's children along its main axis.
+    pub fn justify(mut self, justify: ViewJustify) -> Self {
+        self.style.justify = justify;
+        self
+    }
+
+    /// Places this container's children along its cross axis.
+    pub fn align(mut self, align: ViewAlign) -> Self {
+        self.style.align = align;
         self
     }
 
@@ -2763,13 +2832,7 @@ impl<Msg: Clone> ViewNode<Msg> {
 
     #[cfg(feature = "command-palette")]
     pub fn command_palette_placeholder(mut self, placeholder: impl Into<String>) -> Self {
-        if let ViewNodeKind::CommandPalette {
-            placeholder: current,
-            ..
-        } = &mut self.kind
-        {
-            *current = placeholder.into();
-        }
+        self = self.placeholder(placeholder);
         self
     }
 
@@ -3016,14 +3079,30 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "auto-suggest", feature = "combo"))]
+    /// Sets the hint shown while a text-capable control has no value.
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "combo",
+        feature = "command-palette",
+        feature = "number-box",
+        feature = "password-box",
+        feature = "textbox"
+    ))]
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         let text = text.into();
         match &mut self.kind {
+            #[cfg(feature = "textbox")]
+            ViewNodeKind::Textbox { placeholder, .. } => *placeholder = Some(text),
+            #[cfg(feature = "password-box")]
+            ViewNodeKind::PasswordBox { placeholder, .. } => *placeholder = Some(text),
+            #[cfg(feature = "number-box")]
+            ViewNodeKind::NumberBox { placeholder, .. } => *placeholder = Some(text),
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox { placeholder, .. } => *placeholder = Some(text),
             #[cfg(feature = "combo")]
             ViewNodeKind::ComboBox { placeholder, .. } => *placeholder = Some(text),
+            #[cfg(feature = "command-palette")]
+            ViewNodeKind::CommandPalette { placeholder, .. } => *placeholder = text,
             _ => {}
         }
         self
@@ -3645,6 +3724,21 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Workbench { on_interaction, .. } = &mut self.kind {
             *on_interaction = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "workbench")]
+    pub(crate) fn on_controlled_workbench_interaction_with(
+        mut self,
+        message: impl Fn(crate::ZsWorkbenchInteractionEvent) -> Option<Msg>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Workbench { on_interaction, .. } = &mut self.kind {
+            *on_interaction = Some(ViewMessageMapper::from_shared(message));
+            self.workbench_owner_applies_interaction = true;
         }
         self
     }

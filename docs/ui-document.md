@@ -237,7 +237,10 @@ cargo run --bin zsui-uic `
 `vertical_align`。正文说明通常使用 `"wrap": "word"` 与 `"ellipsis": false`；
 语义枚举会在静态文档和绑定值解析后分别校验。`flex` 只分配父 Stack 的主轴空间，
 `0` 表示按内容尺寸布局；横向行内需要吸收剩余宽度的换行说明可使用 `flex: 1`，紧凑
-操作行自身可使用 `flex: 0`。
+操作行自身可使用 `flex: 0`。未声明 `flex` 时同样按内容尺寸布局。Stack 可用
+`layout.justify` 设置 `start`、`center`、`end`、`space_between`、`space_around` 或
+`space_evenly`，并用 `layout.align` 设置 `auto`、`start`、`center`、`end` 或
+`stretch`；`auto` 保留各平台原生控件的自然尺寸与默认放置方式。
 
 `icon.icon` 必须是 `ZsIcon` 语义名称，`size` 只接受 `small`、`standard` 或
 `large`，动态 `color` 使用主题语义角色而不是硬编码色值；静态颜色也可使用通用
@@ -304,6 +307,8 @@ Stack 与 Grid 会递归保留子树的固有尺寸，包括文字行框、控�
 payload 类型，因此清空并提交输入仍保持类型化。`minimum`、`maximum`、`step`、
 `large_step`、`fraction_digits` 和 `wraps` 直接编译到共享 NumberBox。校验会拒绝倒置范围、
 非正步长、超出 0–12 的非整数小数位以及超出静态范围的字面量值。
+`number_box.placeholder` 在数值和编辑草稿均为空时显示，且不会替代 nullable number
+状态。`textbox.placeholder` 同时适用于单行和多行输入；提示不进入文本值或选择区。
 
 `combo_box.options` 使用 `string_array`，`selected_index` 使用 `nullable_integer`，从而拒绝
 混合类型选项和小数索引。`select` 动作发送 `integer`，`expanded_change` 发送 boolean；将
@@ -405,6 +410,8 @@ Viewer 热重建把密码保存在不可序列化的 `UiSecretValues` 中，普�
 `sensitive_values` 和属性契约的 `sensitive` 标志提示编辑器不得生成明文值。
 `reveal_mode` 可选 `platform_default`、`hidden`、`peek` 或 `visible`，最终控件尺寸、
 显隐交互和绘制仍由各平台 PasswordBox profile 决定。
+`password_box.placeholder` 是普通可本地化提示，只在安全值为空时显示；它不会写入
+`ZsPassword`、安全动作、掩码长度或序列化输出。
 
 `content_dialog` 必须有且只有一个内容子树。`open` 控制模态层是否显示，`title`、`content`、
 `primary_button`、`secondary_button` 和 `close_button` 描述语义内容；`close_button` 和

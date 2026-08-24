@@ -2,6 +2,77 @@
 mod tests {
     use super::*;
 
+    #[test]
+    fn view_style_is_content_sized_by_default() {
+        let style = ViewStyle::default();
+
+        assert_eq!(style.flex, 0.0);
+        assert_eq!(style.justify, ViewJustify::Start);
+        assert_eq!(style.align, ViewAlign::Auto);
+    }
+
+    #[test]
+    fn stack_justify_distributes_unused_main_axis_space() {
+        let first = WidgetId::new(1_001);
+        let second = WidgetId::new(1_002);
+        let mut view: ViewNode<()> = column([
+            spacer().id(first).min_height(Dp::new(20.0)),
+            spacer().id(second).min_height(Dp::new(20.0)),
+        ])
+        .justify(ViewJustify::SpaceBetween);
+        let output = view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+            },
+            Dpi::standard(),
+        ));
+        let bounds_for = |widget: WidgetId| {
+            output
+                .children
+                .iter()
+                .find(|node| node.component == widget.into())
+                .expect("stack child should expose layout bounds")
+                .bounds
+        };
+
+        assert_eq!(bounds_for(first).y, 0);
+        assert_eq!(bounds_for(second).y, 80);
+    }
+
+    #[test]
+    fn stack_align_controls_cross_axis_placement_and_stretch() {
+        let child = WidgetId::new(1_003);
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 40,
+        };
+        let build = || {
+            row([spacer()
+                .id(child)
+                .min_width(Dp::new(20.0))
+                .min_height(Dp::new(10.0))])
+        };
+        let child_bounds = |mut view: ViewNode<()>| {
+            view.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()))
+                .children
+                .into_iter()
+                .find(|node| node.component == child.into())
+                .expect("row child should expose layout bounds")
+                .bounds
+        };
+
+        let end = child_bounds(build().align(ViewAlign::End));
+        let stretch = child_bounds(build().align(ViewAlign::Stretch));
+
+        assert_eq!((end.y, end.height), (30, 10));
+        assert_eq!((stretch.y, stretch.height), (0, 40));
+    }
+
     #[cfg(feature = "label")]
     #[test]
     fn styled_text_keeps_semantic_role_and_matching_line_box() {
@@ -234,7 +305,7 @@ mod tests {
         )));
         assert!(paint.plan().commands.iter().any(|command| matches!(
             command,
-            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::ChevronRight
+            NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::ChevronUp
         )));
     }
 
@@ -787,6 +858,47 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::RoundRect { .. })));
+    }
+
+    #[test]
+    #[cfg(feature = "accordion")]
+    fn windows_accordion_header_uses_a_trailing_small_expander_chevron() {
+        let mut view: ViewNode<Msg> = accordion_header_button_for_style(
+            crate::ZsBaseControlPlatformStyle::Windows,
+            "Details",
+            false,
+        );
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 240,
+                height: 48,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        assert!(matches!(
+            view.kind,
+            ViewNodeKind::Button {
+                presentation: ZsButtonPresentation::ExpanderHeader { expanded: false },
+                ..
+            }
+        ));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(command)
+                if command.icon == crate::ZsIcon::ChevronDown
+                    && command.bounds.width == 12
+                    && command.bounds.x > 200
+        )));
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(command)
+                if command.text == "Details" && command.bounds.x == 16
+        )));
     }
 
     #[test]
@@ -2038,6 +2150,131 @@ mod tests {
             events.into_messages(),
             vec![Msg::NameChanged("ZSUI".to_string())]
         );
+    }
+
+    #[test]
+    #[cfg(all(
+        feature = "accessibility",
+        feature = "number-box",
+        feature = "password-box",
+        feature = "textbox"
+    ))]
+    fn empty_text_inputs_paint_secondary_placeholders_and_keep_values_empty() {
+        let textbox_id = WidgetId::new(201);
+        let editor_id = WidgetId::new(202);
+        let password_id = WidgetId::new(203);
+        let number_id = WidgetId::new(204);
+        let mut view: ViewNode<()> = column(vec![
+            textbox("").id(textbox_id).placeholder("Account name"),
+            text_editor("")
+                .id(editor_id)
+                .height(Dp::new(72.0))
+                .placeholder("Notes"),
+            password_box(crate::ZsPassword::default())
+                .id(password_id)
+                .placeholder("Password"),
+            number_box(None, ZsNumberRange::new(0.0, 100.0))
+                .id(number_id)
+                .placeholder("Optional amount"),
+        ])
+        .gap(Dp::new(8.0));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 320,
+                height: 240,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+
+        for placeholder in ["Account name", "Notes", "Password", "Optional amount"] {
+            assert!(paint.plan().commands.iter().any(|command| matches!(
+                command,
+                NativeDrawCommand::Text(text)
+                    if text.text == placeholder
+                        && text.style.color == ColorRole::SecondaryText
+            )));
+        }
+        assert_eq!(view.widget_text_value(textbox_id), Some(""));
+        assert_eq!(view.widget_text_value(editor_id), Some(""));
+        assert_eq!(view.widget_text_value(number_id), Some(""));
+        assert!(view
+            .widget_password_value(password_id)
+            .is_some_and(crate::ZsPassword::is_empty));
+
+        let interaction = view.interaction_plan();
+        for (widget, placeholder) in [
+            (textbox_id, "Account name"),
+            (editor_id, "Notes"),
+            (password_id, "Password"),
+            (number_id, "Optional amount"),
+        ] {
+            assert!(interaction.accessibility_nodes.iter().any(|node| {
+                node.widget == widget && node.description.as_deref() == Some(placeholder)
+            }));
+        }
+    }
+
+    #[test]
+    #[cfg(all(
+        feature = "textbox",
+        feature = "password-box",
+        feature = "number-box",
+        feature = "auto-suggest",
+        feature = "command-palette",
+        feature = "label"
+    ))]
+    fn editable_text_components_declare_one_shared_edit_policy() {
+        let textbox_id = WidgetId::new(211);
+        let password_id = WidgetId::new(212);
+        let number_id = WidgetId::new(213);
+        let suggest_id = WidgetId::new(214);
+        let palette_id = WidgetId::new(215);
+
+        let textbox = textbox::<()>("").id(textbox_id);
+        let password = password_box::<()>(crate::ZsPassword::default()).id(password_id);
+        let number = number_box::<()>(None, ZsNumberRange::new(0.0, 100.0)).id(number_id);
+        let suggest = auto_suggest_box::<crate::ZsAutoSuggestion, ()>("", []).id(suggest_id);
+        let palette = command_palette(
+            palette_id,
+            true,
+            "",
+            Vec::<crate::ZsCommandPaletteItem>::new(),
+            text::<()>("page"),
+        );
+
+        let plain = textbox
+            .widget_editable_text_descriptor(textbox_id)
+            .expect("textbox should declare editable text");
+        assert!(plain.capabilities.allows(ZsTextEditCommand::Copy));
+        assert!(plain.capabilities.allows(ZsTextEditCommand::Paste));
+        assert!(plain.emits_selection_event());
+
+        let protected = password
+            .widget_editable_text_descriptor(password_id)
+            .expect("password should declare protected editable text");
+        assert!(protected.secure);
+        assert!(!protected.capabilities.allows(ZsTextEditCommand::Copy));
+        assert!(!protected.capabilities.allows(ZsTextEditCommand::Cut));
+        assert!(protected.capabilities.allows(ZsTextEditCommand::Paste));
+        assert!(protected.capabilities.allows(ZsTextEditCommand::Undo));
+
+        for (node, widget) in [
+            (number, number_id),
+            (suggest, suggest_id),
+            (palette, palette_id),
+        ] {
+            let descriptor = node
+                .widget_editable_text_descriptor(widget)
+                .expect("draft/query input should declare editable text");
+            assert!(!descriptor.secure);
+            assert!(descriptor.capabilities.allows(ZsTextEditCommand::Copy));
+            assert!(descriptor.capabilities.allows(ZsTextEditCommand::Paste));
+            assert!(descriptor.capabilities.allows(ZsTextEditCommand::Undo));
+        }
     }
 
     #[test]
@@ -3932,13 +4169,14 @@ mod tests {
     fn combo_box_overlay_paint_and_hits_share_viewport_flipped_geometry() {
         let widget = WidgetId::new(11);
         let mut view = column([
-            spacer(),
+            spacer().flex(1.0),
             combo_box::<_, ()>(["One", "Two", "Three"], None)
                 .id(widget)
                 .height(Dp::new(32.0))
                 .expanded(true),
         ])
-        .gap(Dp::new(4.0));
+        .gap(Dp::new(4.0))
+        .align(ViewAlign::Stretch);
         view.layout(&mut ViewLayoutCx::new(
             Rect {
                 x: 0,
@@ -3959,11 +4197,24 @@ mod tests {
 
         let mut paint = ViewPaintCx::new(Dpi::standard());
         view.paint(&mut paint);
-        assert!(paint.plan().commands.iter().any(|command| matches!(
-            command,
-            NativeDrawCommand::RoundRect { rect, .. }
-                if *rect == Rect { x: 0, y: 108, width: 300, height: 96 }
-        )));
+        let painted_round_rects = paint
+            .plan()
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::RoundRect { rect, .. } => Some(*rect),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            painted_round_rects.contains(&Rect {
+                x: 0,
+                y: 108,
+                width: 300,
+                height: 96,
+            }),
+            "painted round rectangles: {painted_round_rects:?}"
+        );
     }
 
     #[test]

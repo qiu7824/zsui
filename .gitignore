@@ -4,6 +4,7 @@
 /comparisons/slint_notepad/target
 /comparisons/tauri_notepad/target
 /comparisons/tauri_notepad/gen
+/comparisons/zsui_dataviewer/target
 !/comparisons/egui_notepad/Cargo.lock
 !/comparisons/iced_notepad/Cargo.lock
 !/comparisons/slint_notepad/Cargo.lock
@@ -13,3 +14,6 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+/deliverables/
+/videos/
+/zsui-main/

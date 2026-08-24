@@ -242,15 +242,15 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub ime_preedit_active: bool,
     pub ime_selection: Option<(usize, usize)>,
     pub ime_caret_rect: Option<crate::Rect>,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_edit_command_count: usize,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_clipboard_read_count: usize,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_clipboard_write_count: usize,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_undo_count: usize,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub text_edit_command_errors: Vec<String>,
     pub text_drag_count: usize,
     pub text_drag_scroll_count: usize,
@@ -377,7 +377,7 @@ impl WindowsWin32ViewInputDispatchReport {
         self.ime_preedit_active = next.ime_preedit_active;
         self.ime_selection = next.ime_selection;
         self.ime_caret_rect = next.ime_caret_rect.or(self.ime_caret_rect);
-        #[cfg(feature = "textbox")]
+        #[cfg(feature = "text-input-core")]
         {
             self.text_edit_command_count += next.text_edit_command_count;
             self.text_clipboard_read_count += next.text_clipboard_read_count;
@@ -1166,6 +1166,18 @@ fn windows_win32_window_focused_target(hwnd: HWND) -> Option<crate::ViewHitTarge
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
         .and_then(|record| record.route.focused_target())
+}
+
+fn windows_win32_window_focused_target_accepts_text_input(hwnd: HWND) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    window_view_input_routes()
+        .lock()
+        .expect("window view input route registry should not be poisoned")
+        .iter()
+        .find(|record| record.hwnd == hwnd as isize)
+        .is_some_and(|record| record.route.focused_target_accepts_text_input())
 }
 
 pub fn refresh_windows_win32_window_invalidated_view(

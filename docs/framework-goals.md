@@ -122,6 +122,12 @@ are read-only in CI and can change only through an explicit reviewed commit.
 The complete milestone, phased delivery order and release gates are defined in
 [`v0.3-native-proof-ci.md`](v0.3-native-proof-ci.md).
 
+Text-capable controls follow the staged input-experience plan in
+[`v0.3-input-experience.md`](v0.3-input-experience.md). Its first stage closes
+placeholder parity across the Rust View, UiDocument, rendering, IME and
+accessibility paths; later stages add field/error composition and shared native
+proof without moving validation policy into the framework.
+
 ## Delivery Order
 
 ZSUI is delivered through runnable vertical slices rather than contract count.
@@ -161,7 +167,7 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 48 desktop component families, all with first-pass runtime
+catalog covers 51 desktop component families, all with first-pass runtime
 surfaces and none contract-only or not started. Composite shells do not change
 those statuses.
 Embedded browser controls are intentionally outside the v0.2 product boundary.

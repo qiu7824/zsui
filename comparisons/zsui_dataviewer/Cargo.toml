@@ -1,0 +1,32 @@
+[package]
+name = "zsui-dataviewer-comparison"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+csv = "1.4.0"
+duckdb = { version = "~1.10505.0", features = ["chrono"] }
+serde_json = "1"
+zsui = { path = "../..", default-features = false, features = [
+    "accessibility",
+    "button",
+    "clipboard",
+    "combo",
+    "info-bar",
+    "label",
+    "progress-ring",
+    "scroll",
+    "table",
+    "textbox",
+    "window",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

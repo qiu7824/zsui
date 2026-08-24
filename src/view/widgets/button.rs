@@ -159,6 +159,46 @@ fn toolbar_button_impl<Msg>(
     .flex(0.0)
 }
 
+#[cfg(feature = "accordion")]
+pub(crate) fn accordion_header_button<Msg>(
+    label: impl Into<String>,
+    expanded: bool,
+) -> ViewNode<Msg> {
+    accordion_header_button_impl(
+        crate::platform_component_profile::PlatformComponentProfile::current().style,
+        label,
+        expanded,
+    )
+}
+
+#[cfg(all(test, feature = "accordion"))]
+pub(crate) fn accordion_header_button_for_style<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    label: impl Into<String>,
+    expanded: bool,
+) -> ViewNode<Msg> {
+    accordion_header_button_impl(platform, label, expanded)
+        .with_platform_style_override(platform)
+}
+
+#[cfg(feature = "accordion")]
+fn accordion_header_button_impl<Msg>(
+    platform: crate::ZsBaseControlPlatformStyle,
+    label: impl Into<String>,
+    expanded: bool,
+) -> ViewNode<Msg> {
+    let metrics =
+        crate::platform_component_profile::PlatformAccordionProfile::for_platform(platform);
+    ViewNode::new(ViewNodeKind::Button {
+        label: label.into(),
+        presentation: ZsButtonPresentation::ExpanderHeader { expanded },
+        enabled: true,
+        on_click: None,
+    })
+    .native_typography_height(metrics.header_height)
+    .flex(0.0)
+}
+
 /// Creates a self-drawn navigation row with a semantic icon and explicit
 /// selected state. It uses the same typed activation path as a Button while
 /// retaining NavigationView item geometry instead of Button chrome.

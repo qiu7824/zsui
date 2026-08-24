@@ -9,7 +9,8 @@ one font or one Latin sentence looks acceptable.
 
 ## Production text mechanism
 
-`ZsRustTextEngine` is the optional ZSUI-owned portable text context. It is not a
+`ZsRustTextEngine` is the ZSUI-owned portable text context selected by the
+default Win32 host. It is not a
 wrapper around a single font and it is not a proof runner embedded in an app.
 One application/window renderer owns the context explicitly; there is no
 process-global mutable font or widget registry.
@@ -72,19 +73,19 @@ for menu measurement, final-surface drawing, typography metrics and text-input
 caret/selection geometry; it no longer constructs a second `FontSystem`,
 `Buffer` or `SwashCache` path beside the ZSUI engine.
 
-## Optional Windows paths
+## Windows paths
 
 | Cargo feature | Layout and raster source | Presentation |
 | --- | --- | --- |
-| `windows-gdi` | GDI | Existing buffered Win32 DIB |
-| `windows-directwrite` | System DirectWrite | Existing buffered Win32 DIB |
-| `windows-rust-text` | ZSUI Rust pipeline using HarfRust and Swash | Existing buffered Win32 DIB |
+| `windows-gdi` | Bounded GDI fallback | Existing buffered Win32 DIB |
+| `windows-directwrite` | Opt-in system comparison/oracle | Existing buffered Win32 DIB |
+| `windows-rust-text` | Default ZSUI Rust pipeline using HarfRust and Swash | Existing buffered Win32 DIB |
 | `linux-direct-lite` | The same retained ZSUI Rust pipeline | Final tiny-skia/Softbuffer surface |
 | `rust-text-proof` | Development-only proof data/functions on top of `rust-text` | No application presentation |
 | `windows-text-proof` | DirectWrite reference plus `rust-text-proof` | PNG, JSON and SVG evidence |
 
-The Rust path is optional and does not add a WebView, Direct2D application
-runtime or global control registry. Its Windows DIB grows only to the largest
+The Rust path does not add a WebView, DirectWrite/Direct2D application runtime
+or global control registry. Its Windows DIB grows only to the largest
 text box retained by that renderer. GDI remains the fallback for unsupported
 overflowing ellipsis behavior. The platform adapter selects the Windows
 line-metric policy; other platforms must not inherit Windows typography

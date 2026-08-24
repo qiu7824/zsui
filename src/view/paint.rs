@@ -673,6 +673,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             &self.kind,
             &self.children,
             self.style.gap,
+            self.style.justify,
+            self.style.align,
             cx.dpi,
             cx.typography_scale(),
             cx.text_measurements.as_ref(),
@@ -779,12 +781,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 None
             };
             if let Some(interaction) = interaction {
+                let owner_applies_interaction = self.workbench_owner_applies_interaction;
                 if let ViewNodeKind::Workbench {
                     spec,
                     on_interaction,
                 } = &mut self.kind
                 {
-                    crate::workbench::zs_workbench_apply_interaction(spec, &interaction);
+                    if !owner_applies_interaction {
+                        crate::workbench::zs_workbench_apply_interaction(spec, &interaction);
+                    }
                     if let Some(message) = on_interaction
                         .as_ref()
                         .and_then(|mapper| mapper.map(interaction))
@@ -792,7 +797,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message);
                     }
                 }
-                self.refresh_workbench_layout();
+                if !owner_applies_interaction {
+                    self.refresh_workbench_layout();
+                }
             }
             return;
         }
@@ -2335,6 +2342,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         format,
                         wraps,
                         on_change,
+                        ..
                     },
                     ViewEvent::NumberBoxStep { steps, large, .. },
                 ) => {
@@ -3286,6 +3294,113 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             )));
                         }
                     }
+                    #[cfg(feature = "accordion")]
+                    ZsButtonPresentation::ExpanderHeader { expanded } => {
+                        let platform = self.resolved_platform_style();
+                        let base = crate::ZsBaseControlMetrics::for_platform(platform);
+                        let component_profile =
+                            crate::platform_component_profile::PlatformComponentProfile::for_style(
+                                platform,
+                            );
+                        let metrics =
+                            crate::platform_component_profile::PlatformAccordionProfile::for_platform(
+                                platform,
+                            );
+                        cx.draw(NativeDrawCommand::RoundRect {
+                            rect: bounds,
+                            fill: NativeDrawFill::Role(component_profile.button.fill),
+                            stroke: component_profile.button.stroke.map(NativeDrawFill::Role),
+                            radius: radius_px(
+                                self.style.radius.or(Some(base.button_radius)),
+                                cx.dpi,
+                            ),
+                        });
+
+                        let left_padding = metrics
+                            .header_padding_left
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(0);
+                        let chevron_gap =
+                            metrics.chevron_gap.to_px(cx.dpi).round_i32().max(0);
+                        let chevron_button_size = metrics
+                            .chevron_button_size
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(1)
+                            .min(bounds.height.max(1));
+                        let chevron_size = metrics
+                            .chevron_glyph_size
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(1)
+                            .min(chevron_button_size);
+                        let right_margin = metrics
+                            .chevron_margin_right
+                            .to_px(cx.dpi)
+                            .round_i32()
+                            .max(0);
+                        let chevron_button = Rect {
+                            x: bounds
+                                .x
+                                .saturating_add(bounds.width)
+                                .saturating_sub(right_margin)
+                                .saturating_sub(chevron_button_size),
+                            y: bounds
+                                .y
+                                .saturating_add(bounds.height.saturating_sub(chevron_button_size) / 2),
+                            width: chevron_button_size,
+                            height: chevron_button_size,
+                        };
+                        let chevron_bounds = Rect {
+                            x: chevron_button
+                                .x
+                                .saturating_add((chevron_button.width - chevron_size) / 2),
+                            y: chevron_button
+                                .y
+                                .saturating_add((chevron_button.height - chevron_size) / 2),
+                            width: chevron_size,
+                            height: chevron_size,
+                        };
+                        let text_x = bounds.x.saturating_add(left_padding);
+                        let mut text_style = SemanticTextStyle::body();
+                        text_style.color = if *enabled {
+                            ColorRole::PrimaryText
+                        } else {
+                            ColorRole::DisabledText
+                        };
+                        text_style.horizontal_align = crate::HorizontalAlign::Start;
+                        cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                            label,
+                            Rect {
+                                x: text_x,
+                                y: bounds.y,
+                                width: chevron_button
+                                    .x
+                                    .saturating_sub(chevron_gap)
+                                    .saturating_sub(text_x)
+                                    .max(0),
+                                height: bounds.height,
+                            },
+                            text_style,
+                        )));
+                        cx.draw(NativeDrawCommand::Icon(
+                            crate::NativeDrawIconCommand::new(
+                                if *expanded {
+                                    crate::ZsIcon::ChevronUp
+                                } else {
+                                    crate::ZsIcon::ChevronDown
+                                },
+                                chevron_bounds,
+                                crate::NativeIconColorMode::ThemeAware,
+                            )
+                            .with_color(if *enabled {
+                                ColorRole::PrimaryText
+                            } else {
+                                ColorRole::DisabledText
+                            }),
+                        ));
+                    }
                     ZsButtonPresentation::NavigationItem { icon, selected } => {
                         let plan = crate::zs_navigation_item_render_plan(
                             bounds,
@@ -3332,6 +3447,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox {
                 value,
+                placeholder,
                 multiline,
                 wrap,
                 ..
@@ -3349,6 +3465,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     ),
                 });
                 let mut text_style = SemanticTextStyle::body();
+                let placeholder_visible = value.is_empty() && placeholder.is_some();
+                let display_text = if placeholder_visible {
+                    placeholder.as_deref().unwrap_or_default()
+                } else {
+                    value
+                };
+                if placeholder_visible {
+                    text_style.color = ColorRole::SecondaryText;
+                }
                 if *multiline {
                     text_style.vertical_align = crate::VerticalAlign::Start;
                     text_style.wrap = *wrap;
@@ -3365,7 +3490,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     .round_i32()
                     .max(1);
                     let bottom = text_bounds.y.saturating_add(text_bounds.height);
-                    for (row, line) in value.split('\n').enumerate() {
+                    for (row, line) in display_text.split('\n').enumerate() {
                         let y = text_bounds.y.saturating_add(
                             i32::try_from(row)
                                 .unwrap_or(i32::MAX)
@@ -3387,7 +3512,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     }
                 } else {
                     cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                        value,
+                        display_text,
                         text_bounds,
                         text_style,
                     )));
@@ -3395,7 +3520,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "password-box")]
             ViewNodeKind::PasswordBox {
-                value, reveal_mode, ..
+                value,
+                placeholder,
+                reveal_mode,
+                ..
             } => {
                 let plan = crate::zs_password_box_render_plan(
                     bounds,
@@ -3405,8 +3533,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     cx.dpi,
                 );
                 for command in
-                    crate::zs_password_box_native_draw_plan(&plan, value, *reveal_mode, false)
-                        .commands
+                    crate::zs_password_box_native_draw_plan_with_placeholder(
+                        &plan,
+                        value,
+                        *reveal_mode,
+                        false,
+                        placeholder.as_deref(),
+                    )
+                    .commands
                 {
                     cx.draw(command);
                 }
@@ -3554,6 +3688,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::NumberBox {
                 value,
                 draft,
+                placeholder,
                 range,
                 format,
                 wraps,
@@ -3576,9 +3711,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     *wraps || current.is_some_and(|current| current > range.min());
                 let increment_enabled =
                     *wraps || current.map_or(true, |current| current < range.max());
-                for command in crate::zs_number_box_native_draw_plan(
+                for command in crate::zs_number_box_native_draw_plan_with_placeholder(
                     &plan,
                     draft,
+                    placeholder.as_deref(),
                     valid,
                     decrement_enabled,
                     increment_enabled,

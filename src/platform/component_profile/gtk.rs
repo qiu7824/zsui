@@ -186,6 +186,15 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             item_gap: Dp::new(6.0),
             label_role: TextRole::Button,
         },
+        #[cfg(feature = "accordion")]
+        accordion: PlatformAccordionProfile {
+            header_height: Dp::new(34.0),
+            header_padding_left: Dp::new(12.0),
+            chevron_gap: Dp::new(8.0),
+            chevron_button_size: Dp::new(28.0),
+            chevron_glyph_size: Dp::new(12.0),
+            chevron_margin_right: Dp::new(3.0),
+        },
         #[cfg(feature = "tabs")]
         tabs: PlatformTabProfile {
             composition: PlatformTabComposition::GtkTabBar,

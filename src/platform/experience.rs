@@ -546,6 +546,7 @@ mod tests {
             "PlatformSectionComposition",
             "PlatformNavigationComposition",
             "PlatformCommandBarProfile",
+            "PlatformAccordionProfile",
             "PlatformTabProfile",
             "PlatformDialogProfile",
             "PlatformInfoBarProfile",

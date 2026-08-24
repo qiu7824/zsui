@@ -125,7 +125,12 @@ const GDIP_SMOOTHING_MODE_ANTI_ALIAS: i32 = 4;
 const GDIP_UNIT_PIXEL: i32 = 2;
 const GDIP_FILL_MODE_ALTERNATE: i32 = 0;
 const SPI_GETNONCLIENTMETRICS: u32 = 0x0029;
-const WINDOWS_UI_FONT_FAMILY: &str = "Segoe UI";
+#[cfg(any(feature = "windows-rust-text", feature = "windows-directwrite"))]
+const WINDOWS_UI_SMALL_FONT_FAMILY: &str = "Segoe UI Variable Small";
+const WINDOWS_UI_FONT_FAMILY: &str = "Segoe UI Variable Text";
+#[cfg(any(feature = "windows-rust-text", feature = "windows-directwrite"))]
+const WINDOWS_UI_DISPLAY_FONT_FAMILY: &str = "Segoe UI Variable Display";
+const WINDOWS_LEGACY_UI_FONT_FAMILY: &str = "Segoe UI";
 static WINDOWS_SYSTEM_UI_FONT_FAMILY: OnceLock<String> = OnceLock::new();
 
 #[repr(C)]
@@ -1750,16 +1755,38 @@ fn windows_system_ui_font_family() -> &'static str {
 }
 
 fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
-    let system = windows_system_ui_font_family();
-    let text = if dc.is_null() || windows_gdi_font_family_available(dc, system) {
-        system
-    } else {
-        WINDOWS_UI_FONT_FAMILY
-    };
-    WindowsUiFontFamilies {
-        small: text,
-        text,
-        display: text,
+    let message = windows_system_ui_font_family();
+    #[cfg(any(feature = "windows-rust-text", feature = "windows-directwrite"))]
+    {
+        let resolve = |preferred| {
+            if dc.is_null() || windows_gdi_font_family_available(dc, preferred) {
+                preferred
+            } else if windows_gdi_font_family_available(dc, WINDOWS_LEGACY_UI_FONT_FAMILY) {
+                WINDOWS_LEGACY_UI_FONT_FAMILY
+            } else if windows_gdi_font_family_available(dc, message) {
+                message
+            } else {
+                WINDOWS_LEGACY_UI_FONT_FAMILY
+            }
+        };
+        return WindowsUiFontFamilies {
+            small: resolve(WINDOWS_UI_SMALL_FONT_FAMILY),
+            text: resolve(WINDOWS_UI_FONT_FAMILY),
+            display: resolve(WINDOWS_UI_DISPLAY_FONT_FAMILY),
+        };
+    }
+    #[cfg(not(any(feature = "windows-rust-text", feature = "windows-directwrite")))]
+    {
+        let text = if dc.is_null() || windows_gdi_font_family_available(dc, message) {
+            message
+        } else {
+            WINDOWS_LEGACY_UI_FONT_FAMILY
+        };
+        WindowsUiFontFamilies {
+            small: text,
+            text,
+            display: text,
+        }
     }
 }
 
@@ -1775,14 +1802,20 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
     let icon_font = detect_windows_system_icon_font(dc)
         .font_family()
         .unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY);
+    #[cfg(feature = "windows-rust-text")]
+    let rasterization = "zsui_rust_text_swash_win32_dib";
+    #[cfg(all(not(feature = "windows-rust-text"), feature = "windows-directwrite"))]
+    let rasterization = "directwrite_win32_dib";
+    #[cfg(not(any(feature = "windows-rust-text", feature = "windows-directwrite")))]
+    let rasterization = "gdi_cleartype";
     let mut profile = crate::NativeTypographyProfile::new(
         crate::ZsTypographyPlatformStyle::Windows,
-        "win32_spi_message_font",
+        "windows_fluent_font_stack",
         ui_fonts.text,
         "Consolas",
         icon_font,
         1.0,
-        "gdi_cleartype",
+        rasterization,
     )
     .with_configured_ui_font(ui_fonts.text)
     .with_role_families(ui_fonts.small, ui_fonts.display);
@@ -2441,17 +2474,28 @@ mod tests {
     }
 
     #[test]
-    fn system_message_font_is_shared_by_all_windows_text_roles() {
+    fn fluent_optical_families_follow_semantic_text_roles() {
         let resolver = WindowsGdiStyleResolver::default();
-        let system = windows_system_ui_font_family();
+        let fluent = detect_windows_ui_font_families(std::ptr::null_mut());
 
-        assert_eq!(resolver.font_family, system);
-        assert_eq!(resolver.small_font_family, system);
-        assert_eq!(resolver.display_font_family, system);
+        assert_eq!(resolver.font_family, fluent.text);
+        assert_eq!(resolver.small_font_family, fluent.small);
+        assert_eq!(resolver.display_font_family, fluent.display);
+        for role in [crate::TextRole::Body, crate::TextRole::Button] {
+            assert_eq!(
+                resolver
+                    .resolve_text_style(SemanticTextStyle::for_role(role))
+                    .font_family,
+                fluent.text
+            );
+        }
+        assert_eq!(
+            resolver
+                .resolve_text_style(SemanticTextStyle::for_role(crate::TextRole::Caption))
+                .font_family,
+            fluent.small
+        );
         for role in [
-            crate::TextRole::Caption,
-            crate::TextRole::Body,
-            crate::TextRole::Button,
             crate::TextRole::Subtitle,
             crate::TextRole::WindowTitle,
             crate::TextRole::Title,
@@ -2462,7 +2506,7 @@ mod tests {
                 resolver
                     .resolve_text_style(SemanticTextStyle::for_role(role))
                     .font_family,
-                system
+                fluent.display
             );
         }
     }

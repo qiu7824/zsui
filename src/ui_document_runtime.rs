@@ -1328,6 +1328,9 @@ fn compile_node<Msg: Clone + 'static>(
         #[cfg(feature = "textbox")]
         "textbox" if bool_property(node, properties, "multiline", false) => {
             let mut control = crate::text_editor(string_property(node, properties, "value", ""));
+            if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+                control = control.placeholder(placeholder);
+            }
             if let Some(binding) = node.action_bindings.get("change") {
                 let mapper = mapper.clone();
                 let node_id = node.id.as_str().to_owned();
@@ -1347,6 +1350,9 @@ fn compile_node<Msg: Clone + 'static>(
         #[cfg(feature = "textbox")]
         "textbox" => {
             let mut control = crate::textbox(string_property(node, properties, "value", ""));
+            if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+                control = control.placeholder(placeholder);
+            }
             if let Some(binding) = node.action_bindings.get("change") {
                 let mapper = mapper.clone();
                 let node_id = node.id.as_str().to_owned();
@@ -1392,6 +1398,9 @@ fn compile_node<Msg: Clone + 'static>(
                 }
             };
             let mut control = crate::password_box(value).reveal_mode(reveal_mode);
+            if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+                control = control.placeholder(placeholder);
+            }
             if let Some(binding) = node.action_bindings.get("change") {
                 let Some(secure) = secure else {
                     return Err(UiDocumentRuntimeError::SecureChannelRequired {
@@ -1478,6 +1487,9 @@ fn compile_node<Msg: Clone + 'static>(
             let mut control = crate::number_box(value, range)
                 .fraction_digits(number_property(node, properties, "fraction_digits", 0.0) as u8)
                 .wraps(bool_property(node, properties, "wraps", false));
+            if let Some(placeholder) = optional_string_property(node, properties, "placeholder") {
+                control = control.placeholder(placeholder);
+            }
             if let Some(binding) = node.action_bindings.get("change") {
                 let mapper = mapper.clone();
                 let node_id = node.id.as_str().to_owned();
@@ -4270,6 +4282,25 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     if let Some(value) = node.layout.flex {
         view = view.flex(value);
     }
+    if let Some(value) = node.layout.justify {
+        view = view.justify(match value {
+            crate::ui_document::UiJustify::Start => crate::ViewJustify::Start,
+            crate::ui_document::UiJustify::Center => crate::ViewJustify::Center,
+            crate::ui_document::UiJustify::End => crate::ViewJustify::End,
+            crate::ui_document::UiJustify::SpaceBetween => crate::ViewJustify::SpaceBetween,
+            crate::ui_document::UiJustify::SpaceAround => crate::ViewJustify::SpaceAround,
+            crate::ui_document::UiJustify::SpaceEvenly => crate::ViewJustify::SpaceEvenly,
+        });
+    }
+    if let Some(value) = node.layout.align {
+        view = view.align(match value {
+            crate::ui_document::UiAlign::Auto => crate::ViewAlign::Auto,
+            crate::ui_document::UiAlign::Start => crate::ViewAlign::Start,
+            crate::ui_document::UiAlign::Center => crate::ViewAlign::Center,
+            crate::ui_document::UiAlign::End => crate::ViewAlign::End,
+            crate::ui_document::UiAlign::Stretch => crate::ViewAlign::Stretch,
+        });
+    }
     if let Some(token) = node
         .theme_tokens
         .get("background")
@@ -5262,6 +5293,8 @@ fn nullable_number_property(
 
 #[cfg(any(
     feature = "label",
+    feature = "textbox",
+    feature = "number-box",
     feature = "combo",
     feature = "tabs",
     feature = "list",
@@ -6844,7 +6877,9 @@ mod tests {
                 "component": "stack",
                 "layout": {
                   "padding_token": "page_padding",
-                  "gap_token": "content_gap"
+                  "gap_token": "content_gap",
+                  "justify": "start",
+                  "align": "auto"
                 },
                 "children": [
                   {
@@ -6872,6 +6907,8 @@ mod tests {
         let spacing = crate::ZsuiSpacingTokens::default();
         assert_eq!(view.style.padding, Some(spacing.page_padding));
         assert_eq!(view.style.gap, Some(spacing.content_gap));
+        assert_eq!(view.style.justify, crate::ViewJustify::Start);
+        assert_eq!(view.style.align, crate::ViewAlign::Auto);
 
         let output = view.layout(&mut ViewLayoutCx::new(
             Rect {
@@ -6975,6 +7012,82 @@ mod tests {
             ui_document_view(&document, &bindings, &invalid_values, Msg::Action),
             Err(UiDocumentRuntimeError::InvalidResolvedProperty { property, .. })
                 if property == "wrap"
+        ));
+    }
+
+    #[cfg(all(feature = "number-box", feature = "password-box", feature = "textbox"))]
+    #[test]
+    fn compiles_placeholders_for_every_basic_text_input() {
+        let document = UiDocument::from_json(
+            r#"{
+              "schema_version": 1,
+              "root": {
+                "id": "inputs",
+                "component": "stack",
+                "children": [
+                  {
+                    "id": "name",
+                    "component": "textbox",
+                    "properties": { "value": "", "placeholder": "Account name" }
+                  },
+                  {
+                    "id": "notes",
+                    "component": "textbox",
+                    "properties": { "value": "", "multiline": true, "placeholder": "Notes" }
+                  },
+                  {
+                    "id": "password",
+                    "component": "password_box",
+                    "properties": { "placeholder": "Password" }
+                  },
+                  {
+                    "id": "amount",
+                    "component": "number_box",
+                    "properties": { "value": null, "placeholder": "Optional amount" }
+                  }
+                ]
+              }
+            }"#,
+        )
+        .unwrap();
+        let view = ui_document_view(
+            &document,
+            &UiBindingSchema::default(),
+            &BTreeMap::new(),
+            Msg::Action,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &view.children[0].kind,
+            crate::ViewNodeKind::Textbox {
+                placeholder: Some(placeholder),
+                multiline: false,
+                ..
+            } if placeholder == "Account name"
+        ));
+        assert!(matches!(
+            &view.children[1].kind,
+            crate::ViewNodeKind::Textbox {
+                placeholder: Some(placeholder),
+                multiline: true,
+                ..
+            } if placeholder == "Notes"
+        ));
+        assert!(matches!(
+            &view.children[2].kind,
+            crate::ViewNodeKind::PasswordBox {
+                placeholder: Some(placeholder),
+                ..
+            } if placeholder == "Password"
+        ));
+        assert!(matches!(
+            &view.children[3].kind,
+            crate::ViewNodeKind::NumberBox {
+                placeholder: Some(placeholder),
+                value: None,
+                ..
+            } if placeholder == "Optional amount"
         ));
     }
 

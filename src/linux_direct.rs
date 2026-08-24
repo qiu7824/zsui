@@ -1011,6 +1011,7 @@ impl LinuxDirectWindow {
         let shift = self.modifiers.shift_key();
         let control = self.modifiers.control_key();
         let command_modifier = control || self.modifiers.super_key() || self.modifiers.alt_key();
+        #[cfg(feature = "text-input-core")]
         let text_edit_shortcut =
             control && !shift && !self.modifiers.alt_key() && !self.modifiers.super_key();
         let named = match logical_key {
@@ -1046,7 +1047,7 @@ impl LinuxDirectWindow {
         match logical_key {
             Key::Named(NamedKey::Backspace) => self.runtime.dispatch_text_input("\u{8}"),
             Key::Named(NamedKey::Delete) => self.runtime.dispatch_text_input("\u{7f}"),
-            #[cfg(feature = "textbox")]
+            #[cfg(feature = "text-input-core")]
             Key::Character(text) if text_edit_shortcut => text
                 .chars()
                 .next()

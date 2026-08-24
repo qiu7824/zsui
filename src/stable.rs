@@ -69,6 +69,65 @@ impl From<Dp> for crate::Dp {
     }
 }
 
+/// Distribution of children along a row or column's main axis.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Justify {
+    /// Places children at the start of the axis.
+    #[default]
+    Start,
+    /// Centers children as one group.
+    Center,
+    /// Places children at the end of the axis.
+    End,
+    /// Distributes free space between children.
+    SpaceBetween,
+    /// Distributes free space around children.
+    SpaceAround,
+    /// Distributes equal free space before, between and after children.
+    SpaceEvenly,
+}
+
+impl From<Justify> for crate::ViewJustify {
+    fn from(value: Justify) -> Self {
+        match value {
+            Justify::Start => Self::Start,
+            Justify::Center => Self::Center,
+            Justify::End => Self::End,
+            Justify::SpaceBetween => Self::SpaceBetween,
+            Justify::SpaceAround => Self::SpaceAround,
+            Justify::SpaceEvenly => Self::SpaceEvenly,
+        }
+    }
+}
+
+/// Placement of children along a row or column's cross axis.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Align {
+    /// Uses native intrinsic sizing and platform-appropriate placement.
+    #[default]
+    Auto,
+    /// Places children at the start of the cross axis.
+    Start,
+    /// Centers children on the cross axis.
+    Center,
+    /// Places children at the end of the cross axis.
+    End,
+    /// Expands children without a fixed cross-axis size to fill the axis.
+    Stretch,
+}
+
+impl From<Align> for crate::ViewAlign {
+    fn from(value: Align) -> Self {
+        match value {
+            Align::Auto => Self::Auto,
+            Align::Start => Self::Start,
+            Align::Center => Self::Center,
+            Align::End => Self::End,
+            Align::Stretch => Self::Stretch,
+        }
+    }
+}
+
 /// A deterministic application-level widget identity.
 ///
 /// IDs are optional because ZSUI assigns structural IDs to interactive nodes.
@@ -186,6 +245,18 @@ impl<Message> Element<Message> {
     /// Sets the non-negative share of remaining space assigned by its parent.
     pub fn flex(mut self, factor: f32) -> Self {
         self.inner = self.inner.flex(factor);
+        self
+    }
+
+    /// Distributes this container's children along its main axis.
+    pub fn justify(mut self, justify: Justify) -> Self {
+        self.inner = self.inner.justify(justify.into());
+        self
+    }
+
+    /// Places this container's children along its cross axis.
+    pub fn align(mut self, align: Align) -> Self {
+        self.inner = self.inner.align(align.into());
         self
     }
 

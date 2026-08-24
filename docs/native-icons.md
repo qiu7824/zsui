@@ -18,7 +18,9 @@ the backend.
 No Microsoft or Apple icon font is distributed with ZSUI. Windows checks the
 font selected by GDI instead of assuming that a requested family exists. The
 live Windows renderer uses Segoe Fluent Icons first and Segoe MDL2 Assets when
-the Fluent family is unavailable.
+the Fluent family is unavailable. The default Win32 Rust text compositor
+rasterizes semantic icon glyphs with grayscale coverage, independently from
+subpixel UI text, so 16–20 epx icons do not inherit colored ClearType fringes.
 
 On a macOS target, `macos-appkit` includes SF Symbol names plus the portable
 fallback catalog. On Linux, the lightweight `linux-direct` profile draws a
@@ -56,6 +58,10 @@ let source = resolve_native_icon(&PlatformName::Linux, ZsIcon::Copy, &|source| {
 Built-in controls also use semantic values. For example, ComboBox requests
 `ZsIcon::ChevronDown`, which resolves to Segoe Fluent/MDL2, `chevron.down`, or
 `pan-down-symbolic` before using the MIT SVG fallback.
+Component profiles keep the interactive slot separate from the visible glyph:
+Windows TreeView uses an 8-DP disclosure glyph, while ComboBox and Accordion
+use 12-DP trailing chevrons. Accordion uses down/up states in a dedicated
+expander header instead of inheriting command-bar icon placement.
 
 Navigation shells use the same typed contract, so application code does not
 select a platform glyph or maintain a parallel string icon catalog:

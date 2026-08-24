@@ -1,0 +1,4 @@
+order_id	customer	region	amount	paid
+2001	示例甲公司	华东	2830.50	true
+2002	Northwind	North	1680.00	true
+2003	Contoso	West	945.25	false

@@ -138,6 +138,7 @@ impl WindowsRustTextState {
         }
         let bitmap_stride = bitmap.stride;
         let pixels = bitmap.pixels_mut()?;
+        let raster_profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
         engine.composite_bgra(
             &layout,
             pixels,
@@ -145,7 +146,7 @@ impl WindowsRustTextState {
             height,
             bitmap_stride,
             style.color,
-            self.profile,
+            raster_profile,
         )?;
         unsafe {
             GdiFlush();
@@ -187,6 +188,17 @@ impl WindowsRustTextState {
 
     pub(crate) const fn stats(&self) -> WindowsRustTextStats {
         self.stats
+    }
+}
+
+const fn windows_rust_text_raster_profile(
+    role: Option<crate::TextRole>,
+    text_profile: ZsTextRasterProfile,
+) -> ZsTextRasterProfile {
+    if matches!(role, Some(crate::TextRole::Icon)) {
+        ZsTextRasterProfile::grayscale()
+    } else {
+        text_profile
     }
 }
 
@@ -333,4 +345,24 @@ fn ensure_bitmap<'a>(
     bitmap
         .as_mut()
         .ok_or_else(|| "Rust text DIB was not initialized".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rust_text_renderer::ZsTextRasterMode;
+
+    #[test]
+    fn semantic_icons_use_grayscale_without_changing_ui_text_subpixel_mode() {
+        let text = ZsTextRasterProfile::subpixel_rgb();
+
+        assert_eq!(
+            windows_rust_text_raster_profile(Some(crate::TextRole::Icon), text).mode,
+            ZsTextRasterMode::Grayscale
+        );
+        assert_eq!(
+            windows_rust_text_raster_profile(Some(crate::TextRole::Body), text).mode,
+            ZsTextRasterMode::SubpixelRgb
+        );
+    }
 }

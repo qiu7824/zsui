@@ -35,10 +35,10 @@ ZSUI 保留一棵共享的自绘 View 树，但不把 Windows 的组件组合复
 | 信息徽章 | `Dot` 使用 4 epx 圆点；数字和语义图标使用至少 16 epx 的胶囊，数字增加时只扩展宽度。徽章不参与焦点或点击，父控件负责辅助功能状态通知 |
 | 拆分视图 | `SplitView` 保持内容常驻，以 296 epx 作为 Windows 首选打开宽度；应用可选择 `inline`、`overlay` 或约束驱动的 `adaptive`。覆盖层外点击与 Esc 关闭窗格，应用仍显式持有 `open` 状态 |
 
-Windows 文字族由 Win32 `SPI_GETNONCLIENTMETRICS.message_font` 在运行时解析，
-与 ZSClip 设置界面使用同一套系统消息字体（当前系统通常是 `Microsoft YaHei UI`）。
-`Segoe UI` 只作为系统查询失败或字体不可用时的框架回退；Demo 和组件实现不得直接
-写入字体族。
+Windows 默认文字链路由 ZSUI 的 HarfRust/Swash 引擎负责。Caption、正文和标题分别
+使用系统安装的 `Segoe UI Variable Small`、`Text` 和 `Display` 光学字体族，中文与
+复杂文字按字形回退到对应系统字体；旧系统回退到 `Segoe UI`。GDI 仅保留为未支持
+省略号等边界行为的后备路径；Demo 和组件实现不得直接写入字体族。
 
 ## macOS / AppKit
 

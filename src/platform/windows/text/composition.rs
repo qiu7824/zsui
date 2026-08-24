@@ -79,7 +79,7 @@ unsafe fn position_windows_ime_candidate(hwnd: HWND) {
     let Some(target) = windows_win32_window_focused_target(hwnd) else {
         return;
     };
-    if !target.kind.accepts_text_input() {
+    if !windows_win32_window_focused_target_accepts_text_input(hwnd) {
         return;
     }
     let context = ImmGetContext(hwnd);

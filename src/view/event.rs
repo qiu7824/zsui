@@ -1,11 +1,11 @@
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ZsTextSelection {
     pub anchor: usize,
     pub caret: usize,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 impl ZsTextSelection {
     pub const fn collapsed(caret: usize) -> Self {
         Self {
@@ -27,7 +27,7 @@ impl ZsTextSelection {
     }
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsTextEditCommand {
     Undo,
@@ -37,14 +37,14 @@ pub enum ZsTextEditCommand {
     SelectAll,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ZsTextEditCommandRequest {
     pub widget: Option<WidgetId>,
     pub command: ZsTextEditCommand,
 }
 
-#[cfg(feature = "textbox")]
+#[cfg(feature = "text-input-core")]
 impl ZsTextEditCommandRequest {
     pub const fn focused(command: ZsTextEditCommand) -> Self {
         Self {
@@ -58,6 +58,112 @@ impl ZsTextEditCommandRequest {
             widget: Some(widget),
             command,
         }
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ViewTextEditCapabilities {
+    select_all: bool,
+    copy: bool,
+    cut: bool,
+    paste: bool,
+    undo: bool,
+}
+
+#[cfg(feature = "text-input-core")]
+impl ViewTextEditCapabilities {
+    #[allow(dead_code)]
+    pub(crate) const PLAIN: Self = Self {
+        select_all: true,
+        copy: true,
+        cut: true,
+        paste: true,
+        undo: true,
+    };
+
+    #[cfg(feature = "password-box")]
+    pub(crate) const PROTECTED: Self = Self {
+        select_all: true,
+        copy: false,
+        cut: false,
+        paste: true,
+        undo: true,
+    };
+
+    pub(crate) const fn allows(self, command: ZsTextEditCommand) -> bool {
+        match command {
+            ZsTextEditCommand::Undo => self.undo,
+            ZsTextEditCommand::Cut => self.cut,
+            ZsTextEditCommand::Copy => self.copy,
+            ZsTextEditCommand::Paste => self.paste,
+            ZsTextEditCommand::SelectAll => self.select_all,
+        }
+    }
+
+    pub(crate) const fn supports_undo(self) -> bool {
+        self.undo
+    }
+}
+
+#[cfg(feature = "text-input-core")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ViewTextEditChangeKind {
+    #[cfg(feature = "textbox")]
+    TextEdited,
+    TextChanged,
+    #[cfg(feature = "password-box")]
+    PasswordChanged,
+}
+
+#[cfg(feature = "text-input-core")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ViewEditableTextDescriptor {
+    pub(crate) capabilities: ViewTextEditCapabilities,
+    pub(crate) change_kind: ViewTextEditChangeKind,
+    pub(crate) multiline: bool,
+    pub(crate) secure: bool,
+}
+
+#[cfg(feature = "text-input-core")]
+impl ViewEditableTextDescriptor {
+    #[cfg(feature = "textbox")]
+    pub(crate) const fn textbox(multiline: bool) -> Self {
+        Self {
+            capabilities: ViewTextEditCapabilities::PLAIN,
+            change_kind: ViewTextEditChangeKind::TextEdited,
+            multiline,
+            secure: false,
+        }
+    }
+
+    #[cfg(any(
+        feature = "number-box",
+        feature = "auto-suggest",
+        feature = "command-palette"
+    ))]
+    pub(crate) const fn plain_text_changed() -> Self {
+        Self {
+            capabilities: ViewTextEditCapabilities::PLAIN,
+            change_kind: ViewTextEditChangeKind::TextChanged,
+            multiline: false,
+            secure: false,
+        }
+    }
+
+    #[cfg(feature = "password-box")]
+    pub(crate) const fn password() -> Self {
+        Self {
+            capabilities: ViewTextEditCapabilities::PROTECTED,
+            change_kind: ViewTextEditChangeKind::PasswordChanged,
+            multiline: false,
+            secure: true,
+        }
+    }
+
+    #[cfg(feature = "textbox")]
+    pub(crate) const fn emits_selection_event(self) -> bool {
+        matches!(self.change_kind, ViewTextEditChangeKind::TextEdited)
     }
 }
 
@@ -1060,6 +1166,7 @@ impl ViewHitTargetKind {
         }
     }
 
+    #[cfg(all(target_os = "linux", feature = "linux-direct-accessibility"))]
     pub(crate) fn accepts_text_input(self) -> bool {
         let accepts = matches!(self, Self::Textbox | Self::TextEditor);
         #[cfg(feature = "password-box")]
@@ -1163,7 +1270,7 @@ impl<Msg> Default for ViewEventCx<Msg> {
 pub struct AppCx {
     commands: Vec<Command>,
     ui_commands: Vec<UiCommand>,
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
 }
@@ -1181,13 +1288,13 @@ impl AppCx {
         self.ui_commands.push(command);
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub fn text_edit_command(&mut self, command: ZsTextEditCommand) {
         self.text_edit_commands
             .push(ZsTextEditCommandRequest::focused(command));
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub fn text_edit_command_for(&mut self, widget: WidgetId, command: ZsTextEditCommand) {
         self.text_edit_commands
             .push(ZsTextEditCommandRequest::for_widget(widget, command));
@@ -1205,7 +1312,7 @@ impl AppCx {
         &self.ui_commands
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     pub fn text_edit_commands(&self) -> &[ZsTextEditCommandRequest] {
         &self.text_edit_commands
     }

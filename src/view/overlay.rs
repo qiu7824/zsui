@@ -319,7 +319,34 @@ impl<Msg> ViewNode<Msg> {
             .find_map(|child| child.widget_text_value(widget))
     }
 
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
+    pub(crate) fn widget_editable_text_descriptor(
+        &self,
+        widget: WidgetId,
+    ) -> Option<ViewEditableTextDescriptor> {
+        #[cfg(feature = "workbench")]
+        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
+            (self.id, self.bounds, &self.kind)
+        {
+            let layout = self.resolved_workbench_layout(spec, bounds);
+            if layout.regions.iter().any(|region| {
+                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
+                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
+            }) {
+                return Some(ViewEditableTextDescriptor::textbox(true));
+            }
+        }
+        if self.id == Some(widget) {
+            if let Some(descriptor) = self.editable_text {
+                return Some(descriptor);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_editable_text_descriptor(widget))
+    }
+
+    #[cfg(feature = "text-input-core")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         #[cfg(feature = "workbench")]
         if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
@@ -333,6 +360,7 @@ impl<Msg> ViewNode<Msg> {
                 return Some(crate::TextWrap::Word);
             }
         }
+        #[cfg(feature = "textbox")]
         if self.id == Some(widget) {
             if let ViewNodeKind::Textbox { wrap, .. } = &self.kind {
                 return Some(*wrap);
@@ -1220,9 +1248,25 @@ impl<Msg> ViewNode<Msg> {
                     .checked(*checked),
             ),
             #[cfg(feature = "textbox")]
-            ViewNodeKind::Textbox { .. } => Some(crate::ZsAccessibilitySpec::new(
-                crate::ZsAccessibilityRole::TextBox,
-            )),
+            ViewNodeKind::Textbox { placeholder, .. } => {
+                let mut accessibility = crate::ZsAccessibilitySpec::new(
+                    crate::ZsAccessibilityRole::TextBox,
+                );
+                if let Some(placeholder) = placeholder {
+                    accessibility = accessibility.description(placeholder.clone());
+                }
+                Some(accessibility)
+            }
+            #[cfg(feature = "password-box")]
+            ViewNodeKind::PasswordBox { placeholder, .. } => {
+                let mut accessibility = crate::ZsAccessibilitySpec::new(
+                    crate::ZsAccessibilityRole::TextBox,
+                );
+                if let Some(placeholder) = placeholder {
+                    accessibility = accessibility.description(placeholder.clone());
+                }
+                Some(accessibility)
+            }
             #[cfg(feature = "slider")]
             ViewNodeKind::Slider { value, range, .. } => {
                 let step = f64::from(range.step_size());
@@ -1240,10 +1284,18 @@ impl<Msg> ViewNode<Msg> {
                 )
             }
             #[cfg(feature = "number-box")]
-            ViewNodeKind::NumberBox { value, range, .. } => {
+            ViewNodeKind::NumberBox {
+                value,
+                placeholder,
+                range,
+                ..
+            } => {
                 let mut accessibility = crate::ZsAccessibilitySpec::new(
                     crate::ZsAccessibilityRole::SpinButton,
                 );
+                if let Some(placeholder) = placeholder {
+                    accessibility = accessibility.description(placeholder.clone());
+                }
                 if let Some(value) = value {
                     accessibility = accessibility.range_value(
                         crate::ZsAccessibilityRangeValue::new(

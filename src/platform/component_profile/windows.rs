@@ -42,13 +42,13 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             icon: ZsTypographyMetrics::new(16.0, 20.0, TextWeight::Regular),
             monospace: ZsTypographyMetrics::new(13.0, 18.0, TextWeight::Regular),
             fallback: PlatformTypographyFallbackProfile {
-                source: "windows_semantic_fallback",
-                ui_font_family: "Segoe UI",
-                small_font_family: "Segoe UI",
-                display_font_family: "Segoe UI",
+                source: "windows_fluent_font_stack",
+                ui_font_family: "Segoe UI Variable Text",
+                small_font_family: "Segoe UI Variable Small",
+                display_font_family: "Segoe UI Variable Display",
                 monospace_font_family: "Consolas",
                 icon_font_family: "Segoe Fluent Icons",
-                rasterization: "gdi_cleartype",
+                rasterization: "zsui_rust_text_swash_win32_dib",
             },
         },
         focus_visuals: PlatformFocusVisualProfile {
@@ -189,6 +189,15 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             content_gap: Dp::new(8.0),
             item_gap: Dp::new(8.0),
             label_role: TextRole::Caption,
+        },
+        #[cfg(feature = "accordion")]
+        accordion: PlatformAccordionProfile {
+            header_height: Dp::new(48.0),
+            header_padding_left: Dp::new(16.0),
+            chevron_gap: Dp::new(20.0),
+            chevron_button_size: Dp::new(32.0),
+            chevron_glyph_size: Dp::new(12.0),
+            chevron_margin_right: Dp::new(8.0),
         },
         #[cfg(feature = "tabs")]
         tabs: PlatformTabProfile {
@@ -450,7 +459,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
                 row_height: Dp::new(32.0),
                 depth_indent: Dp::new(20.0),
                 disclosure_column: Dp::new(24.0),
-                disclosure_size: Dp::new(12.0),
+                disclosure_size: Dp::new(8.0),
                 icon_size: Dp::new(16.0),
                 leading_padding: Dp::new(6.0),
                 content_gap: Dp::new(6.0),
@@ -634,7 +643,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             composer_vertical_inset: Dp::new(12.0),
             message_gap: Dp::new(16.0),
             message_vertical_inset: Dp::new(20.0),
-            floating_radius: Dp::new(12.0),
+            floating_radius: Dp::new(8.0),
         },
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Windows,

@@ -75,6 +75,7 @@ where
         on_invoke: None,
         on_open_change: None,
     })
+    .editable_text(ViewEditableTextDescriptor::plain_text_changed())
     .id(widget)
     .child(page)
 }

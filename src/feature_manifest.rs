@@ -729,8 +729,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Backend,
             false,
             Vec::new(),
-            vec!["windows-gdi"],
-            "direct Win32 HWND host, transient window host and message loop",
+            vec!["windows-rust-text"],
+            "direct Win32 HWND host and message loop with ZSUI-owned Rust text and a buffered GDI fallback",
         ),
         ZsuiCargoFeature::new(
             "windows-directwrite",
@@ -746,7 +746,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             vec!["cosmic-text", "swash", "ttf-parser"],
             Vec::new(),
-            "opt-in ZSUI-owned Rust shaping, retained layout and hinted rasterization pipeline",
+            "ZSUI-owned Rust shaping, retained layout and hinted rasterization pipeline used by the Win32 host",
         ),
         ZsuiCargoFeature::new(
             "rust-text-proof",

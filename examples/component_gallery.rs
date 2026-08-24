@@ -434,12 +434,17 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
     let editors = card(
         "文本与选择 / Text and selection",
         vec![
-            textbox(&state.text).id(TEXT_INPUT).on_change(Msg::Text),
+            textbox(&state.text)
+                .id(TEXT_INPUT)
+                .placeholder("名称 / Name")
+                .on_change(Msg::Text),
             password_box(&state.password)
                 .id(PASSWORD_INPUT)
+                .placeholder("密码 / Password")
                 .reveal_mode(ZsPasswordRevealMode::Peek)
                 .on_password_change(Msg::Password),
             number_box(state.number, ZsNumberRange::new(0.0, 100.0).step(0.5))
+                .placeholder("可选数值 / Optional value")
                 .fraction_digits(1)
                 .on_number_change(Msg::Number),
             auto_suggest_box(
@@ -461,6 +466,7 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
                 state.combo,
             )
             .id(COMBO_INPUT)
+            .placeholder("选择模式 / Choose a mode")
             .expanded(state.combo_expanded)
             .on_select(Msg::Combo)
             .on_expanded_change(Msg::ComboExpanded),
@@ -666,6 +672,7 @@ fn navigation_page(state: &GalleryState) -> ViewNode<Msg> {
         ],
         page,
     )
+    .placeholder("输入命令 / Type a command")
     .on_command_palette_query_change(Msg::PaletteQuery)
     .on_command_palette_highlight_change(Msg::PaletteHighlight)
     .on_command_palette_invoke(Msg::PaletteInvoke)

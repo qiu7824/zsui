@@ -1,0 +1,13 @@
+order_id,customer,region,amount,paid
+1001,示例甲公司,华东,2830.50,true
+1002,Northwind,North,1680.00,true
+1003,Contoso,West,945.25,false
+1004,Fabrikam,South,4200.00,true
+1005,示例乙公司,华南,730.80,false
+1006,Adventure Works,East,12500.00,true
+1007,Blue Yonder,West,88.90,true
+1008,示例丙公司,华北,6400.00,false
+1009,Proseware,North,230.00,true
+1010,Lucerne Publishing,East,1888.88,true
+1011,Wide World Importers,South,5020.40,false
+1012,示例丁公司,华东,997.00,true

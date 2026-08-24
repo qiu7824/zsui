@@ -2504,6 +2504,25 @@ pub fn zs_number_box_native_draw_plan(
     decrement_enabled: bool,
     increment_enabled: bool,
 ) -> NativeDrawPlan {
+    zs_number_box_native_draw_plan_with_placeholder(
+        plan,
+        text,
+        None,
+        valid,
+        decrement_enabled,
+        increment_enabled,
+    )
+}
+
+#[cfg(feature = "number-box")]
+pub fn zs_number_box_native_draw_plan_with_placeholder(
+    plan: &ZsNumberBoxRenderPlan,
+    text: &str,
+    placeholder: Option<&str>,
+    valid: bool,
+    decrement_enabled: bool,
+    increment_enabled: bool,
+) -> NativeDrawPlan {
     let stroke = if valid {
         ColorRole::Border
     } else {
@@ -2521,6 +2540,16 @@ pub fn zs_number_box_native_draw_plan(
     } else {
         ColorRole::DisabledText
     };
+    let placeholder_visible = text.is_empty() && placeholder.is_some();
+    let display_text = if placeholder_visible {
+        placeholder.unwrap_or_default()
+    } else {
+        text
+    };
+    let mut text_style = SemanticTextStyle::body();
+    if placeholder_visible {
+        text_style.color = ColorRole::SecondaryText;
+    }
     let mut commands = vec![
         NativeDrawCommand::RoundRect {
             rect: plan.bounds,
@@ -2537,9 +2566,9 @@ pub fn zs_number_box_native_draw_plan(
             fill: NativeDrawFill::Role(ColorRole::Control),
         },
         NativeDrawCommand::Text(NativeDrawTextCommand::new(
-            text,
+            display_text,
             plan.text_bounds,
-            SemanticTextStyle::body(),
+            text_style,
         )),
     ];
     let profile =
@@ -3917,7 +3946,7 @@ pub fn zs_grid_view_native_draw_plan(
                     Some(alpha) => NativeDrawFill::RoleWithAlpha { role, alpha },
                     None => NativeDrawFill::Role(role),
                 },
-                Some(NativeDrawFill::Role(ColorRole::Accent)),
+                None,
             )
         } else {
             (
@@ -4666,11 +4695,12 @@ fn zs_combo_box_render_plan_impl(
     viewport: Option<Rect>,
 ) -> ZsComboBoxRenderPlan {
     let horizontal_padding = scale(12, dpi).min(bounds.width.max(1) / 3).max(1);
-    let icon_size = scale(16, dpi).min(bounds.height.max(1)).max(1);
+    let icon_right_padding = scale(14, dpi).min(bounds.width.max(1) / 3).max(1);
+    let icon_size = scale(12, dpi).min(bounds.height.max(1)).max(1);
     let icon_right = bounds
         .x
         .saturating_add(bounds.width)
-        .saturating_sub(horizontal_padding);
+        .saturating_sub(icon_right_padding);
     let icon_bounds = Rect {
         x: icon_right.saturating_sub(icon_size),
         y: bounds
@@ -7464,6 +7494,7 @@ mod tests {
         assert!(windows.rows[0].expanded);
         assert!(windows.rows[1].selected);
         assert!(windows.rows[0].disclosure_bounds.is_some());
+        assert_eq!(windows.rows[0].disclosure_bounds.unwrap().width, 8);
         assert!(windows.rows[2].disclosure_bounds.is_none());
         assert!(windows.rows[1].label_bounds.x > windows.rows[0].label_bounds.x);
         assert!(macos.row_height.0 < gtk.row_height.0);
@@ -7552,6 +7583,14 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::Icon(icon) if icon.icon == crate::ZsIcon::Image)));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundRect {
+                rect,
+                stroke: None,
+                ..
+            } if *rect == windows.items[1].bounds
+        )));
         assert!(matches!(
             draw.commands.last(),
             Some(NativeDrawCommand::PopClip)
@@ -8229,6 +8268,36 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "number-box")]
+    #[test]
+    fn empty_number_box_uses_secondary_placeholder_text() {
+        let plan = zs_number_box_render_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 220,
+                height: 32,
+            },
+            ZsNumberBoxPlatformStyle::Windows,
+            Dpi::standard(),
+        );
+        let draw = zs_number_box_native_draw_plan_with_placeholder(
+            &plan,
+            "",
+            Some("Optional amount"),
+            true,
+            false,
+            true,
+        );
+
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == "Optional amount"
+                    && text.style.color == ColorRole::SecondaryText
+        )));
+    }
+
     #[cfg(feature = "tabs")]
     #[test]
     fn tab_metrics_preserve_each_desktop_platform_character() {
@@ -8843,6 +8912,11 @@ mod tests {
         assert_eq!(plan.popup_placement, Some(ZsPopupPlacement::Below));
         assert_eq!(plan.option_rows.len(), 3);
         assert_eq!(plan.option_rows[1].y, 96);
+        assert_eq!(plan.icon_bounds.width, 12);
+        assert_eq!(
+            bounds.x + bounds.width - plan.icon_bounds.x - plan.icon_bounds.width,
+            14
+        );
         assert!(matches!(
             zs_combo_box_header_native_draw_plan(&plan, Some("Balanced"), None)
                 .commands

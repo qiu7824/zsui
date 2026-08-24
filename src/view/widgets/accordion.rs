@@ -20,14 +20,7 @@ pub fn accordion<Msg: Clone>(
         let is_expanded = expanded.contains(&item.id);
         let change = crate::accordion::accordion_change(&expanded, item.id, mode);
         let changed = change.next_expanded != expanded;
-        let mut trigger = toolbar_button(
-            item.title,
-            if is_expanded {
-                crate::ZsIcon::ChevronDown
-            } else {
-                crate::ZsIcon::ChevronRight
-            },
-        )
+        let mut trigger = accordion_header_button(item.title, is_expanded)
         .id(WidgetId::synthetic_child(widget, item.id.0))
         .enabled(item.enabled);
         if item.enabled && changed {

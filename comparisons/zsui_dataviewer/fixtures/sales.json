@@ -1,0 +1,5 @@
+[
+  { "order_id": 3001, "customer": "示例甲公司", "region": "华东", "amount": 2830.5, "paid": true },
+  { "order_id": 3002, "customer": "Northwind", "region": "North", "amount": 1680.0, "paid": true },
+  { "order_id": 3003, "customer": "Contoso", "region": "West", "amount": 945.25, "paid": false }
+]

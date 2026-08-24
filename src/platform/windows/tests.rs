@@ -1521,7 +1521,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "textbox")]
+    #[cfg(feature = "text-input-core")]
     fn window_text_edit_shortcuts_require_exact_control_chords() {
         let command_for = |character: char| {
             windows_text_edit_shortcut(character as u32, false, true, false, false)
@@ -1669,6 +1669,56 @@ mod tests {
         assert_eq!(undone.text_undo_count, 1);
         assert!(undone.text_edit_command_errors.is_empty());
         assert_eq!(route.widget_text_value(widget).as_deref(), Some("A中"));
+    }
+
+    #[test]
+    #[cfg(feature = "number-box")]
+    fn window_view_routes_control_shortcuts_through_number_edit_capability() {
+        let widget = crate::WidgetId::new(36);
+        let bounds = crate::Rect {
+            x: 0,
+            y: 0,
+            width: 180,
+            height: 40,
+        };
+        let mut route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                bounds,
+                crate::ViewHitTargetKind::NumberBox,
+            )]),
+            crate::number_box::<UiCommand>(
+                Some(12.0),
+                crate::ZsNumberRange::new(0.0, 100.0),
+            )
+            .id(widget),
+        );
+        route.dispatch_click(crate::Point {
+            x: bounds.x + 8,
+            y: bounds.y + bounds.height / 2,
+        });
+
+        let selected = route.dispatch_key_down_with_all_modifiers(
+            'A' as u32,
+            false,
+            true,
+            false,
+            false,
+        );
+        route.dispatch_text_input("9.5");
+        let undone = route.dispatch_key_down_with_all_modifiers(
+            'Z' as u32,
+            false,
+            true,
+            false,
+            false,
+        );
+
+        assert!(selected.handled);
+        assert_eq!(selected.text_edit_command_count, 1);
+        assert_eq!(selected.text_selection, Some((0, 2)));
+        assert_eq!(undone.text_undo_count, 1);
+        assert_eq!(route.widget_text_value(widget).as_deref(), Some("12"));
     }
 
     #[test]
