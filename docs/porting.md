@@ -394,9 +394,11 @@ through owned HICON resources. Win32 tray/status items should use the
 direct Windows host can already create declared status items and
 `native_smoke_run --tray` can request one; status menu command-id routing is
 also available through the Win32 command table, and RAII popup-menu creation
-plus cleanup is smoke-recorded. The host also exposes `TrackPopupMenu`
-selection routing. Still add required target smoke artifacts for real user
-popup menu selection before claiming system completion.
+plus cleanup is smoke-recorded. The production window procedure routes tray
+right-click callbacks through `TrackPopupMenu`, dispatches the selected typed
+command through the window input route and restores icons after
+`TaskbarCreated`. Still add required target smoke artifacts for real user popup
+menu selection before claiming system completion.
 
 Window menus retain their `HMENU` and `HACCEL` resources through RAII. The
 message loop calls `TranslateAcceleratorW` before normal dispatch, so a shared

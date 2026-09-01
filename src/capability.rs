@@ -243,7 +243,7 @@ impl HostCapabilities {
             "Win32 main window transparency is not mapped by the native window host yet",
         );
         capabilities.tray_or_status_menu = CapabilitySupport::partial(
-            "Win32 status items can be created by the direct native host; target tray/menu command proof is still pending",
+            "Win32 status items, right-click callbacks, typed popup-menu commands and Explorer restart recovery are connected; target user-selection proof is still pending",
         );
         capabilities.menus = CapabilitySupport::supported(
             "Win32 window menus and HACCEL tables are RAII-owned and route typed Command values",

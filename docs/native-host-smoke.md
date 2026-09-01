@@ -65,9 +65,11 @@ records status-item fields in `interaction.json`. It also exercises the
 native status-menu command table and records `status_menu_command_routed`.
 It creates and destroys a native popup menu and records
 `status_menu_popup_destroyed`. Real user popup menu clicks are still separate
-proof before the tray surface is system-complete; the Win32 host exposes the
-`TrackPopupMenu` selection route, but the auto-closing smoke runner does not
-block waiting for manual selection.
+proof before the tray surface is system-complete. The production Win32 window
+procedure routes `Shell_NotifyIconW` right-click callbacks through
+`TrackPopupMenu`, executes the selected typed command and restores registered
+icons after `TaskbarCreated`; the auto-closing smoke runner does not block
+waiting for manual selection.
 The AppKit path owns a real `NSStatusItem`, attaches a detached native `NSMenu`,
 routes the first enabled command through the shared typed update path and
 removes the status item during teardown. Fixed macOS 15 Native UI Proof run

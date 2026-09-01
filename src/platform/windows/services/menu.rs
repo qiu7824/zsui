@@ -245,18 +245,25 @@ pub fn dispatch_windows_win32_window_menu_command(
         .map(|record| record.command_table.resolve_native_command_id(native_id))?;
 
     if let NativeStatusMenuCommandResult::Dispatched(command) = &result {
-        if dispatch_windows_win32_window_view_input(hwnd, |route| {
-            route.dispatch_app_command(command.clone())
-        })
-        .is_none()
-            && *command == Command::Quit
-        {
-            unsafe {
-                PostMessageW(hwnd, WM_CLOSE, 0, 0);
-            }
-        }
+        dispatch_windows_win32_app_command(hwnd, command.clone());
     }
     Some(result)
+}
+
+fn dispatch_windows_win32_app_command(hwnd: HWND, command: Command) {
+    if hwnd.is_null() {
+        return;
+    }
+    if dispatch_windows_win32_window_view_input(hwnd, |route| {
+        route.dispatch_app_command(command.clone())
+    })
+    .is_none()
+        && command == Command::Quit
+    {
+        unsafe {
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
 }
 
 fn create_status_popup_menu(

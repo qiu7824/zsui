@@ -50,6 +50,7 @@ impl WindowsWin32OwnedPopupMenu {
                 owner,
                 null(),
             );
+            PostMessageW(owner, WM_NULL, 0, 0);
             if selected == 0 {
                 Ok(NativeStatusMenuCommandResult::NotFound)
             } else {

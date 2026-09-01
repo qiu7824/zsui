@@ -242,6 +242,7 @@ pub fn create_owned_windows_for_specs_with_routes(
     clear_windows_win32_window_view_input_routes();
     clear_windows_win32_window_shell_input_routes();
     clear_windows_win32_window_menu_command_tables();
+    clear_windows_win32_status_item_routes();
     let capabilities = HostCapabilities::windows_native_window_host();
     let mut host = WindowsWin32MainWindowHost::new();
     let mut handles = Vec::new();

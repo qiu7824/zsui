@@ -3705,6 +3705,82 @@ mod tests {
     }
 
     #[test]
+    fn status_item_callback_route_matches_owner_message_and_tray_id() {
+        clear_windows_win32_status_item_routes();
+        let owner = 0x7a11isize as HWND;
+        let menu = MenuSpec::new().item("Open", Command::ShowMainWindow);
+        set_windows_win32_status_item_route(WindowsWin32StatusItemRouteRecord {
+            owner: owner as isize,
+            callback_message: ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+            tray_id: 41,
+            tooltip: Some("ZSUI".to_string()),
+            icon: Some(9),
+            menu: menu.clone(),
+        });
+
+        assert_eq!(
+            windows_win32_status_item_callback_target(
+                owner,
+                ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+                41,
+                WM_RBUTTONUP as LPARAM,
+            ),
+            Some(WindowsWin32StatusItemCallbackTarget {
+                tray_id: 41,
+                event_message: WM_RBUTTONUP,
+                menu,
+            })
+        );
+        assert!(windows_win32_status_item_callback_target(
+            owner,
+            ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+            42,
+            WM_RBUTTONUP as LPARAM,
+        )
+        .is_none());
+        assert_eq!(
+            dispatch_windows_win32_status_item_callback(
+                owner,
+                ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+                41,
+                WM_LBUTTONUP as LPARAM,
+            ),
+            Some(WindowsWin32StatusItemCallbackDispatch::Ignored)
+        );
+
+        clear_windows_win32_status_item_routes_for_owner(owner);
+        assert!(windows_win32_status_item_callback_target(
+            owner,
+            ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+            41,
+            WM_RBUTTONUP as LPARAM,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn status_item_route_retains_notify_data_for_explorer_restart() {
+        let route = WindowsWin32StatusItemRouteRecord {
+            owner: 0x7a12,
+            callback_message: ZSUI_WIN32_TRAY_CALLBACK_MESSAGE,
+            tray_id: 73,
+            tooltip: Some("Restored".to_string()),
+            icon: Some(27),
+            menu: MenuSpec::new().item("Quit", Command::Quit),
+        };
+        let data = route.notify_data();
+
+        assert_eq!(data.hWnd as isize, route.owner);
+        assert_eq!(data.uID, route.tray_id);
+        assert_eq!(data.uCallbackMessage, route.callback_message);
+        assert_eq!(data.hIcon as isize, 27);
+        assert_ne!(data.uFlags & NIF_MESSAGE, 0);
+        assert_ne!(data.uFlags & NIF_TIP, 0);
+        assert_ne!(data.uFlags & NIF_ICON, 0);
+        assert_eq!(data.szTip[0], 'R' as u16);
+    }
+
+    #[test]
     fn status_menu_command_table_maps_nested_menu_to_native_ids() {
         let menu = MenuSpec::new()
             .item("Open", Command::ShowMainWindow)
