@@ -14,7 +14,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Dp;
+use crate::{Dp, ZsIcon};
 
 /// Schema version accepted by this ZSUI release.
 pub const ZSUI_UI_DOCUMENT_SCHEMA_VERSION: u32 = 1;
@@ -2293,6 +2293,8 @@ pub struct UiWorkbenchConversationSpec {
     pub title: String,
     #[serde(default)]
     pub subtitle: Option<String>,
+    #[serde(default)]
+    pub icon: Option<ZsIcon>,
     #[serde(default)]
     pub selected: bool,
     #[serde(default)]

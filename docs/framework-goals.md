@@ -143,8 +143,11 @@ The current priority order is:
 3. Move the existing Win32 proof and the Linux target runtime onto the same
    versioned proof schema and regression tool so all three desktop paths block
    regressions before the 0.3.0 release.
-4. Complete the reusable conversation/task workbench loop: navigation,
-   timeline scrolling, composer input, tool/message actions and inspector state.
+4. Keep the reusable `workbench_shell` as an opt-in composition layer and
+   complete its conversation/task loop: navigation, timeline scrolling,
+   composer input, tool/message actions and inspector state. Its navigation
+   rows support both subtitle text and semantic icons; this layer is an
+   acceptance surface and does not become the default application structure.
 5. Stabilize the Rust-first application loop so typed messages update explicit
    state and repaint the live window, then cover IME, accessibility, focus,
    menus and dialogs required by native utility applications.
@@ -157,6 +160,11 @@ Protocol manifests, AI handoff metadata and mobile bridge contracts support
 these slices, but they do not advance product readiness by themselves. New
 contract-only work should be deferred when a runnable slice still has an
 unclosed input, state, paint or target-verification gap.
+
+阶段更新和目标证据使用低并发构建：本地完整测试、特性矩阵和目标 smoke 默认以
+`CARGO_BUILD_JOBS=1`（或 `cargo -j1`）运行，避免并行链接造成不必要的内存峰值。
+每个阶段记录 focused test、全特性结果、目标截图/报告和运行时内存采样，再推进
+下一阶段；单纯的 contract 或 demo 编译不视为阶段完成。
 
 Buffered no-flicker self-draw is the Windows rendering baseline:
 avoid background erase, paint into an owned buffer when possible, then present

@@ -224,13 +224,20 @@ impl ZsShellLayoutSpec {
             ui_to_rect(chrome.viewport_mask_rect),
         ));
 
-        for (index, item) in self.nav_items.iter().enumerate() {
+        for (item, rect) in self
+            .nav_items
+            .iter()
+            .zip(zs_shell_nav_item_rects_with_profile(
+                &self.nav_items,
+                window,
+                dpi,
+                profile,
+            ))
+        {
             regions.push(ZsShellLayoutRegion::new(
                 item.id.clone(),
                 ZsShellLayoutRegionKind::NavItem,
-                ui_to_rect(zs_shell_nav_item_rect_with_profile(
-                    window, index, dpi, profile,
-                )),
+                ui_to_rect(rect),
             ));
         }
 
@@ -378,13 +385,21 @@ impl ZsShellLayoutSpec {
 
         let selected_id = self.selected_nav_id.as_deref();
         let hovered_id = self.hovered_nav_id.as_deref();
-        for (index, item) in self.nav_items.iter().enumerate() {
-            let item_rect = zs_shell_nav_item_rect_with_profile(window, index, dpi, profile);
+        for (index, (item, item_rect)) in self
+            .nav_items
+            .iter()
+            .zip(zs_shell_nav_item_rects_with_profile(
+                &self.nav_items,
+                window,
+                dpi,
+                profile,
+            ))
+            .enumerate()
+        {
             chrome_and_nav.extend(zs_shell_nav_item_paint_plan(
                 &ZsShellNavItemRender {
-                    id: item.id.clone(),
-                    index,
-                    label: item.label.clone(),
+                    label: &item.label,
+                    description: item.visible_description(),
                     icon: item.icon,
                     rect: item_rect,
                     selected: selected_id == Some(item.id.as_str())
@@ -679,9 +694,22 @@ impl ZsShellNavItemSpec {
         }
     }
 
+    /// Displays secondary text below the navigation label. Blank text keeps
+    /// the platform's compact, single-line row geometry.
     pub fn description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
+    }
+
+    /// Alias for the navigation row's visible description.
+    pub fn subtitle(self, subtitle: impl Into<String>) -> Self {
+        self.description(subtitle)
+    }
+
+    fn visible_description(&self) -> Option<&str> {
+        self.description
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
     }
 
     pub fn icon(mut self, icon_name: impl AsRef<str>) -> Self {
@@ -1352,8 +1380,8 @@ pub fn zs_shell_nav_item_index_at(
     point: Point,
 ) -> Option<usize> {
     let window = rect_to_ui(bounds);
-    (0..spec.nav_items.len())
-        .find(|&index| zs_shell_nav_item_rect(window, index, dpi).contains(point.x, point.y))
+    zs_shell_nav_item_rects_with_profile(&spec.nav_items, window, dpi, current_shell_profile())
+        .position(|rect| rect.contains(point.x, point.y))
 }
 
 pub fn zs_shell_nav_hover_transition(
@@ -1380,7 +1408,16 @@ pub fn zs_shell_nav_hover_transition(
         .flatten()
     {
         if let Some(index) = spec.nav_items.iter().position(|item| item.id == id) {
-            let rect = ui_to_rect(zs_shell_nav_item_rect(window, index, dpi));
+            let rect = ui_to_rect(
+                zs_shell_nav_item_rects_with_profile(
+                    &spec.nav_items,
+                    window,
+                    dpi,
+                    current_shell_profile(),
+                )
+                .nth(index)
+                .expect("declared navigation item has geometry"),
+            );
             if !invalidate_rects.contains(&rect) {
                 invalidate_rects.push(rect);
             }
@@ -1712,10 +1749,9 @@ struct ZsShellContentRenderPlan {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct ZsShellNavItemRender {
-    id: String,
-    index: usize,
-    label: String,
+struct ZsShellNavItemRender<'a> {
+    label: &'a str,
+    description: Option<&'a str>,
     icon: ZsShellNavIconKind,
     rect: UiRect,
     selected: bool,
@@ -1852,7 +1888,7 @@ fn zs_shell_chrome_paint_plan_with_profile(
 }
 
 fn zs_shell_nav_item_paint_plan(
-    item: &ZsShellNavItemRender,
+    item: &ZsShellNavItemRender<'_>,
     dpi: Dpi,
     profile: PlatformShellProfile,
 ) -> ZsShellPaintPlan {
@@ -1927,35 +1963,72 @@ fn zs_shell_nav_item_paint_plan(
         item.rect.left + zs_shell_scale(6, dpi) + icon_column,
         item.rect.bottom,
     );
-    let label_rect = UiRect::new(
+    let text_right = item
+        .badge_rect
+        .map_or(item.rect.right - zs_shell_scale(8, dpi), |badge| {
+            badge.left - zs_shell_scale(4, dpi)
+        });
+    let mut label_rect = UiRect::new(
         icon_rect.right + zs_shell_scale(4, dpi),
         item.rect.top,
-        item.rect.right - zs_shell_scale(8, dpi),
+        text_right.max(icon_rect.right + zs_shell_scale(4, dpi)),
         item.rect.bottom,
     );
-
+    let description_rect = item.description.map(|_| {
+        let typography = PlatformComponentProfile::for_style(profile.style).typography;
+        let title_height = shell_dp(Dp::new(typography.metrics(TextRole::Body).line_height), dpi);
+        let caption_height = shell_dp(
+            Dp::new(typography.metrics(TextRole::Caption).line_height),
+            dpi,
+        );
+        label_rect.top +=
+            ((item.rect.bottom - item.rect.top - title_height - caption_height) / 2).max(0);
+        label_rect.bottom = label_rect.top + title_height;
+        UiRect::new(
+            label_rect.left,
+            label_rect.bottom,
+            label_rect.right,
+            label_rect.bottom + caption_height,
+        )
+    });
+    let mut text_commands = vec![
+        ZsShellTextCommand {
+            rect: icon_rect,
+            content: ZsShellTextContent::NavIcon(item.icon),
+            color: icon_color,
+            size: 16,
+            bold: false,
+            font: ZsShellTextFontRole::FluentIcon,
+            align: ZsShellTextAlign::Center,
+        },
+        ZsShellTextCommand {
+            rect: label_rect,
+            content: ZsShellTextContent::Label(item.label.to_owned()),
+            color: label_color,
+            size: 14,
+            bold: false,
+            font: ZsShellTextFontRole::UiText,
+            align: ZsShellTextAlign::Left,
+        },
+    ];
+    if let (Some(description), Some(rect)) = (item.description, description_rect) {
+        text_commands.push(ZsShellTextCommand {
+            rect,
+            content: ZsShellTextContent::Label(description.to_owned()),
+            color: if appkit_selected {
+                ZsShellThemeRole::White
+            } else {
+                ZsShellThemeRole::TextMuted
+            },
+            size: 12,
+            bold: false,
+            font: ZsShellTextFontRole::UiText,
+            align: ZsShellTextAlign::Left,
+        });
+    }
     ZsShellPaintPlan {
         paint_commands,
-        text_commands: vec![
-            ZsShellTextCommand {
-                rect: icon_rect,
-                content: ZsShellTextContent::NavIcon(item.icon),
-                color: icon_color,
-                size: 16,
-                bold: false,
-                font: ZsShellTextFontRole::FluentIcon,
-                align: ZsShellTextAlign::Center,
-            },
-            ZsShellTextCommand {
-                rect: label_rect,
-                content: ZsShellTextContent::Label(item.label.clone()),
-                color: label_color,
-                size: 14,
-                bold: false,
-                font: ZsShellTextFontRole::UiText,
-                align: ZsShellTextAlign::Left,
-            },
-        ],
+        text_commands,
     }
 }
 
@@ -2617,35 +2690,42 @@ fn zs_shell_title_rect_with_profile(
     )
 }
 
-fn zs_shell_nav_item_rect(window: UiRect, index: usize, dpi: Dpi) -> UiRect {
-    zs_shell_nav_item_rect_with_profile(window, index, dpi, current_shell_profile())
-}
-
-fn zs_shell_nav_item_rect_with_profile(
+fn zs_shell_nav_item_rects_with_profile(
+    items: &[ZsShellNavItemSpec],
     window: UiRect,
-    index: usize,
     dpi: Dpi,
     profile: PlatformShellProfile,
-) -> UiRect {
+) -> impl Iterator<Item = UiRect> + '_ {
     let inset = shell_dp(profile.navigation_item_inset, dpi);
     let x = window.left + inset;
-    let y = window.top
-        + shell_dp(profile.navigation_start, dpi)
-        + index as i32 * shell_dp(profile.navigation_item_stride, dpi);
-    UiRect::new(
-        x,
-        y,
-        window.left + zs_shell_nav_w_with_profile(window, dpi, profile) - inset,
-        y + shell_dp(profile.navigation_item_height, dpi),
-    )
+    let right = window.left + zs_shell_nav_w_with_profile(window, dpi, profile) - inset;
+    let mut y = window.top + shell_dp(profile.navigation_start, dpi);
+    let height = shell_dp(profile.navigation_item_height, dpi);
+    let gap = (shell_dp(profile.navigation_item_stride, dpi) - height).max(0);
+    let caption = PlatformComponentProfile::for_style(profile.style)
+        .typography
+        .metrics(TextRole::Caption);
+    let description_extra = shell_dp(Dp::new(caption.line_height), dpi) + zs_shell_scale(2, dpi);
+    items.iter().map(move |item| {
+        let row_height = height
+            + if item.visible_description().is_some() {
+                description_extra
+            } else {
+                0
+            };
+        let rect = UiRect::new(x, y, right.max(x), y.saturating_add(row_height));
+        y = rect.bottom.saturating_add(gap);
+        rect
+    })
 }
 
 fn zs_shell_nav_badge_rect(item_rect: UiRect, dpi: Dpi) -> UiRect {
+    let center_y = (item_rect.top + item_rect.bottom) / 2;
     UiRect::new(
         item_rect.right - zs_shell_scale(22, dpi),
-        item_rect.top + zs_shell_scale(14, dpi),
+        center_y - zs_shell_scale(5, dpi),
         item_rect.right - zs_shell_scale(12, dpi),
-        item_rect.top + zs_shell_scale(24, dpi),
+        center_y + zs_shell_scale(5, dpi),
     )
 }
 
@@ -3053,6 +3133,77 @@ mod tests {
             .commands
             .iter()
             .any(|command| matches!(command, NativeDrawCommand::PopClip)));
+    }
+
+    #[test]
+    fn navigation_description_is_painted_and_gets_extra_row_height() {
+        let spec = ZsShellLayoutSpec::new("demo", "Demo")
+            .nav_item(
+                ZsShellNavItemSpec::new("one", "One")
+                    .semantic_icon(ZsIcon::App)
+                    .description("Secondary information"),
+            )
+            .nav_item(ZsShellNavItemSpec::new("two", "Two"));
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            width: 1100,
+            height: 740,
+        };
+        for style in [
+            ZsPlatformStyle::Windows,
+            ZsPlatformStyle::Macos,
+            ZsPlatformStyle::Gtk,
+        ] {
+            for dpi in [Dpi::standard(), Dpi::new(144.0)] {
+                let draw = spec.native_draw_plan_for_style(bounds, dpi, style);
+                let layout = spec.layout_plan_for_style(bounds, dpi, style);
+                let first = layout.region("one").unwrap().rect;
+                let second = layout.region("two").unwrap().rect;
+                let subtitle = draw
+                    .commands
+                    .iter()
+                    .find_map(|command| match command {
+                        NativeDrawCommand::Text(text) if text.text == "Secondary information" => {
+                            Some(text)
+                        }
+                        _ => None,
+                    })
+                    .expect("visible subtitle");
+                assert!(first.height > second.height);
+                assert!(second.y >= first.y + first.height);
+                assert_eq!(subtitle.style.role, TextRole::Caption);
+                assert!(subtitle.bounds.y >= first.y);
+                assert!(subtitle.bounds.y + subtitle.bounds.height <= first.y + first.height);
+            }
+        }
+        let layout = spec.layout_plan(bounds, Dpi::standard());
+        let first = layout.region("one").expect("first navigation row").rect;
+        let second = layout.region("two").expect("second navigation row").rect;
+        assert_eq!(
+            zs_shell_nav_item_index_at(
+                &spec,
+                bounds,
+                Dpi::standard(),
+                Point {
+                    x: first.x + first.width / 2,
+                    y: first.y + first.height - 1,
+                }
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            zs_shell_nav_item_index_at(
+                &spec,
+                bounds,
+                Dpi::standard(),
+                Point {
+                    x: second.x + second.width / 2,
+                    y: second.y + second.height / 2,
+                }
+            ),
+            Some(1)
+        );
     }
 
     #[test]

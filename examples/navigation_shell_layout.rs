@@ -68,8 +68,16 @@ fn gallery_shell() -> ZsShellLayoutSpec {
     ZsShellLayoutSpec::new("control-gallery", "Controls")
         .app_title("ZSUI Gallery")
         .selected_nav("general")
-        .nav_item(ZsNavItemSpec::new("general", "General").semantic_icon(ZsIcon::Settings))
-        .nav_item(ZsNavItemSpec::new("controls", "Controls").semantic_icon(ZsIcon::App))
+        .nav_item(
+            ZsNavItemSpec::new("general", "General")
+                .semantic_icon(ZsIcon::Settings)
+                .description("Theme and language"),
+        )
+        .nav_item(
+            ZsNavItemSpec::new("controls", "Controls")
+                .semantic_icon(ZsIcon::App)
+                .subtitle("Input and interaction"),
+        )
         .nav_item(ZsNavItemSpec::new("shortcuts", "Shortcuts").semantic_icon(ZsIcon::Tool))
         .nav_item(ZsNavItemSpec::new("sync", "Sync").semantic_icon(ZsIcon::Refresh))
         .nav_item(

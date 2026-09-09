@@ -78,6 +78,8 @@ pub struct ZsWorkbenchConversationSpec {
     pub id: String,
     pub title: String,
     pub subtitle: Option<String>,
+    #[serde(default)]
+    pub icon: Option<ZsWorkbenchIcon>,
     pub selected: bool,
     pub pinned: bool,
     pub unread: bool,
@@ -89,6 +91,7 @@ impl ZsWorkbenchConversationSpec {
             id: id.into(),
             title: title.into(),
             subtitle: None,
+            icon: None,
             selected: false,
             pinned: false,
             unread: false,
@@ -97,6 +100,12 @@ impl ZsWorkbenchConversationSpec {
 
     pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    /// Adds the semantic icon shown in the conversation row.
+    pub fn icon(mut self, icon: ZsWorkbenchIcon) -> Self {
+        self.icon = Some(icon);
         self
     }
 
@@ -2153,12 +2162,39 @@ fn paint_sidebar(
                         scale(2, dpi),
                     ));
                 }
+                let icon_size = scale_dp(workbench_style_tokens().controls.standard_icon, dpi);
+                let content_left = conversation_bounds.x
+                    + scale(14, dpi)
+                    + if conversation.icon.is_some() {
+                        icon_size + scale(8, dpi)
+                    } else {
+                        0
+                    };
+                let content_right = conversation_bounds.x + conversation_bounds.width
+                    - scale(if conversation.pinned { 26 } else { 12 }, dpi);
+                let text_width = (content_right - content_left).max(0);
+                if let Some(icon) = conversation.icon {
+                    commands.push(icon_command(
+                        icon,
+                        Rect {
+                            x: conversation_bounds.x + scale(14, dpi),
+                            y: conversation_bounds.y + (conversation_bounds.height - icon_size) / 2,
+                            width: icon_size,
+                            height: icon_size,
+                        },
+                        if conversation.selected {
+                            ColorRole::Accent
+                        } else {
+                            ColorRole::SecondaryText
+                        },
+                    ));
+                }
                 commands.push(text_command(
                     &conversation.title,
                     Rect {
-                        x: conversation_bounds.x + scale(14, dpi),
+                        x: content_left,
                         y: conversation_bounds.y + scale(2, dpi),
-                        width: (conversation_bounds.width - scale(26, dpi)).max(0),
+                        width: text_width,
                         height: if conversation.subtitle.is_some() {
                             scale(22, dpi)
                         } else {
@@ -2179,9 +2215,9 @@ fn paint_sidebar(
                     commands.push(text_command(
                         subtitle,
                         Rect {
-                            x: conversation_bounds.x + scale(14, dpi),
+                            x: content_left,
                             y: conversation_bounds.y + scale(22, dpi),
-                            width: (conversation_bounds.width - scale(26, dpi)).max(0),
+                            width: text_width,
                             height: scale(20, dpi),
                         },
                         TextRole::Caption,
@@ -3463,6 +3499,36 @@ mod tests {
         assert!(!draw.commands.iter().any(|command| matches!(
             command,
             NativeDrawCommand::Text(command) if command.style.role == TextRole::Icon
+        )));
+    }
+
+    #[test]
+    fn conversation_rows_support_a_semantic_icon_with_a_subtitle() {
+        let mut spec = sample_spec();
+        let conversation = spec
+            .sidebar
+            .groups
+            .first_mut()
+            .and_then(|group| group.conversations.first_mut())
+            .expect("sample conversation");
+        conversation.subtitle = Some("Secondary information".to_owned());
+        conversation.icon = Some(ZsIcon::App);
+        let draw = spec.native_draw_plan(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 800,
+            },
+            Dpi::standard(),
+        );
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Icon(icon) if icon.icon == ZsIcon::App
+        )));
+        assert!(draw.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text == "Secondary information"
         )));
     }
 

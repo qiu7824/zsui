@@ -82,18 +82,21 @@ fn sample_workbench() -> ZsWorkbenchShellSpec {
             ZsWorkbenchConversationGroupSpec::new("today", "Today")
                 .conversation(
                     ZsWorkbenchConversationSpec::new("native-ui", "Native UI framework")
+                        .icon(ZsWorkbenchIcon::App)
                         .subtitle("Workbench components")
                         .selected(true)
                         .pinned(true),
                 )
                 .conversation(
                     ZsWorkbenchConversationSpec::new("platforms", "Platform readiness")
+                        .icon(ZsWorkbenchIcon::Tool)
                         .subtitle("Windows, macOS and Linux"),
                 ),
         )
         .group(
             ZsWorkbenchConversationGroupSpec::new("earlier", "Earlier").conversation(
                 ZsWorkbenchConversationSpec::new("release", "Release checklist")
+                    .icon(ZsWorkbenchIcon::Info)
                     .subtitle("Tests and artifacts")
                     .unread(true),
             ),

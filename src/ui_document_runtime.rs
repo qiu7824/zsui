@@ -3867,6 +3867,7 @@ fn document_workbench_shell<Msg: Clone + 'static>(
                     id: conversation.id,
                     title: conversation.title,
                     subtitle: conversation.subtitle,
+                    icon: conversation.icon,
                     selected: conversation.selected,
                     pinned: conversation.pinned,
                     unread: conversation.unread,

@@ -849,6 +849,10 @@ cargo run --bin zsui-viewer `
 `inspector_panel`。子组件不能脱离外壳单独使用；编译器将它们组合成一个保留式
 Workbench 表面，而不是把四份外观相似的通用 Stack 拼在一起。
 
+Sidebar 会话项支持可选 `subtitle` 和语义 `icon` 字段；它们只影响行内信息布局，
+不会改变会话的稳定 `id`。Workbench 是可选的组合层，应用也可以只使用基础导航和
+其他 View 组件。
+
 Rust builder 使用同一套组件契约，不需要先构造一份文档或使用旧的扁平化
 `ZsWorkbenchSpec`：
 
