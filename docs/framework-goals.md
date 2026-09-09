@@ -166,6 +166,34 @@ unclosed input, state, paint or target-verification gap.
 每个阶段记录 focused test、全特性结果、目标截图/报告和运行时内存采样，再推进
 下一阶段；单纯的 contract 或 demo 编译不视为阶段完成。
 
+## 当前缺陷审计与阶段计划（2026-09）
+
+本轮基线审计覆盖公共 API、View/layout、UiDocument/Viewer、Win32/AppKit/Linux
+宿主、Android 边界、feature manifest、内存容器和编译诊断。当前基线为：无
+`TODO`、`FIXME`、`unimplemented!` 或 `todo!` 代码路径；无默认特性测试全部通过；
+全特性库测试通过；锁定特性矩阵、native boundary 和 Windows GUI subsystem 检查
+通过。`cargo clippy --no-default-features --lib -- -D warnings` 仍有既有的约
+46 项结构与风格诊断，不能当作功能已完成的证据。
+
+后续按以下顺序推进：
+
+1. 缺陷收敛：为公共 `CommandQueue`、延迟 app/UI command 和 proof 输入增加明确
+   的容量或背压策略；将 Win32/AppKit/GTK 服务中被忽略的清理、tooltip 和菜单
+   更新错误纳入统一诊断；为每项新增上限和错误路径测试。应用状态仍由应用拥有，
+   不引入全局控件注册表。
+2. 导航与组合层证据：为 Shell 导航副文本、Workbench 会话图标/副文本补齐
+   Win32、AppKit、Linux Direct 的同场景最终表面截图、点击 ID 和窄窗口布局证据。
+   `workbench_shell` 继续保持可选组合层，不改变默认应用结构。
+3. 桌面能力收口：优先补齐 Linux Direct/GTK status item 与菜单服务、AppKit/GTK
+   的目标交互和辅助功能证据；能力状态只有在真实宿主报告创建、事件、清理和
+   内存采样后才从 partial/unsupported 调整。
+4. 质量门禁：分批处理 Clippy 诊断，先修复可能掩盖行为错误的 checked arithmetic、
+   资源错误吞掉和无界容器，再处理参数组织与可读性；每批都用 `-j1` 运行 focused
+   tests、全特性库测试和锁定 feature matrix。
+5. 移动与发布：桌面证据稳定后再推进 Android FFI/device smoke；发布前补齐
+   VoiceOver、Narrator/NVDA、Orca 和真实 IME 人工验收，保持自动协议证据与人工
+   体验记录分离。
+
 Buffered no-flicker self-draw is the Windows rendering baseline:
 avoid background erase, paint into an owned buffer when possible, then present
 once to the target surface. Wider platform APIs such as `windows-rs` should be
