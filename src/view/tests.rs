@@ -1373,8 +1373,13 @@ mod tests {
         let label = WidgetId::new(717);
         let action = WidgetId::new(718);
         let label_text = "保存位置 / Save location";
+        // Non-ellipsis NoWrap text is a hard width constraint: it keeps its
+        // intrinsic width even when the row cannot fit it (ellipsis text is
+        // allowed to shrink to its minimum instead — see ellipsis_layout_tests).
+        let mut style = SemanticTextStyle::body();
+        style.ellipsis = false;
         let mut view: ViewNode<()> = row([
-            text(label_text).id(label),
+            styled_text(label_text, style).id(label),
             button("浏览 / Browse").id(action),
         ])
         .gap(Dp::new(8.0));
@@ -1431,12 +1436,15 @@ mod tests {
             button("浏览 / Browse").id(action),
         ])
         .gap(Dp::new(8.0));
+        // The row is wide enough for the measured label plus the button, so the
+        // label must receive its full measured width instead of the logical
+        // cell estimate or the ellipsis minimum.
         let output = view.layout(
             &mut ViewLayoutCx::new(
                 Rect {
                     x: 0,
                     y: 0,
-                    width: 140,
+                    width: 400,
                     height: 40,
                 },
                 Dpi::standard(),

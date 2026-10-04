@@ -1,3 +1,10 @@
+use std::path::PathBuf;
+
+use crate::{
+    AppEffect, AppEffectOutcome, AppEffectRequest, DialogResponse, DirectoryDialogSpec,
+    FileDialogSpec, NativeDialogSpec, SaveFileDialogSpec, ZsuiResult,
+};
+
 #[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ZsTextSelection {
@@ -1270,6 +1277,7 @@ impl<Msg> Default for ViewEventCx<Msg> {
 pub struct AppCx {
     commands: Vec<Command>,
     ui_commands: Vec<UiCommand>,
+    effects: Vec<AppEffectRequest>,
     #[cfg(feature = "text-input-core")]
     text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
@@ -1286,6 +1294,110 @@ impl AppCx {
 
     pub fn ui_command(&mut self, command: UiCommand) {
         self.ui_commands.push(command);
+    }
+
+    /// Queues a native effect without a responder. The desktop host executes
+    /// it outside the live-view lock and discards the outcome.
+    ///
+    /// Prefer the typed helpers ([`AppCx::open_file_dialog`],
+    /// [`AppCx::save_file_dialog`], [`AppCx::pick_directory`],
+    /// [`AppCx::show_dialog`]) or [`AppCx::effect_with`] when the outcome must
+    /// reach `update` as a message.
+    pub fn effect(&mut self, effect: AppEffect) {
+        self.effects.push(AppEffectRequest::new(effect));
+    }
+
+    /// Queues a native effect whose outcome is mapped to one typed message.
+    ///
+    /// The host runs the effect outside the live-view lock, then delivers the
+    /// mapped message back to `update` exactly once. If the window is
+    /// destroyed before the effect finishes, the outcome is dropped.
+    pub fn effect_with<Msg>(
+        &mut self,
+        effect: AppEffect,
+        respond: impl Fn(AppEffectOutcome) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        self.effects
+            .push(AppEffectRequest::typed(effect, move |outcome| {
+                Some(respond(outcome))
+            }));
+    }
+
+    /// Opens the native file-open dialog outside the update lock.
+    ///
+    /// `respond` receives `Ok(None)` when the user cancels, `Ok(Some(paths))`
+    /// for a confirmed selection and `Err` when the backend fails or does not
+    /// implement the dialog.
+    pub fn open_file_dialog<Msg>(
+        &mut self,
+        spec: FileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<Vec<PathBuf>>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        self.effects.push(AppEffectRequest::typed(
+            AppEffect::OpenFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::OpenFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Opens the native save dialog outside the update lock. `Ok(None)` means
+    /// the user cancelled.
+    pub fn save_file_dialog<Msg>(
+        &mut self,
+        spec: SaveFileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        self.effects.push(AppEffectRequest::typed(
+            AppEffect::SaveFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::SaveFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Opens a native directory picker outside the update lock. `Ok(None)`
+    /// means the user cancelled.
+    pub fn pick_directory<Msg>(
+        &mut self,
+        spec: DirectoryDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        self.effects.push(AppEffectRequest::typed(
+            AppEffect::PickDirectory(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::PickDirectory(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Shows a native message or confirmation dialog outside the update lock
+    /// and delivers the typed [`DialogResponse`] back through `respond`.
+    pub fn show_dialog<Msg>(
+        &mut self,
+        spec: NativeDialogSpec,
+        respond: impl Fn(ZsuiResult<DialogResponse>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        self.effects.push(AppEffectRequest::typed(
+            AppEffect::ShowDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::ShowDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
     }
 
     #[cfg(feature = "text-input-core")]
@@ -1310,6 +1422,11 @@ impl AppCx {
 
     pub fn ui_commands(&self) -> &[UiCommand] {
         &self.ui_commands
+    }
+
+    /// The native effects queued during this update, in request order.
+    pub fn effects(&self) -> &[AppEffectRequest] {
+        &self.effects
     }
 
     #[cfg(feature = "text-input-core")]

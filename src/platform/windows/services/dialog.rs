@@ -98,6 +98,39 @@ pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<O
         .map(PathBuf::from))
 }
 
+/// Shows the Win32 folder picker (`SHBrowseForFolderW`) on the calling UI
+/// thread. `Ok(None)` means the user cancelled; the returned PIDL is released
+/// with `CoTaskMemFree` before the path is resolved.
+pub fn windows_win32_pick_directory_dialog(
+    spec: &crate::DirectoryDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    let title = wide_null(&spec.title);
+    let mut display_name = vec![0u16; 260];
+    let mut info: BROWSEINFOW = unsafe { zeroed() };
+    info.hwndOwner = unsafe { GetActiveWindow() };
+    info.lpszTitle = title.as_ptr();
+    info.pszDisplayName = display_name.as_mut_ptr();
+    info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    let pidl = unsafe { SHBrowseForFolderW(&mut info) };
+    if pidl.is_null() {
+        return Ok(None);
+    }
+    let mut path_buffer = vec![0u16; 32_768];
+    let resolved = unsafe { SHGetPathFromIDListW(pidl, path_buffer.as_mut_ptr()) };
+    unsafe { CoTaskMemFree(pidl as *const _) };
+    if resolved == 0 {
+        return Err(ZsuiError::host(
+            "windows_pick_directory_dialog",
+            "SHGetPathFromIDListW could not resolve the selected folder",
+        ));
+    }
+    let end = path_buffer
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(path_buffer.len());
+    Ok(Some(PathBuf::from(OsString::from_wide(&path_buffer[..end]))))
+}
+
 #[derive(Debug, Default)]
 pub struct WindowsWin32DialogService;
 

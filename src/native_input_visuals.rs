@@ -390,6 +390,31 @@ pub(crate) fn native_text_visual_target(
     target
 }
 
+/// Whether the hit target kind is an editable text surface. Single-line inputs
+/// (Textbox, PasswordBox, NumberBox drafts, AutoSuggestBox and CommandPalette
+/// queries) share the same visible-text-window logic as the multiline
+/// TextEditor; only the row viewport is editor-specific.
+fn native_text_target_is_editable(kind: ViewHitTargetKind) -> bool {
+    match kind {
+        ViewHitTargetKind::Textbox | ViewHitTargetKind::TextEditor => true,
+        #[cfg(feature = "password-box")]
+        ViewHitTargetKind::PasswordBox => true,
+        #[cfg(feature = "number-box")]
+        ViewHitTargetKind::NumberBox => true,
+        #[cfg(feature = "auto-suggest")]
+        ViewHitTargetKind::AutoSuggestBox => true,
+        #[cfg(feature = "command-palette")]
+        ViewHitTargetKind::CommandPalette => true,
+        _ => false,
+    }
+}
+
+/// Editable NoWrap targets keep a transient horizontal pixel offset shared by
+/// paint, caret/selection geometry, pointer hit testing and IME anchoring.
+fn native_text_target_uses_horizontal_scroll(target: ViewHitTarget, wrap: crate::TextWrap) -> bool {
+    wrap == crate::TextWrap::NoWrap && native_text_target_is_editable(target.kind)
+}
+
 #[cfg(test)]
 pub(crate) fn native_text_visual_geometry(
     target: ViewHitTarget,
@@ -446,7 +471,7 @@ pub(crate) fn native_text_visual_geometry_in_viewport_with_backend(
         backend,
     );
     let first_visible_row = first_visible_row.min(lines.len().saturating_sub(1));
-    let horizontal_scroll_px = if multiline && wrap == crate::TextWrap::NoWrap {
+    let horizontal_scroll_px = if native_text_target_uses_horizontal_scroll(target, wrap) {
         i32::try_from(horizontal_scroll_px).unwrap_or(i32::MAX)
     } else {
         0
@@ -640,7 +665,7 @@ pub(crate) fn native_text_index_for_point_in_viewport_with_backend(
     let relative_x = point
         .x
         .saturating_sub(metrics.text_bounds.x)
-        .saturating_add(if multiline && wrap == crate::TextWrap::NoWrap {
+        .saturating_add(if native_text_target_uses_horizontal_scroll(target, wrap) {
             i32::try_from(horizontal_scroll_px).unwrap_or(i32::MAX)
         } else {
             0
@@ -1019,13 +1044,13 @@ pub(crate) fn native_text_horizontal_scroll_for_caret_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> usize {
-    if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
+    if !native_text_target_uses_horizontal_scroll(target, wrap) {
         return 0;
     }
     let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
-        true,
+        target.kind == ViewHitTargetKind::TextEditor,
         wrap,
         metrics.text_bounds.width,
         metrics.character_width,
@@ -1116,7 +1141,9 @@ pub(crate) fn native_text_drag_viewport_for_point_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> NativeTextDragViewport {
-    if target.kind != ViewHitTargetKind::TextEditor {
+    let multiline = target.kind == ViewHitTargetKind::TextEditor;
+    let horizontal = native_text_target_uses_horizontal_scroll(target, wrap);
+    if !multiline && !horizontal {
         return NativeTextDragViewport {
             point,
             first_visible_row: 0,
@@ -1127,20 +1154,16 @@ pub(crate) fn native_text_drag_viewport_for_point_with_backend(
     let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let mut adjusted = point;
     let mut row = first_visible_row;
-    let mut scroll = if wrap == crate::TextWrap::NoWrap {
-        horizontal_scroll_px
-    } else {
-        0
-    };
+    let mut scroll = if horizontal { horizontal_scroll_px } else { 0 };
     let bottom = metrics
         .text_bounds
         .y
         .saturating_add(metrics.text_bounds.height);
-    if point.y < metrics.text_bounds.y {
+    if multiline && point.y < metrics.text_bounds.y {
         row =
             native_text_scroll_visual_rows_with_backend(target, value, row, -1, wrap, dpi, backend);
         adjusted.y = metrics.text_bounds.y;
-    } else if point.y >= bottom {
+    } else if multiline && point.y >= bottom {
         row =
             native_text_scroll_visual_rows_with_backend(target, value, row, 1, wrap, dpi, backend);
         let visible_rows = metrics
@@ -1157,7 +1180,7 @@ pub(crate) fn native_text_drag_viewport_for_point_with_backend(
         );
     }
 
-    if wrap == crate::TextWrap::NoWrap {
+    if horizontal {
         let right = metrics
             .text_bounds
             .x
@@ -1204,13 +1227,13 @@ fn native_text_scroll_horizontal_pixels(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> usize {
-    if target.kind != ViewHitTargetKind::TextEditor || wrap != crate::TextWrap::NoWrap {
+    if !native_text_target_uses_horizontal_scroll(target, wrap) {
         return 0;
     }
     let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
     let lines = text_lines_with_backend(
         value,
-        true,
+        target.kind == ViewHitTargetKind::TextEditor,
         wrap,
         metrics.text_bounds.width,
         metrics.character_width,
@@ -1316,17 +1339,57 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport_with_backend(
         );
         return geometry;
     }
-    if !geometry.selections.is_empty() {
-        let text_index = plan.commands.iter().position(|command| match command {
-            NativeDrawCommand::Text(text) => {
-                (text.text == value || target.kind == ViewHitTargetKind::TextEditor)
-                    && rect_contains(target.bounds, text.bounds)
+    // Single-line editable targets share the same visible text window: the
+    // widget's own text command is shifted by the transient horizontal offset
+    // and clipped to its original bounds so the caret, selection, pointer hit
+    // testing and IME anchoring all observe the same scrolled content.
+    let horizontal_scroll_px = if native_text_target_uses_horizontal_scroll(target, wrap) {
+        i32::try_from(horizontal_scroll_px)
+            .unwrap_or(i32::MAX)
+            .max(0)
+    } else {
+        0
+    };
+    let text_index = plan.commands.iter().position(|command| match command {
+        NativeDrawCommand::Text(text) => {
+            text.text == value && rect_contains(target.bounds, text.bounds)
+        }
+        #[cfg(feature = "password-box")]
+        NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
+        _ => false,
+    });
+    let mut insertion_index = text_index.unwrap_or(plan.commands.len());
+    if horizontal_scroll_px > 0 {
+        if let Some(index) = text_index {
+            let clip = match &plan.commands[index] {
+                NativeDrawCommand::Text(text) => text.bounds,
+                #[cfg(feature = "password-box")]
+                NativeDrawCommand::SecureText(text) => text.bounds,
+                _ => target.bounds,
+            };
+            match &mut plan.commands[index] {
+                NativeDrawCommand::Text(text) => {
+                    text.bounds.x = text.bounds.x.saturating_sub(horizontal_scroll_px);
+                    text.bounds.width = text.bounds.width.saturating_add(horizontal_scroll_px);
+                    text.style.wrap = crate::TextWrap::NoWrap;
+                    text.style.ellipsis = false;
+                }
+                #[cfg(feature = "password-box")]
+                NativeDrawCommand::SecureText(text) => {
+                    text.bounds.x = text.bounds.x.saturating_sub(horizontal_scroll_px);
+                    text.bounds.width = text.bounds.width.saturating_add(horizontal_scroll_px);
+                    text.style.wrap = crate::TextWrap::NoWrap;
+                    text.style.ellipsis = false;
+                }
+                _ => {}
             }
-            #[cfg(feature = "password-box")]
-            NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
-            _ => false,
-        });
-        let insertion_index = text_index.unwrap_or(plan.commands.len());
+            plan.commands.insert(index + 1, NativeDrawCommand::PopClip);
+            plan.commands
+                .insert(index, NativeDrawCommand::PushClip { rect: clip });
+            insertion_index = index;
+        }
+    }
+    if !geometry.selections.is_empty() {
         for (offset, rect) in geometry.selections.iter().copied().enumerate() {
             plan.commands.insert(
                 insertion_index + offset,
@@ -2048,6 +2111,7 @@ pub(crate) fn native_text_visible_range_with_backend(
     target: ViewHitTarget,
     value: &str,
     first_visible_row: usize,
+    horizontal_scroll_px: usize,
     wrap: crate::TextWrap,
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
@@ -2067,7 +2131,41 @@ pub(crate) fn native_text_visible_range_with_backend(
         .map(|line| line.start)
         .or_else(|| lines.get(last_visible_row).map(|line| line.end))
         .unwrap_or(start);
-    start..end.max(start)
+    let range = start..end.max(start);
+    if target.kind == ViewHitTargetKind::TextEditor
+        || !native_text_target_uses_horizontal_scroll(target, wrap)
+    {
+        return range;
+    }
+    // Single-line inputs report the horizontally visible scalar window so
+    // accessibility geometry matches the clipped paint and caret position.
+    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let left = i32::try_from(horizontal_scroll_px)
+        .unwrap_or(i32::MAX)
+        .max(0);
+    let right = left.saturating_add(metrics.text_bounds.width);
+    let mut visible_start: Option<usize> = None;
+    let mut visible_end = range.start;
+    for line in &lines {
+        for cluster in &line.clusters {
+            if cluster.right() > left && cluster.left() < right {
+                visible_start = Some(
+                    visible_start.map_or_else(|| cluster.start, |start| start.min(cluster.start)),
+                );
+                visible_end = visible_end.max(cluster.end);
+            }
+        }
+    }
+    match visible_start {
+        Some(start) => start..visible_end.max(start),
+        None => {
+            let edge = lines
+                .first()
+                .map(|line| line.index_for_x(left))
+                .unwrap_or(range.start);
+            edge..edge
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -3685,6 +3783,7 @@ mod tests {
                 target,
                 value,
                 first_visible,
+                0,
                 crate::TextWrap::NoWrap,
                 Dpi::standard(),
                 &NativeTextShapingBackend::LogicalCells,
@@ -4093,5 +4192,277 @@ mod tests {
         );
 
         assert_eq!(moved, (9, 1, 1));
+    }
+
+    #[test]
+    fn single_line_textbox_horizontal_scroll_reveals_caret_and_offsets_hits() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(981),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 36,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let value = "0123456789";
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let scroll = native_text_horizontal_scroll_for_caret_with_backend(
+            target,
+            value,
+            10,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert_eq!(scroll, 49);
+        // A caret already inside the window keeps the current offset.
+        assert_eq!(
+            native_text_horizontal_scroll_for_caret_with_backend(
+                target,
+                value,
+                7,
+                scroll,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            scroll
+        );
+        // Home reveals the start again.
+        assert_eq!(
+            native_text_horizontal_scroll_for_caret_with_backend(
+                target,
+                value,
+                0,
+                scroll,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            0
+        );
+        // Pointer hit testing observes the same offset.
+        assert_eq!(
+            native_text_index_for_point_in_viewport_with_backend(
+                target,
+                value,
+                Point { x: 8, y: 10 },
+                0,
+                scroll,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            6
+        );
+        // The caret lands inside the visible window.
+        let geometry = native_text_visual_geometry_in_viewport_with_backend(
+            target,
+            value,
+            NativeTextSelection::collapsed(10),
+            0,
+            scroll,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert_eq!(geometry.caret.x, 39);
+        // Accessibility visible range follows the horizontal window.
+        assert_eq!(
+            native_text_visible_range_with_backend(
+                target,
+                value,
+                0,
+                scroll,
+                crate::TextWrap::NoWrap,
+                Dpi::standard(),
+                &backend,
+            ),
+            6..10
+        );
+    }
+
+    #[test]
+    fn single_line_textbox_drag_beyond_edge_scrolls_one_horizontal_step() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(982),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 36,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let dragged = native_text_drag_viewport_for_point_with_backend(
+            target,
+            "0123456789",
+            Point { x: 500, y: 10 },
+            0,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert_eq!(
+            (
+                dragged.horizontal_scroll_px,
+                dragged.point.x,
+                dragged.first_visible_row,
+                dragged.scrolled
+            ),
+            (8, 39, 0, true)
+        );
+        // Vertical overflow never moves a single-line row viewport.
+        let below = native_text_drag_viewport_for_point_with_backend(
+            target,
+            "0123456789",
+            Point { x: 16, y: 500 },
+            0,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert_eq!((below.first_visible_row, below.scrolled), (0, false));
+    }
+
+    #[test]
+    fn single_line_textbox_decorate_offsets_text_and_clips_window() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(983),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 36,
+            },
+            ViewHitTargetKind::Textbox,
+        );
+        let value = "0123456789";
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let scroll = native_text_horizontal_scroll_for_caret_with_backend(
+            target,
+            value,
+            10,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        let text_bounds = Rect {
+            x: 10,
+            y: 6,
+            width: 28,
+            height: 24,
+        };
+        let mut plan = NativeDrawPlan::new([NativeDrawCommand::Text(
+            crate::NativeDrawTextCommand::new(value, text_bounds, crate::SemanticTextStyle::body()),
+        )]);
+        let geometry = decorate_native_text_edit_visuals_in_viewport_with_backend(
+            &mut plan,
+            target,
+            value,
+            NativeTextSelection::collapsed(10),
+            0,
+            scroll,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert_eq!(geometry.caret.x, 39);
+        assert!(matches!(
+            plan.commands.first(),
+            Some(NativeDrawCommand::PushClip { rect }) if *rect == text_bounds
+        ));
+        let text = plan
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                NativeDrawCommand::Text(text) => Some(text),
+                _ => None,
+            })
+            .expect("the text command should remain");
+        assert_eq!(text.bounds.x, text_bounds.x - 49);
+        assert_eq!(text.bounds.width, text_bounds.width + 49);
+        assert!(!text.style.ellipsis);
+        assert!(plan
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::PopClip)));
+    }
+
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn single_line_password_box_scrolls_masked_text_without_plaintext() {
+        let target = ViewHitTarget::with_kind(
+            WidgetId::new(984),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 48,
+                height: 36,
+            },
+            ViewHitTargetKind::PasswordBox,
+        );
+        let masked = crate::mask_password("secret-password");
+        let masked_len = masked.chars().count();
+        let backend = NativeTextShapingBackend::LogicalCells;
+        let scroll = native_text_horizontal_scroll_for_caret_with_backend(
+            target,
+            &masked,
+            masked_len,
+            0,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert!(scroll > 0);
+        let text_bounds = Rect {
+            x: 8,
+            y: 6,
+            width: 28,
+            height: 24,
+        };
+        let mut plan = NativeDrawPlan::new([NativeDrawCommand::SecureText(
+            crate::NativeDrawSecureTextCommand::new(
+                crate::ZsPassword::from("secret-password"),
+                text_bounds,
+                crate::SemanticTextStyle::body(),
+                false,
+            ),
+        )]);
+        decorate_native_text_edit_visuals_in_viewport_with_backend(
+            &mut plan,
+            target,
+            &masked,
+            NativeTextSelection::collapsed(masked_len),
+            0,
+            scroll,
+            crate::TextWrap::NoWrap,
+            Dpi::standard(),
+            &backend,
+        );
+        assert!(plan.commands.iter().all(|command| !matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text.contains("secret")
+        )));
+        let secure = plan
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                NativeDrawCommand::SecureText(text) => Some(text),
+                _ => None,
+            })
+            .expect("the secure text command should remain");
+        assert!(secure.bounds.x < text_bounds.x);
+        assert!(matches!(
+            plan.commands.first(),
+            Some(NativeDrawCommand::PushClip { rect }) if *rect == text_bounds
+        ));
     }
 }

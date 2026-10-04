@@ -1713,6 +1713,7 @@ pub(crate) struct NativeViewInputRuntime {
     ui_command_executor: Option<SharedUiCommandExecutor>,
     defer_ui_command_execution: bool,
     pending_ui_commands: Vec<UiCommand>,
+    pending_app_effects: Vec<crate::AppEffectRequest>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1822,6 +1823,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub view_event_count: usize,
     pub message_count: usize,
     pub app_command_count: usize,
+    pub app_effect_count: usize,
+    pub app_effect_outcome_count: usize,
     pub ui_command_count: usize,
     pub ui_command_ids: Vec<&'static str>,
     pub focused_widget: Option<u64>,
@@ -2075,6 +2078,7 @@ impl NativeViewInputRuntime {
             ui_command_executor,
             defer_ui_command_execution: false,
             pending_ui_commands: Vec::new(),
+            pending_app_effects: Vec::new(),
         };
         runtime.reconcile_modal_focus(&mut NativeViewInputDispatchReport::default());
         #[cfg(feature = "toast")]
@@ -2244,6 +2248,7 @@ impl NativeViewInputRuntime {
         };
         self.pending_app_commands.extend(update.commands);
         self.pending_ui_commands.extend(update.ui_commands);
+        self.pending_app_effects.extend(update.effects);
         report.quit_requested = update.quit_requested;
         self.reconcile_live_view_state(previous_interaction_plan.as_ref(), &mut report);
         #[cfg(feature = "toast")]
@@ -5487,6 +5492,7 @@ impl NativeViewInputRuntime {
                 .flatten();
             if movement.is_some() || horizontal_navigation.is_some() || visual_navigation.is_some()
             {
+                let target = native_text_visual_target(target, &interaction_plan);
                 let value = self.widget_display_text_value(widget).unwrap_or_default();
                 let mut state = self
                     .text_edit
@@ -6329,6 +6335,10 @@ impl NativeViewInputRuntime {
             let Some(descriptor) = self.widget_editable_text_descriptor(widget) else {
                 return report;
             };
+            let target = self
+                .current_interaction_plan()
+                .map(|interaction| native_text_visual_target(target, &interaction))
+                .unwrap_or(target);
 
             #[cfg(feature = "password-box")]
             let mut value = zeroize::Zeroizing::new(if descriptor.secure {
@@ -7151,16 +7161,16 @@ impl NativeViewInputRuntime {
             let mut decorated = false;
             for command in plan.commands.iter_mut().rev() {
                 match command {
+                    // Horizontally scrolled single-line text is shifted left of
+                    // the target bounds, so overlap is the containment signal.
                     NativeDrawCommand::SecureText(command)
-                        if rect_contains_rect(target.bounds, command.bounds) =>
+                        if rects_overlap(target.bounds, command.bounds) =>
                     {
                         command.replace_value(committed.clone());
                         decorated = true;
                         break;
                     }
-                    NativeDrawCommand::Text(text)
-                        if rect_contains_rect(target.bounds, text.bounds) =>
-                    {
+                    NativeDrawCommand::Text(text) if rects_overlap(target.bounds, text.bounds) => {
                         text.text = masked.clone();
                         text.style.color = crate::ColorRole::PrimaryText;
                         decorated = true;
@@ -7189,8 +7199,12 @@ impl NativeViewInputRuntime {
             let NativeDrawCommand::Text(text) = command else {
                 continue;
             };
-            if rect_contains_rect(target.bounds, text.bounds)
-                && (text.text == committed || committed.is_empty())
+            // A horizontally scrolled single-line command is shifted left of
+            // the target bounds; content equality plus overlap identifies it.
+            let is_committed_text =
+                text.text == committed && rects_overlap(target.bounds, text.bounds);
+            if is_committed_text
+                || (committed.is_empty() && rect_contains_rect(target.bounds, text.bounds))
             {
                 text.text = composed.clone();
                 text.style.color = crate::ColorRole::PrimaryText;
@@ -7246,15 +7260,45 @@ impl NativeViewInputRuntime {
         let value = self
             .widget_display_text_value(target.widget)
             .unwrap_or_default();
+        // A preserved state belongs to the same widget across view rebuilds
+        // and DPI changes; a freshly created `at_end` state must keep the
+        // unscrolled viewport so the first pointer hit still maps to the
+        // coordinates the unfocused control actually displays.
+        let preserved = self
+            .text_edit
+            .is_some_and(|state| state.widget == target.widget);
         let mut state = self
             .text_edit
             .filter(|state| state.widget == target.widget)
             .unwrap_or_else(|| NativeTextEditState::at_end(target.widget, &value));
         state.clamp(&value);
-        if target.kind != crate::ViewHitTargetKind::TextEditor
-            || self.widget_text_wrap(target.widget) != crate::TextWrap::NoWrap
-        {
+        let wrap = self.widget_text_wrap(target.widget);
+        if wrap != crate::TextWrap::NoWrap {
             state.horizontal_scroll_px = 0;
+        } else if preserved {
+            // Single-line inputs and NoWrap editors share the same visible
+            // text window: re-reveal the caret after view rebuilds, value
+            // changes and DPI updates instead of jumping back to the start.
+            let interaction = self.current_interaction_plan().unwrap_or_default();
+            let visual_target = native_text_visual_target(target, &interaction);
+            state.first_visible_visual_row = native_text_first_visible_row_for_caret_with_backend(
+                visual_target,
+                &value,
+                state.selection.caret,
+                state.first_visible_visual_row,
+                wrap,
+                self.dpi,
+                &self.text_shaping,
+            );
+            state.horizontal_scroll_px = native_text_horizontal_scroll_for_caret_with_backend(
+                visual_target,
+                &value,
+                state.selection.caret,
+                state.horizontal_scroll_px,
+                wrap,
+                self.dpi,
+                &self.text_shaping,
+            );
         }
         self.text_edit = Some(state);
     }
@@ -8265,42 +8309,49 @@ impl NativeViewInputRuntime {
         report.view_event_count += 1;
         #[cfg(feature = "text-input-core")]
         let mut text_edit_commands = Vec::new();
-        let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
-            let update = live_view.dispatch_event(&event);
-            report.message_count += update.message_count;
-            #[cfg(feature = "text-input-core")]
-            text_edit_commands.extend(update.text_edit_commands.iter().copied());
-            if update.redraw {
-                report.redraw_plan = Some(live_view.draw_plan());
-                report.hit_target_count = live_view.interaction_plan().hit_target_count();
-            }
-            (update.commands, update.ui_commands, update.quit_requested)
-        } else {
-            let mut event_cx = ViewEventCx::new();
-            let typography_scale = self.typography_scale();
-            if let Some(view) = &mut self.ui_command_view {
-                view.event(&mut event_cx, &event);
-                if let Some(surface) = self.surface {
-                    let mut layout_cx = ViewLayoutCx::new(surface, self.dpi)
-                        .with_typography_scale(typography_scale)
-                        .with_text_measurements(self.text_measurements.clone());
-                    view.layout(&mut layout_cx);
-                    let interaction_plan = view.interaction_plan();
-                    report.hit_target_count = interaction_plan.hit_target_count();
-                    self.interaction_plan = Some(interaction_plan);
+        let (commands, ui_commands, effects, quit_requested) =
+            if let Some(live_view) = &self.live_view {
+                let update = live_view.dispatch_event(&event);
+                report.message_count += update.message_count;
+                #[cfg(feature = "text-input-core")]
+                text_edit_commands.extend(update.text_edit_commands.iter().copied());
+                if update.redraw {
+                    report.redraw_plan = Some(live_view.draw_plan());
+                    report.hit_target_count = live_view.interaction_plan().hit_target_count();
                 }
-                let mut paint_cx = ViewPaintCx::new(self.dpi);
-                paint_cx.set_typography_scale(typography_scale);
-                view.paint(&mut paint_cx);
-                report.redraw_plan = Some(paint_cx.into_plan());
-            }
-            let messages = event_cx.into_messages();
-            report.message_count += messages.len();
-            (Vec::new(), messages, false)
-        };
+                (
+                    update.commands,
+                    update.ui_commands,
+                    update.effects,
+                    update.quit_requested,
+                )
+            } else {
+                let mut event_cx = ViewEventCx::new();
+                let typography_scale = self.typography_scale();
+                if let Some(view) = &mut self.ui_command_view {
+                    view.event(&mut event_cx, &event);
+                    if let Some(surface) = self.surface {
+                        let mut layout_cx = ViewLayoutCx::new(surface, self.dpi)
+                            .with_typography_scale(typography_scale)
+                            .with_text_measurements(self.text_measurements.clone());
+                        view.layout(&mut layout_cx);
+                        let interaction_plan = view.interaction_plan();
+                        report.hit_target_count = interaction_plan.hit_target_count();
+                        self.interaction_plan = Some(interaction_plan);
+                    }
+                    let mut paint_cx = ViewPaintCx::new(self.dpi);
+                    paint_cx.set_typography_scale(typography_scale);
+                    view.paint(&mut paint_cx);
+                    report.redraw_plan = Some(paint_cx.into_plan());
+                }
+                let messages = event_cx.into_messages();
+                report.message_count += messages.len();
+                (Vec::new(), messages, Vec::new(), false)
+            };
 
         report.app_command_count += commands.len();
         report.ui_command_count += ui_commands.len();
+        report.app_effect_count += effects.len();
         report.quit_requested |= quit_requested || commands.contains(&Command::Quit);
         let mut app_effect_executed = false;
         if self.defer_app_command_execution {
@@ -8332,6 +8383,9 @@ impl NativeViewInputRuntime {
                 }
             }
         }
+        // Native effects never execute inside the update: hosts drain them
+        // after releasing the route lock so a modal dialog cannot re-enter it.
+        self.pending_app_effects.extend(effects);
         if app_effect_executed {
             self.refresh_live_view_after_app_effect(&mut report);
         }
@@ -8417,6 +8471,10 @@ impl NativeViewInputRuntime {
         let Some(descriptor) = self.widget_editable_text_descriptor(widget) else {
             return;
         };
+        let target = self
+            .current_interaction_plan()
+            .map(|interaction| native_text_visual_target(target, &interaction))
+            .unwrap_or(target);
 
         #[cfg(feature = "password-box")]
         let mut value = zeroize::Zeroizing::new(if descriptor.secure {
@@ -8617,6 +8675,8 @@ impl NativeViewInputRuntime {
                     }
                 }
             }
+            report.app_effect_count += update.effects.len();
+            self.pending_app_effects.extend(update.effects);
             if let Some(runtime) = &self.live_view {
                 self.interaction_plan = Some(runtime.interaction_plan());
                 if update.redraw {
@@ -8756,6 +8816,118 @@ impl NativeViewInputRuntime {
         )
     }
 
+    /// Takes every queued native effect so the host can execute each one
+    /// outside this runtime's lock. Effects are always deferred; there is no
+    /// inline execution path that could re-enter an update with a modal dialog.
+    pub(crate) fn take_pending_app_effects(&mut self) -> Vec<crate::AppEffectRequest> {
+        std::mem::take(&mut self.pending_app_effects)
+    }
+
+    /// Delivers one executed native-effect outcome back to the live view as a
+    /// typed message. Desktop hosts call this once per dispatched request after
+    /// the effect finished outside the route lock; outcomes arriving after the
+    /// window was destroyed are dropped by the host before this is reached.
+    pub(crate) fn dispatch_app_effect_outcome(
+        &mut self,
+        request: crate::AppEffectRequest,
+        outcome: crate::AppEffectOutcome,
+    ) -> NativeViewInputDispatchReport {
+        let mut report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        #[cfg(feature = "text-input-core")]
+        let mut text_edit_commands = Vec::new();
+
+        let update = self
+            .live_view
+            .as_ref()
+            .map(|runtime| runtime.dispatch_app_effect(request, outcome));
+        report.app_effect_outcome_count = usize::from(update.is_some());
+        let mut app_effect_executed = false;
+        if let Some(update) = update.filter(|update| update.message_count > 0) {
+            #[cfg(feature = "text-input-core")]
+            text_edit_commands.extend(update.text_edit_commands.iter().copied());
+            report.handled = true;
+            report.message_count = update.message_count;
+            report.app_command_count = update.commands.len();
+            report.ui_command_count = update.ui_commands.len();
+            report.quit_requested =
+                update.quit_requested || update.commands.contains(&Command::Quit);
+
+            if self.defer_app_command_execution {
+                self.pending_app_commands.extend(update.commands);
+            } else {
+                let app_executor = self.app_command_executor.clone();
+                for effect in update.commands {
+                    if let Some(executor) = &app_executor {
+                        match executor.dispatch(effect) {
+                            Ok(_) => app_effect_executed = true,
+                            Err(error) => report.errors.push(error.to_string()),
+                        }
+                    }
+                }
+            }
+            report.app_effect_count += update.effects.len();
+            self.pending_app_effects.extend(update.effects);
+            if self.defer_ui_command_execution {
+                for effect in update.ui_commands {
+                    report.ui_command_ids.push(effect.id.0);
+                    self.pending_ui_commands.push(effect);
+                }
+            } else {
+                let ui_executor = self.ui_command_executor.clone();
+                for effect in update.ui_commands {
+                    report.ui_command_ids.push(effect.id.0);
+                    if let Some(executor) = &ui_executor {
+                        if let Err(error) = executor.dispatch(effect) {
+                            report.errors.push(error.to_string());
+                        }
+                    }
+                }
+            }
+            if let Some(runtime) = &self.live_view {
+                self.interaction_plan = Some(runtime.interaction_plan());
+                if update.redraw {
+                    report.redraw_plan = Some(runtime.draw_plan());
+                }
+            }
+        }
+
+        if app_effect_executed {
+            self.refresh_live_view_after_app_effect(&mut report);
+        }
+
+        self.reconcile_modal_focus(&mut report);
+        if self.focused_widget.is_some_and(|widget| {
+            self.current_interaction_plan()
+                .map_or(true, |plan| plan.hit_target_for_widget(widget).is_none())
+        }) {
+            self.focused_widget = None;
+            self.text_edit = None;
+            self.text_drag = None;
+            self.ime_preedit = None;
+            report.focus_visual_changed = true;
+        }
+        self.sync_text_edit();
+        #[cfg(feature = "text-input-core")]
+        self.dispatch_text_edit_commands(text_edit_commands, &mut report);
+        if let Some(plan) = report.redraw_plan.take() {
+            let plan = self.stabilize_native_text_layout(plan);
+            report.redraw_plan = Some(self.compose_input_visuals(plan));
+        }
+        report.focused_widget = self.focused_widget.map(|widget| widget.0);
+        report.ime_preedit_text = self
+            .ime_preedit
+            .as_ref()
+            .map(|state| state.text.report_text());
+        report.ime_selection = self.ime_preedit.as_ref().and_then(|state| state.selection);
+        report.ime_caret_rect = self.text_input_caret_rect();
+        self.populate_text_report(&mut report);
+        report
+    }
+
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     pub(crate) fn text_accessibility_range_rectangles(
         &self,
@@ -8816,6 +8988,7 @@ impl NativeViewInputRuntime {
                 native_text_visual_target(target, &interaction),
                 &value,
                 state.first_visible_visual_row,
+                state.horizontal_scroll_px,
                 self.widget_text_wrap(target.widget),
                 self.dpi,
                 &self.text_shaping,
@@ -8929,6 +9102,13 @@ fn rect_contains_rect(outer: Rect, inner: Rect) -> bool {
         && inner.y >= outer.y
         && inner.x.saturating_add(inner.width) <= outer.x.saturating_add(outer.width)
         && inner.y.saturating_add(inner.height) <= outer.y.saturating_add(outer.height)
+}
+
+fn rects_overlap(a: Rect, b: Rect) -> bool {
+    a.x < b.x.saturating_add(b.width)
+        && b.x < a.x.saturating_add(a.width)
+        && a.y < b.y.saturating_add(b.height)
+        && b.y < a.y.saturating_add(a.height)
 }
 
 #[allow(dead_code)]
@@ -11854,6 +12034,100 @@ mod tests {
                 matches!(command, crate::NativeDrawCommand::Text(text) if text.text == "A中文Z")
             })
         }));
+    }
+
+    #[cfg(feature = "textbox")]
+    #[test]
+    fn native_view_runtime_single_line_textbox_reveals_caret_horizontally() {
+        let widget = crate::WidgetId::new(973);
+        let value = "E:/very/long/path/that/overflows/the/single-line-textbox-window";
+        let builder = native_window("Single line scroll")
+            .size(160, 80)
+            .ui_command_view(crate::textbox::<UiCommand>(value).id(widget));
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("textbox should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + 4,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        assert_eq!(runtime.text_edit_viewport(), Some((0, 0)));
+
+        let end = runtime.dispatch_key(NativeViewKey::End);
+        let (_, scroll) = runtime.text_edit_viewport().expect("text edit viewport");
+        assert!(scroll > 0);
+        let caret = end.ime_caret_rect.expect("caret rect");
+        assert!(caret.x >= target.bounds.x);
+        assert!(caret.x < target.bounds.x.saturating_add(target.bounds.width));
+        let plan = end.redraw_plan.as_ref().expect("redraw plan");
+        assert!(plan
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::PushClip { .. })));
+        assert!(plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text)
+                if text.text == value && text.bounds.x < target.bounds.x
+        )));
+
+        // Clicking the right edge of the scrolled input hit-tests through the
+        // offset and keeps the caret inside the visible window.
+        let click = runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + target.bounds.width - 2,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+        assert!(click.text_caret.unwrap_or(0) > value.chars().count() / 2);
+        let (_, scroll) = runtime.text_edit_viewport().expect("text edit viewport");
+        assert!(scroll > 0);
+
+        let home = runtime.dispatch_key(NativeViewKey::Home);
+        assert_eq!(runtime.text_edit_viewport(), Some((0, 0)));
+        let caret = home.ime_caret_rect.expect("caret rect");
+        assert!(caret.x <= target.bounds.x.saturating_add(16));
+    }
+
+    #[cfg(feature = "password-box")]
+    #[test]
+    fn native_view_runtime_password_box_scrolls_masked_text_without_leaking() {
+        let widget = crate::WidgetId::new(974);
+        let builder = native_window("Password scroll")
+            .size(120, 60)
+            .ui_command_view(
+                crate::password_box::<UiCommand>(crate::ZsPassword::from(
+                    "very-long-password-value",
+                ))
+                .id(widget),
+            );
+        let target = builder
+            .native_view_interaction_plan()
+            .and_then(|plan| plan.hit_target_for_widget(widget))
+            .expect("password box should have a platform hit target");
+        let mut runtime = builder.native_view_input_runtime();
+        runtime.dispatch_pointer_click(Point {
+            x: target.bounds.x + 4,
+            y: target.bounds.y + target.bounds.height / 2,
+        });
+
+        let end = runtime.dispatch_key(NativeViewKey::End);
+        let (_, scroll) = runtime.text_edit_viewport().expect("text edit viewport");
+        assert!(scroll > 0);
+        let plan = end.redraw_plan.as_ref().expect("redraw plan");
+        assert!(plan.commands.iter().all(|command| !matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.text.contains("very-long")
+        )));
+        // The masked value is drawn as a plain Text command (SecureText only
+        // appears while peek is held); it must be shifted by the same offset.
+        assert!(plan.commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::Text(text) if text.bounds.x < target.bounds.x
+        )));
+        assert!(plan
+            .commands
+            .iter()
+            .any(|command| matches!(command, NativeDrawCommand::PushClip { .. })));
     }
 
     #[cfg(feature = "password-box")]

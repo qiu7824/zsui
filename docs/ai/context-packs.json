@@ -421,6 +421,7 @@
         "examples/product_adapter.rs"
       ],
       "optional": [
+        "src/app_effect.rs",
         "examples/product_adapter_smoke.rs",
         "examples/product_adapter_view.rs",
         "examples/product_adapter_native_driver.rs"

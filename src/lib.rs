@@ -26,6 +26,8 @@ pub mod android_activity_host;
 pub mod app;
 #[doc(hidden)]
 pub mod app_command;
+#[doc(hidden)]
+pub mod app_effect;
 #[cfg(feature = "auto-suggest")]
 #[doc(hidden)]
 pub mod auto_suggest;
@@ -404,6 +406,8 @@ pub use app::{
 pub use app_command::{
     app_command_name, AppCommandDispatchReport, AppCommandExecutor, SharedAppCommandExecutor,
 };
+#[doc(hidden)]
+pub use app_effect::{AppEffect, AppEffectOutcome, AppEffectRequest};
 #[cfg(feature = "auto-suggest")]
 #[doc(hidden)]
 pub use auto_suggest::{
@@ -485,10 +489,10 @@ pub use date::{days_in_month, is_leap_year, ZsDate};
 #[doc(hidden)]
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
-    DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
-    MenuService, NativeClipboardService, NativeDesktopDialogService, NativeDialogService,
-    NativeFileDialogService, SaveFileDialogSpec, TextInputRequest, TextInputService,
-    ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
+    DesktopHost, DesktopKey, DesktopTheme, DirectoryDialogSpec, FileDialogService, IconService,
+    KeyModifiers, MenuService, NativeClipboardService, NativeDesktopDialogService,
+    NativeDialogService, NativeFileDialogService, SaveFileDialogSpec, TextInputRequest,
+    TextInputService, ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 #[doc(hidden)]
@@ -1252,13 +1256,13 @@ pub use windows_win32_host::{
     run_windows_win32_native_window_event_loop_with_status_items,
     set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,
     windows_system_theme_mode, windows_win32_main_window_style_plan,
-    windows_win32_open_file_dialog, windows_win32_save_file_dialog,
-    windows_win32_window_view_input_report, zsui_win32_default_window_proc, WindowsWin32ClassNames,
-    WindowsWin32FileDialogService, WindowsWin32MainWindowHost, WindowsWin32MessageLoop,
-    WindowsWin32MessageLoopResult, WindowsWin32OwnedAcceleratorTable,
-    WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles,
-    WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon, WindowsWin32OwnedWindowMenu,
-    WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
+    windows_win32_open_file_dialog, windows_win32_pick_directory_dialog,
+    windows_win32_save_file_dialog, windows_win32_window_view_input_report,
+    zsui_win32_default_window_proc, WindowsWin32ClassNames, WindowsWin32FileDialogService,
+    WindowsWin32MainWindowHost, WindowsWin32MessageLoop, WindowsWin32MessageLoopResult,
+    WindowsWin32OwnedAcceleratorTable, WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon,
+    WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon,
+    WindowsWin32OwnedWindowMenu, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
     WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
     WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,

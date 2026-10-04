@@ -25,6 +25,7 @@ enum WindowsSharedInputKind {
     Blur,
     Background,
     AppCommand,
+    AppEffect,
     WindowClose,
     #[cfg(feature = "accessibility")]
     Accessibility,
@@ -50,6 +51,7 @@ impl WindowsSharedInputKind {
             Self::Blur => "blur",
             Self::Background => "background",
             Self::AppCommand => "app_command",
+            Self::AppEffect => "app_effect",
             Self::WindowClose => "window_close",
             #[cfg(feature = "accessibility")]
             Self::Accessibility => "accessibility",
@@ -142,6 +144,19 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
     ) -> (Option<SharedUiCommandExecutor>, Vec<UiCommand>) {
         self.shared_runtime.take_pending_ui_command_dispatch()
+    }
+
+    fn take_pending_app_effects(&mut self) -> Vec<crate::AppEffectRequest> {
+        self.shared_runtime.take_pending_app_effects()
+    }
+
+    fn dispatch_app_effect_outcome(
+        &mut self,
+        request: crate::AppEffectRequest,
+        outcome: crate::AppEffectOutcome,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self.shared_runtime.dispatch_app_effect_outcome(request, outcome);
+        self.adapt_shared_report(report, WindowsSharedInputKind::AppEffect)
     }
 
     fn background_poll_interval_ms(&self) -> Option<u64> {

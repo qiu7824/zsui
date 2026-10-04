@@ -179,6 +179,16 @@ pub(super) trait DesktopRuntimeBackend: Default {
         ))
     }
 
+    fn pick_directory(
+        &mut self,
+        _spec: &crate::DirectoryDialogSpec,
+    ) -> ZsuiResult<Option<PathBuf>> {
+        Err(ZsuiError::unsupported(
+            "pick_directory_dialog",
+            "the selected desktop backend does not implement a native directory picker",
+        ))
+    }
+
     fn show_native_dialog(&mut self, _spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
         Err(ZsuiError::unsupported(
             "native_dialogs",
@@ -441,6 +451,10 @@ pub(super) fn complete_native_smoke(
 
 pub(crate) fn save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     SelectedDesktopRuntimeBackend::default().save_file_dialog(spec)
+}
+
+pub(crate) fn pick_directory(spec: &crate::DirectoryDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+    SelectedDesktopRuntimeBackend::default().pick_directory(spec)
 }
 
 pub(crate) fn show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {

@@ -1217,11 +1217,12 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     let (
         mut report,
         mut draw_plan,
-        quit_requested,
+        mut quit_requested,
         app_executor,
         app_commands,
         ui_executor,
         ui_commands,
+        app_effects,
         mut poll_interval_ms,
     ) = {
         let mut routes = window_view_input_routes()
@@ -1233,6 +1234,7 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
         let quit_requested = record.route.take_quit_requested();
         let (app_executor, app_commands) = record.route.take_pending_app_command_dispatch();
         let (ui_executor, ui_commands) = record.route.take_pending_ui_command_dispatch();
+        let app_effects = record.route.take_pending_app_effects();
         let poll_interval_ms = record.route.background_poll_interval_ms();
         (
             report,
@@ -1242,6 +1244,7 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
             app_commands,
             ui_executor,
             ui_commands,
+            app_effects,
             poll_interval_ms,
         )
     };
@@ -1249,6 +1252,50 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     let app_effect_executed =
         dispatch_windows_win32_app_commands(&mut report, app_executor, app_commands);
     dispatch_windows_win32_ui_commands(&mut report, ui_executor, ui_commands);
+
+    // Native app effects (file/directory pickers, message dialogs) run outside
+    // the route registry lock so a modal dialog cannot re-enter a held update.
+    // Each typed outcome is delivered back to the live view at most once; an
+    // outcome whose update queues further effects is drained in the next round.
+    // If the window was destroyed while a dialog was open, its route record is
+    // gone and the pending outcomes are dropped instead of being delivered.
+    let mut pending_app_effects = app_effects;
+    for _ in 0..32 {
+        if pending_app_effects.is_empty() {
+            break;
+        }
+        let outcomes = std::mem::take(&mut pending_app_effects)
+            .into_iter()
+            .map(|request| {
+                let outcome = crate::app_effect::execute_native_app_effect(request.effect());
+                (request, outcome)
+            })
+            .collect::<Vec<_>>();
+        pending_app_effects = {
+            let mut routes = window_view_input_routes()
+                .lock()
+                .expect("window view input route registry should not be poisoned");
+            let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value)
+            else {
+                break;
+            };
+            for (request, outcome) in outcomes {
+                let effect_report = record.route.dispatch_app_effect_outcome(request, outcome);
+                report.merge(effect_report);
+            }
+            quit_requested |= record.route.take_quit_requested();
+            if let Some(plan) = record.route.take_pending_draw_plan() {
+                draw_plan = Some(plan);
+            }
+            poll_interval_ms = record.route.background_poll_interval_ms();
+            record.route.take_pending_app_effects()
+        };
+    }
+    if !pending_app_effects.is_empty() {
+        report
+            .events
+            .push("win32_app_effect_drain_bounded".to_string());
+    }
     if let Some(record) = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned")

@@ -1198,6 +1198,35 @@ impl LinuxDirectWindow {
         if effect_executed {
             self.runtime.refresh_live_view_after_app_effect(&mut report);
         }
+        // Native app effects run outside the runtime borrow so a modal dialog
+        // cannot re-enter a held update; each outcome is delivered once and
+        // follow-up effects are drained in the next round.
+        let mut pending_app_effects = self.runtime.take_pending_app_effects();
+        for _ in 0..32 {
+            if pending_app_effects.is_empty() {
+                break;
+            }
+            for request in pending_app_effects {
+                let outcome = with_linux_direct_file_dialog_parent(&self.window, || {
+                    crate::app_effect::execute_native_app_effect(request.effect())
+                });
+                let effect_report = self.runtime.dispatch_app_effect_outcome(request, outcome);
+                report.handled |= effect_report.handled;
+                report.message_count += effect_report.message_count;
+                report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
+                report.quit_requested |= effect_report.quit_requested;
+                report.errors.extend(effect_report.errors);
+                if let Some(plan) = effect_report.redraw_plan {
+                    report.redraw_plan = Some(plan);
+                }
+            }
+            pending_app_effects = self.runtime.take_pending_app_effects();
+        }
+        if !pending_app_effects.is_empty() {
+            report
+                .errors
+                .push("linux_direct app effect drain reached its round bound".to_string());
+        }
         if let Some(plan) = report.redraw_plan.take() {
             self.plan = plan;
             self.window.request_redraw();

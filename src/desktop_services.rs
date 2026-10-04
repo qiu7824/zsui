@@ -22,6 +22,7 @@ pub enum DesktopCapability {
     ClipboardText,
     OpenFileDialog,
     SaveFileDialog,
+    DirectoryDialog,
     NativeDialog,
     SystemTheme,
     NativeIcons,
@@ -41,6 +42,7 @@ impl DesktopCapability {
             Self::ClipboardText => "clipboard_text",
             Self::OpenFileDialog => "open_file_dialog",
             Self::SaveFileDialog => "save_file_dialog",
+            Self::DirectoryDialog => "directory_dialog",
             Self::NativeDialog => "native_dialog",
             Self::SystemTheme => "system_theme",
             Self::NativeIcons => "native_icons",
@@ -48,7 +50,7 @@ impl DesktopCapability {
     }
 }
 
-pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 14] = [
+pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 15] = [
     DesktopCapability::NativeWindow,
     DesktopCapability::WindowResize,
     DesktopCapability::ScaleFactor,
@@ -60,6 +62,7 @@ pub const REQUIRED_DESKTOP_CAPABILITIES: [DesktopCapability; 14] = [
     DesktopCapability::ClipboardText,
     DesktopCapability::OpenFileDialog,
     DesktopCapability::SaveFileDialog,
+    DesktopCapability::DirectoryDialog,
     DesktopCapability::NativeDialog,
     DesktopCapability::SystemTheme,
     DesktopCapability::NativeIcons,
@@ -218,6 +221,12 @@ impl DesktopCapabilities {
                 ),
             )
             .with_support(
+                DesktopCapability::DirectoryDialog,
+                CapabilitySupport::partial(
+                    "the Win32 SHBrowseForFolderW directory picker is connected; target interaction proof is pending",
+                ),
+            )
+            .with_support(
                 DesktopCapability::NativeDialog,
                 CapabilitySupport::partial(
                     "owner-bound Win32 MessageBoxW dialogs map typed levels, buttons and responses; target interaction proof is pending",
@@ -370,6 +379,12 @@ impl DesktopCapabilities {
                         "enable macos-appkit to compile NSSavePanel",
                     )
                 },
+            )
+            .with_support(
+                DesktopCapability::DirectoryDialog,
+                CapabilitySupport::unsupported(
+                    "the AppKit directory picker backend is pending; the typed effect contract is in place",
+                ),
             )
             .with_support(
                 DesktopCapability::NativeDialog,
@@ -544,6 +559,12 @@ impl DesktopCapabilities {
                 },
             )
             .with_support(
+                DesktopCapability::DirectoryDialog,
+                CapabilitySupport::unsupported(
+                    "the GTK directory picker backend is pending; the typed effect contract is in place",
+                ),
+            )
+            .with_support(
                 DesktopCapability::NativeDialog,
                 if cfg!(feature = "linux-gtk") {
                     CapabilitySupport::partial(
@@ -664,6 +685,12 @@ impl DesktopCapabilities {
                 support(
                     "the XDG desktop portal save-file dialog is connected without GTK; target interaction proof is pending",
                     "enable linux-direct to compile XDG portal file dialogs",
+                ),
+            )
+            .with_support(
+                DesktopCapability::DirectoryDialog,
+                CapabilitySupport::unsupported(
+                    "the linux-direct directory picker backend is pending; the typed effect contract is in place",
                 ),
             )
             .with_support(
@@ -828,6 +855,28 @@ impl SaveFileDialogSpec {
     }
 }
 
+/// Platform-neutral native directory picker specification used by
+/// [`AppEffect::PickDirectory`](crate::AppEffect).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectoryDialogSpec {
+    pub title: String,
+    pub current_path: Option<PathBuf>,
+}
+
+impl DirectoryDialogSpec {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            current_path: None,
+        }
+    }
+
+    pub fn current_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.current_path = Some(path.into());
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TextInputRequest {
     pub window: WindowId,
@@ -873,6 +922,19 @@ impl ClipboardService for NativeClipboardService {
 pub trait FileDialogService {
     fn open_file_dialog(&mut self, spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>>;
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>>;
+
+    /// Opens a native directory picker. `Ok(None)` means the user cancelled.
+    /// Backends that do not implement directory selection keep the default
+    /// `Unsupported` result so callers can degrade gracefully.
+    fn pick_directory_dialog(
+        &mut self,
+        _spec: &DirectoryDialogSpec,
+    ) -> ZsuiResult<Option<PathBuf>> {
+        Err(ZsuiError::unsupported(
+            "pick_directory_dialog",
+            "the selected desktop backend does not implement a native directory picker",
+        ))
+    }
 }
 
 pub trait NativeDialogService {
@@ -914,6 +976,10 @@ impl FileDialogService for NativeFileDialogService {
 
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
         crate::desktop_runtime::save_file_dialog(spec)
+    }
+
+    fn pick_directory_dialog(&mut self, spec: &DirectoryDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+        crate::desktop_runtime::pick_directory(spec)
     }
 }
 

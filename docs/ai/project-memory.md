@@ -346,6 +346,20 @@ history remain authoritative for implementation status.
   `owner_window_supplied=false` keeps parent/sheet modality as a separate gate.
   Local Win32 release proof passes, while fixed AppKit/Linux target steps must
   pass before the service slice advances beyond first pass.
+- Applications request modal native effects from `update` through `AppCx`
+  (`open_file_dialog`, `save_file_dialog`, `pick_directory`, `show_dialog`,
+  `effect`/`effect_with`). Each call queues an `AppEffectRequest` carrying a
+  platform-neutral `AppEffect` plus a responder that maps the typed
+  `AppEffectOutcome` back into the window's `Msg`. Effects have no in-lock
+  execution path: the runtime always defers them into `pending_app_effects`,
+  hosts execute them after releasing the route lock via
+  `execute_native_app_effect` (which goes through the `NativeFileDialogService`
+  /`NativeDesktopDialogService` facades), and deliver each outcome through
+  `dispatch_app_effect_outcome` at most once. Cancellation is `Ok(None)`;
+  backend failures arrive as `Err(ZsuiError)`; outcomes are dropped when the
+  window is destroyed first. Directory picking uses `DirectoryDialogSpec` and
+  `FileDialogService::pick_directory_dialog`, which stays `Unsupported` until a
+  backend implements it (`DesktopCapability::DirectoryDialog` tracks this).
 - Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent

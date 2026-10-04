@@ -45,7 +45,12 @@
 
 #![deny(missing_docs)]
 
-use std::fmt;
+use std::{fmt, path::PathBuf};
+
+pub use crate::{
+    DialogButtons, DialogLevel, DialogResponse, DirectoryDialogSpec, FileDialogFilter,
+    FileDialogSpec, NativeDialogSpec, SaveFileDialogSpec,
+};
 
 /// A platform-independent logical length measured at 96 DPI.
 #[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd)]
@@ -361,6 +366,63 @@ impl UpdateContext<'_> {
     /// Requests orderly shutdown after the current update completes.
     pub fn quit(&mut self) {
         self.inner.quit();
+    }
+
+    /// Opens the native file-open dialog outside the update lock.
+    ///
+    /// The dialog runs after the current update finishes, so it cannot
+    /// re-enter the event loop while application state is being reduced.
+    /// `respond` receives `Ok(None)` when the user cancels and produces the
+    /// message delivered back to `update` exactly once; the outcome is
+    /// dropped if the window is destroyed before the dialog finishes.
+    pub fn open_file_dialog<Message>(
+        &mut self,
+        spec: FileDialogSpec,
+        respond: impl Fn(Result<Option<Vec<PathBuf>>, Error>) -> Message + Send + Sync + 'static,
+    ) where
+        Message: Send + 'static,
+    {
+        self.inner
+            .open_file_dialog(spec, move |result| respond(result.map_err(Error)));
+    }
+
+    /// Opens the native save dialog outside the update lock. `Ok(None)` means
+    /// the user cancelled.
+    pub fn save_file_dialog<Message>(
+        &mut self,
+        spec: SaveFileDialogSpec,
+        respond: impl Fn(Result<Option<PathBuf>, Error>) -> Message + Send + Sync + 'static,
+    ) where
+        Message: Send + 'static,
+    {
+        self.inner
+            .save_file_dialog(spec, move |result| respond(result.map_err(Error)));
+    }
+
+    /// Opens a native directory picker outside the update lock. `Ok(None)`
+    /// means the user cancelled.
+    pub fn pick_directory<Message>(
+        &mut self,
+        spec: DirectoryDialogSpec,
+        respond: impl Fn(Result<Option<PathBuf>, Error>) -> Message + Send + Sync + 'static,
+    ) where
+        Message: Send + 'static,
+    {
+        self.inner
+            .pick_directory(spec, move |result| respond(result.map_err(Error)));
+    }
+
+    /// Shows a native message or confirmation dialog outside the update lock
+    /// and delivers the typed [`DialogResponse`] back through `respond`.
+    pub fn show_dialog<Message>(
+        &mut self,
+        spec: NativeDialogSpec,
+        respond: impl Fn(Result<DialogResponse, Error>) -> Message + Send + Sync + 'static,
+    ) where
+        Message: Send + 'static,
+    {
+        self.inner
+            .show_dialog(spec, move |result| respond(result.map_err(Error)));
     }
 }
 

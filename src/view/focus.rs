@@ -4,6 +4,10 @@ pub struct LiveViewUpdate {
     pub message_count: usize,
     pub commands: Vec<Command>,
     pub ui_commands: Vec<UiCommand>,
+    /// Native effects queued by `update` through [`AppCx`]. The native runtime
+    /// always defers them; hosts execute each request outside the view lock
+    /// and deliver its outcome back through `dispatch_app_effect`.
+    pub effects: Vec<AppEffectRequest>,
     #[cfg(feature = "text-input-core")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
@@ -25,6 +29,11 @@ trait LiveViewDriver: Send {
     fn interaction_plan(&self) -> ViewInteractionPlan;
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate;
+    fn dispatch_app_effect(
+        &mut self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     #[cfg(feature = "text-input-core")]
     fn widget_editable_text_descriptor(
@@ -153,10 +162,7 @@ impl SharedLiveViewRuntime {
         self.lock().set_typography_scale(scale)
     }
 
-    pub(crate) fn set_text_measurements(
-        &self,
-        measurements: Arc<ViewTextMeasurements>,
-    ) -> bool {
+    pub(crate) fn set_text_measurements(&self, measurements: Arc<ViewTextMeasurements>) -> bool {
         self.lock().set_text_measurements(measurements)
     }
 
@@ -197,6 +203,17 @@ impl SharedLiveViewRuntime {
 
     pub fn dispatch_app_command(&self, command: &Command) -> LiveViewUpdate {
         self.lock().dispatch_app_command(command)
+    }
+
+    /// Delivers one executed [`AppEffect`](crate::AppEffect) outcome back to
+    /// the typed update. Desktop hosts call this once per dispatched request,
+    /// after the effect finished outside the live-view lock.
+    pub fn dispatch_app_effect(
+        &self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate {
+        self.lock().dispatch_app_effect(request, outcome)
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
@@ -485,8 +502,8 @@ where
             view,
             bounds,
             dpi,
-            typography_scale_per_mille:
-                crate::render_protocol::default_typography_scale_per_mille(),
+            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            ),
             text_measurements: Arc::new(ViewTextMeasurements::default()),
             revision: 0,
             animation_epoch: std::time::Instant::now(),
@@ -556,6 +573,7 @@ where
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),
+            effects: app_cx.effects().to_vec(),
             #[cfg(feature = "text-input-core")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
@@ -743,6 +761,29 @@ where
                 ..LiveViewUpdate::default()
             };
         };
+        self.apply_messages(vec![message])
+    }
+
+    fn dispatch_app_effect(
+        &mut self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate {
+        // The responder was written inside `update`, so its boxed message is
+        // always this driver's `Msg`; a `None` result means the request had no
+        // responder or the host produced a mismatched outcome kind.
+        let Some(message) = request
+            .respond(outcome)
+            .and_then(|message| message.downcast::<Msg>().ok())
+            .map(|message| *message)
+        else {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        };
+        // A suspended (hidden) view still applies the outcome to application
+        // state; `apply_messages` reports `redraw: false` while suspended.
         self.apply_messages(vec![message])
     }
 
