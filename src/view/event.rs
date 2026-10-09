@@ -85,6 +85,12 @@ pub enum ViewEvent {
         widget: WidgetId,
         selection: ZsTextSelection,
     },
+    /// Enter in a text input that has an `on_submit` handler.
+    #[cfg(feature = "textbox")]
+    TextSubmitted {
+        widget: WidgetId,
+        value: String,
+    },
     #[cfg(feature = "password-box")]
     PasswordChanged {
         widget: WidgetId,

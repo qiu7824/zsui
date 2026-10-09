@@ -948,8 +948,13 @@ pub enum ViewNodeKind<Msg> {
         value: String,
         multiline: bool,
         wrap: crate::TextWrap,
+        /// Hint drawn in secondary text while `value` is empty.
+        placeholder: Option<String>,
         on_change: Option<ViewMessageMapper<String, Msg>>,
         on_selection_change: Option<fn(ZsTextSelection) -> Msg>,
+        /// When present, Enter submits the current value instead of editing;
+        /// Shift+Enter and Ctrl+Enter keep inserting a line break.
+        on_submit: Option<ViewMessageMapper<String, Msg>>,
     },
     #[cfg(feature = "password-box")]
     PasswordBox {
@@ -2011,6 +2016,29 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    /// Emits the current value when Enter is pressed in this text input.
+    ///
+    /// With a submit handler, Enter no longer inserts a line break in a
+    /// multiline editor; Shift+Enter and Ctrl+Enter still do.
+    #[cfg(feature = "textbox")]
+    pub fn on_submit(mut self, message: fn(String) -> Msg) -> Self {
+        if let ViewNodeKind::Textbox { on_submit, .. } = &mut self.kind {
+            *on_submit = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn on_submit_with(
+        mut self,
+        message: impl Fn(String) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Textbox { on_submit, .. } = &mut self.kind {
+            *on_submit = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
     #[cfg(feature = "textbox")]
     pub fn on_text_selection_change(mut self, message: fn(ZsTextSelection) -> Msg) -> Self {
         if let ViewNodeKind::Textbox {
@@ -2912,10 +2940,12 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    #[cfg(any(feature = "auto-suggest", feature = "combo"))]
+    #[cfg(any(feature = "auto-suggest", feature = "combo", feature = "textbox"))]
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         let text = text.into();
         match &mut self.kind {
+            #[cfg(feature = "textbox")]
+            ViewNodeKind::Textbox { placeholder, .. } => *placeholder = Some(text),
             #[cfg(feature = "auto-suggest")]
             ViewNodeKind::AutoSuggestBox { placeholder, .. } => *placeholder = Some(text),
             #[cfg(feature = "combo")]

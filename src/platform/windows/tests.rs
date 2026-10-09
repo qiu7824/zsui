@@ -868,6 +868,62 @@ mod tests {
 
     #[test]
     #[cfg(feature = "textbox")]
+    fn window_view_input_route_submits_on_enter_and_keeps_shift_enter_line_breaks() {
+        let _guard = view_input_route_test_lock();
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.composer_changed"))
+        }
+        fn text_submitted(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.composer_submitted"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 91isize as HWND;
+        let widget = crate::WidgetId::new(23);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: 80,
+                },
+                crate::ViewHitTargetKind::TextEditor,
+            )]),
+            crate::text_editor("")
+                .id(widget)
+                .on_change(text_changed)
+                .on_submit(text_submitted),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+            .expect("registered route should focus the editor");
+        dispatch_windows_win32_window_view_text_input(hwnd, "ZS")
+            .expect("focused editor should accept text");
+
+        let enter = dispatch_windows_win32_window_view_key_down_with_shift(hwnd, 0x0D, false)
+            .expect("Enter should reach the focused editor");
+        assert!(enter.handled);
+        assert_eq!(enter.ui_command_ids, vec!["zsui.test.win32.composer_submitted"]);
+        // WM_CHAR delivers the carriage return after WM_KEYDOWN; it must not edit.
+        let swallowed = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
+            .expect("carriage return should still be routed");
+        assert!(swallowed.handled);
+        assert_eq!(swallowed.ui_command_count, 0);
+
+        let shift_enter = dispatch_windows_win32_window_view_key_down_with_shift(hwnd, 0x0D, true)
+            .expect("Shift+Enter should reach the focused editor");
+        assert!(shift_enter.ui_command_ids.is_empty());
+        let line_break = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
+            .expect("Shift+Enter carriage return should edit");
+        assert_eq!(line_break.ui_command_ids, vec!["zsui.test.win32.composer_changed"]);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
     fn window_view_input_route_preserves_ime_preedit_until_commit_or_cancel() {
         let _guard = view_input_route_test_lock();
         fn text_changed(_: String) -> UiCommand {

@@ -81,6 +81,8 @@ mod tests {
         #[cfg(feature = "textbox")]
         NameChanged(String),
         #[cfg(feature = "textbox")]
+        NameSubmitted(String),
+        #[cfg(feature = "textbox")]
         TextSelectionChanged(ZsTextSelection),
         #[cfg(feature = "password-box")]
         PasswordChanged(crate::ZsPassword),
@@ -219,6 +221,59 @@ mod tests {
         collision.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
         assert_eq!(collision.children[0].id, Some(first_ids[1]));
         assert_ne!(collision.children[1].id, Some(first_ids[1]));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn textbox_placeholder_paints_only_while_empty_and_submit_maps_the_value() {
+        let widget = WidgetId::new(731);
+        let hint = "搜索文件 / Search files";
+        let paint_texts = |value: &str| {
+            let mut view: ViewNode<Msg> = textbox(value).id(widget).placeholder(hint);
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 220,
+                    height: 32,
+                },
+                Dpi::standard(),
+            ));
+            let mut paint = ViewPaintCx::new(Dpi::standard());
+            view.paint(&mut paint);
+            paint
+                .plan()
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    NativeDrawCommand::Text(text) => Some((text.text.clone(), text.style.color)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(paint_texts("")
+            .iter()
+            .any(|(text, color)| text == hint && *color == crate::ColorRole::SecondaryText));
+        assert!(!paint_texts("zsagent").iter().any(|(text, _)| text == hint));
+
+        let mut view: ViewNode<Msg> = text_editor("第一行").id(widget).on_submit(Msg::NameSubmitted);
+        assert_eq!(view.widget_text_submits(widget), Some(true));
+        assert_eq!(
+            textbox::<Msg>("").id(widget).widget_text_submits(widget),
+            Some(false)
+        );
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TextSubmitted {
+                widget,
+                value: "发送这一条".to_string(),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameSubmitted("发送这一条".to_string())]
+        );
     }
 
     #[test]

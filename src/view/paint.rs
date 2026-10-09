@@ -1872,6 +1872,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message(*selection));
                     }
                 }
+                #[cfg(feature = "textbox")]
+                (
+                    ViewNodeKind::Textbox {
+                        value, on_submit, ..
+                    },
+                    ViewEvent::TextSubmitted {
+                        value: submitted, ..
+                    },
+                ) => {
+                    *value = submitted.clone();
+                    if let Some(message) = on_submit {
+                        cx.emit(message.map(submitted.clone()));
+                    }
+                }
                 #[cfg(feature = "auto-suggest")]
                 (
                     ViewNodeKind::AutoSuggestBox {
@@ -3318,6 +3332,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 value,
                 multiline,
                 wrap,
+                placeholder,
                 ..
             } => {
                 let metrics = crate::ZsBaseControlMetrics::for_platform(
@@ -3339,6 +3354,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     text_style.ellipsis = false;
                 }
                 let text_bounds = text_input_content_bounds(bounds, self.style.padding, cx.dpi);
+                if let Some(hint) = placeholder.as_deref().filter(|_| value.is_empty()) {
+                    let mut hint_style = text_style;
+                    hint_style.color = ColorRole::SecondaryText;
+                    cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
+                        hint,
+                        text_bounds,
+                        hint_style,
+                    )));
+                }
                 if *multiline && *wrap == crate::TextWrap::NoWrap {
                     let line_height = Dp::new(
                         crate::TextRole::Body

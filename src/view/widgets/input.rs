@@ -7,8 +7,10 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         value: value.into(),
         multiline: false,
         wrap: crate::TextWrap::NoWrap,
+        placeholder: None,
         on_change: None,
         on_selection_change: None,
+        on_submit: None,
     })
     .min_width(metrics.text_input_minimum_width)
     .native_typography_height(metrics.text_input_height)
@@ -20,8 +22,10 @@ pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         value: value.into(),
         multiline: true,
         wrap: crate::TextWrap::Word,
+        placeholder: None,
         on_change: None,
         on_selection_change: None,
+        on_submit: None,
     })
 }
 

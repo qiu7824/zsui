@@ -126,7 +126,8 @@ impl<Msg> ViewNode<Msg> {
             (Some(id), ViewEvent::CanvasPointer { event }) => id == event.widget,
             #[cfg(feature = "textbox")]
             (Some(id), ViewEvent::TextEdited { widget, .. })
-            | (Some(id), ViewEvent::TextSelectionChanged { widget, .. }) => id == *widget,
+            | (Some(id), ViewEvent::TextSelectionChanged { widget, .. })
+            | (Some(id), ViewEvent::TextSubmitted { widget, .. }) => id == *widget,
             #[cfg(feature = "password-box")]
             (Some(id), ViewEvent::PasswordChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
@@ -339,6 +340,19 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_text_wrap(widget))
+    }
+
+    /// Whether the text input `widget` submits on Enter (has `on_submit`).
+    #[cfg(feature = "textbox")]
+    pub fn widget_text_submits(&self, widget: WidgetId) -> Option<bool> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Textbox { on_submit, .. } = &self.kind {
+                return Some(on_submit.is_some());
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_text_submits(widget))
     }
 
     #[cfg(feature = "password-box")]

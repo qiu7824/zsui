@@ -1638,6 +1638,10 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
+    /// Enter just submitted a text input; swallow the matching carriage-return
+    /// character so a multiline editor does not gain a trailing line break.
+    #[cfg(feature = "textbox")]
+    submit_return_pending: bool,
     #[cfg(feature = "textbox")]
     text_history: NativeTextHistory,
     #[cfg(feature = "textbox")]
@@ -1999,6 +2003,8 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            #[cfg(feature = "textbox")]
+            submit_return_pending: false,
             #[cfg(feature = "textbox")]
             text_history: NativeTextHistory::default(),
             #[cfg(feature = "textbox")]
@@ -4747,13 +4753,38 @@ impl NativeViewInputRuntime {
         shift: bool,
         control: bool,
     ) -> NativeViewInputDispatchReport {
-        #[cfg(not(any(feature = "radio", feature = "tabs")))]
+        #[cfg(not(any(feature = "radio", feature = "tabs", feature = "textbox")))]
         let _ = control;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "textbox")]
+        {
+            self.submit_return_pending = false;
+            if key == NativeViewKey::Enter && !shift && !control {
+                if let Some(widget) = self.focused_widget.filter(|widget| {
+                    self.widget_text_submits(*widget)
+                        && self
+                            .current_interaction_plan()
+                            .and_then(|plan| plan.focus_target_for_widget(*widget))
+                            .is_some_and(|target| {
+                                matches!(
+                                    target.kind,
+                                    crate::ViewHitTargetKind::Textbox
+                                        | crate::ViewHitTargetKind::TextEditor
+                                )
+                            })
+                }) {
+                    let value = self.widget_text_value(widget).unwrap_or_default();
+                    self.submit_return_pending = true;
+                    report.handled = true;
+                    return self
+                        .dispatch_view_event(ViewEvent::TextSubmitted { widget, value }, report);
+                }
+            }
+        }
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
             report.handled = true;
@@ -6215,6 +6246,11 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "textbox")]
+        if std::mem::take(&mut self.submit_return_pending) && text == "\r" {
+            report.handled = true;
+            return report;
+        }
         let Some(widget) = self.focused_widget else {
             return report;
         };
@@ -7559,6 +7595,19 @@ impl NativeViewInputRuntime {
                     .as_ref()
                     .and_then(|view| view.widget_text_value(widget).map(str::to_string))
             })
+    }
+
+    #[cfg(feature = "textbox")]
+    fn widget_text_submits(&self, widget: crate::WidgetId) -> bool {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_text_submits(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_text_submits(widget))
+            })
+            .unwrap_or(false)
     }
 
     fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
