@@ -24,6 +24,7 @@ pub fn menu_flyout<Msg>(
         menu,
         open,
         target,
+        anchor: None,
         highlighted: highlighted.flatten(),
         open_submenus: Vec::new(),
         on_command: None,

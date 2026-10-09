@@ -312,6 +312,75 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "menu-flyout", feature = "canvas"))]
+    fn anchored_menu_flyout_opens_at_the_pointer_inside_its_target() {
+        let presenter = WidgetId::new(741);
+        let surface = WidgetId::new(742);
+        let menu = crate::MenuSpec::new()
+            .item("Open / 打开", crate::Command::custom("file.open"))
+            .item("Rename / 重命名", crate::Command::custom("file.rename"));
+        let page = |anchor| {
+            menu_flyout(
+                presenter,
+                true,
+                surface,
+                menu.clone(),
+                canvas(crate::ZsCanvasScene::new())
+                    .id(surface)
+                    .width(Dp::new(400.0))
+                    .height(Dp::new(300.0)),
+            )
+            .menu_flyout_anchor(anchor)
+        };
+        let menu_bounds = |mut view: ViewNode<Msg>| {
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 900,
+                    height: 700,
+                },
+                Dpi::standard(),
+            ));
+            view.interaction_plan()
+                .hit_targets
+                .iter()
+                .find(|target| target.kind == ViewHitTargetKind::MenuFlyout)
+                .map(|target| target.bounds)
+                .expect("open menu should expose its surface")
+        };
+
+        let under_target = menu_bounds(page(None));
+        let at_pointer = menu_bounds(page(Some(crate::ZsMenuFlyoutAnchor::new(
+            Dp::new(220.0),
+            Dp::new(140.0),
+        ))));
+        // Without an anchor the whole 400x300 target is the placement source;
+        // with one the menu opens at the pointer inside the target.
+        assert_ne!((under_target.x, under_target.y), (at_pointer.x, at_pointer.y));
+        assert!(at_pointer.x >= 210 && at_pointer.x <= 230, "{at_pointer:?}");
+        assert!(at_pointer.y >= 130 && at_pointer.y <= 150, "{at_pointer:?}");
+
+        assert_eq!(
+            crate::ZsMenuFlyoutAnchor::new(Dp::new(-5.0), Dp::new(9999.0)).placement_rect(
+                Rect {
+                    x: 10,
+                    y: 20,
+                    width: 100,
+                    height: 50,
+                },
+                Dpi::standard(),
+            ),
+            Rect {
+                x: 10,
+                y: 70,
+                width: 0,
+                height: 0,
+            }
+        );
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);

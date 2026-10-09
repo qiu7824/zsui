@@ -2517,6 +2517,7 @@ impl<Msg> ViewNode<Msg> {
             menu,
             open,
             target,
+            anchor,
             highlighted,
             open_submenus,
             ..
@@ -2529,7 +2530,11 @@ impl<Msg> ViewNode<Msg> {
             let target_bounds = self
                 .children
                 .first()
-                .and_then(|page| page.widget_layout_bounds(*target));
+                .and_then(|page| page.widget_layout_bounds(*target))
+                .map(|bounds| match anchor {
+                    Some(anchor) => anchor.placement_rect(bounds, self.layout_dpi),
+                    None => bounds,
+                });
             if let (true, Some(widget), Some(viewport), Some(target_bounds)) =
                 (*open, self.id, menu_viewport, target_bounds)
             {
@@ -3151,6 +3156,7 @@ impl<Msg> ViewNode<Msg> {
             menu,
             open,
             target,
+            anchor,
             highlighted,
             open_submenus,
             ..
@@ -3163,7 +3169,11 @@ impl<Msg> ViewNode<Msg> {
             let target_bounds = self
                 .children
                 .first()
-                .and_then(|page| page.widget_layout_bounds(*target));
+                .and_then(|page| page.widget_layout_bounds(*target))
+                .map(|bounds| match anchor {
+                    Some(anchor) => anchor.placement_rect(bounds, self.layout_dpi),
+                    None => bounds,
+                });
             if let (true, Some(viewport), Some(target_bounds)) =
                 (*open, menu_viewport, target_bounds)
             {

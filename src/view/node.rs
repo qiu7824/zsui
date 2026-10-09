@@ -1063,6 +1063,9 @@ pub enum ViewNodeKind<Msg> {
         menu: crate::MenuSpec,
         open: bool,
         target: WidgetId,
+        /// Optional point inside the target, in the target's local DP space.
+        /// When present the menu opens at that point, like a context menu.
+        anchor: Option<crate::ZsMenuFlyoutAnchor>,
         highlighted: Option<crate::ZsMenuFlyoutPath>,
         open_submenus: Vec<crate::ZsMenuFlyoutPath>,
         on_command: Option<ViewMessageMapper<crate::Command, Msg>>,
@@ -2656,6 +2659,17 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Flyout { on_open_change, .. } = &mut self.kind {
             *on_open_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Opens the menu at `anchor` inside its target instead of below the
+    /// whole target, which turns a MenuFlyout into a pointer context menu.
+    /// Pass the local position of a secondary-button Canvas or list press.
+    #[cfg(feature = "menu-flyout")]
+    pub fn menu_flyout_anchor(mut self, anchor: Option<crate::ZsMenuFlyoutAnchor>) -> Self {
+        if let ViewNodeKind::MenuFlyout { anchor: current, .. } = &mut self.kind {
+            *current = anchor;
         }
         self
     }

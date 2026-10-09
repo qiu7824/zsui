@@ -574,9 +574,9 @@ pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 #[cfg(feature = "menu-flyout")]
 #[doc(hidden)]
 pub use menu_flyout::{
-    zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutMetrics,
-    ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan, ZsMenuFlyoutRowKind,
-    ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
+    zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutAnchor,
+    ZsMenuFlyoutMetrics, ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan,
+    ZsMenuFlyoutRowKind, ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
 };
 #[doc(hidden)]
 pub use mobile_host::{
