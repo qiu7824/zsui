@@ -712,6 +712,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "shortcuts")]
+        if let ViewEvent::Shortcut { accelerator } = event {
+            if let Some(message) = self.shortcut_message(*accelerator) {
+                cx.emit(message.clone());
+            }
+            return;
+        }
         #[cfg(feature = "workbench")]
         if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
             let Some(root) = self.id else {

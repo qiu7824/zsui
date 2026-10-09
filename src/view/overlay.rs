@@ -217,6 +217,8 @@ impl<Msg> ViewNode<Msg> {
                 feature = "time-picker"
             ))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
+            #[cfg(feature = "shortcuts")]
+            (_, ViewEvent::Shortcut { .. }) => false,
             (None, _) => false,
         }
     }

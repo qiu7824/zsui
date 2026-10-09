@@ -1297,6 +1297,8 @@ pub struct ViewNode<Msg> {
     workbench_layout: Option<ViewWorkbenchLayoutCache>,
     #[cfg(feature = "workbench")]
     workbench_transient_source: Option<ViewWorkbenchTransientSource>,
+    #[cfg(feature = "shortcuts")]
+    shortcuts: Vec<(crate::ZsAccelerator, Msg)>,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -1348,6 +1350,8 @@ impl<Msg> ViewNode<Msg> {
             workbench_layout: None,
             #[cfg(feature = "workbench")]
             workbench_transient_source,
+            #[cfg(feature = "shortcuts")]
+            shortcuts: Vec::new(),
             message: PhantomData,
         }
     }
@@ -2014,6 +2018,34 @@ impl<Msg: Clone> ViewNode<Msg> {
             *on_change = Some(ViewMessageMapper::from_shared(message));
         }
         self
+    }
+
+    /// Binds a window keyboard shortcut to a typed message.
+    ///
+    /// Shortcuts belong to the View, so they follow application state: a
+    /// rebuilt View without the binding disables it. The first binding in
+    /// preorder wins. While a text input has focus, plain typing keys and
+    /// standard editing chords (Primary+A/C/V/X/Y/Z, Primary+Enter and
+    /// Primary+arrow/Backspace/Delete/Home/End) stay with the input; function
+    /// keys and other Primary/Alt chords still reach the shortcut.
+    #[cfg(feature = "shortcuts")]
+    pub fn shortcut(mut self, accelerator: crate::ZsAccelerator, message: Msg) -> Self {
+        self.shortcuts.push((accelerator, message));
+        self
+    }
+
+    /// The message bound to `accelerator` anywhere in this subtree.
+    #[cfg(feature = "shortcuts")]
+    pub fn shortcut_message(&self, accelerator: crate::ZsAccelerator) -> Option<&Msg> {
+        self.shortcuts
+            .iter()
+            .find(|(bound, _)| *bound == accelerator)
+            .map(|(_, message)| message)
+            .or_else(|| {
+                self.children
+                    .iter()
+                    .find_map(|child| child.shortcut_message(accelerator))
+            })
     }
 
     /// Emits the current value when Enter is pressed in this text input.

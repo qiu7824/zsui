@@ -90,6 +90,8 @@ list = ["widgets-list", "scroll"]
 virtual-list = ["list", "scroll"]
 paged-list = ["virtual-list"]
 textbox = ["text-input-core"]
+# Application keyboard shortcuts declared on View nodes (ZsAccelerator -> Msg).
+shortcuts = ["widgets-base"]
 password-box = ["text-input-core", "dep:zeroize"]
 tooltip = ["widgets-base"]
 dialog = ["widgets-base"]
@@ -160,6 +162,7 @@ all-widgets = ["button", "badge", "split-view", "breadcrumb", "canvas", "flyout"
 full = [
     "accessibility",
     "all-widgets",
+    "shortcuts",
     "clipboard",
     "calculator",
     "dark-mode",

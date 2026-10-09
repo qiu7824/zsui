@@ -867,6 +867,75 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "shortcuts", feature = "textbox"))]
+    fn window_view_input_route_dispatches_shortcuts_and_leaves_editing_chords_to_text() {
+        let _guard = view_input_route_test_lock();
+        fn new_tab() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.new_tab"))
+        }
+        fn copy_file() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.copy_file"))
+        }
+        fn go_back() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.go_back"))
+        }
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.search_changed"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 92isize as HWND;
+        let search = crate::WidgetId::new(24);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                search,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 32,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::column([crate::textbox("").id(search).on_change(text_changed)])
+                .shortcut(crate::ZsAccelerator::primary_character('t'), new_tab())
+                .shortcut(crate::ZsAccelerator::primary_character('c'), copy_file())
+                .shortcut(
+                    crate::ZsAccelerator::new(crate::ZsAcceleratorKey::Left).with_alt(),
+                    go_back(),
+                ),
+        );
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+
+        // No focus: Ctrl+C and Ctrl+T are both application shortcuts.
+        let copy = dispatch_windows_win32_window_view_key_down_with_modifiers(hwnd, 0x43, false, true, false)
+            .expect("Ctrl+C should reach the route");
+        assert_eq!(copy.ui_command_ids, vec!["zsui.test.win32.copy_file"]);
+        assert_eq!(copy.unhandled_key_count, 0);
+
+        // Focused text input keeps Ctrl+C for itself but Ctrl+T still opens a tab.
+        dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 16 })
+            .expect("click should focus the search box");
+        let editing = dispatch_windows_win32_window_view_key_down_with_modifiers(hwnd, 0x43, false, true, false)
+            .expect("Ctrl+C should reach the route");
+        assert!(editing.ui_command_ids.is_empty());
+        let tab = dispatch_windows_win32_window_view_key_down_with_modifiers(hwnd, 0x54, false, true, false)
+            .expect("Ctrl+T should reach the route");
+        assert_eq!(tab.ui_command_ids, vec!["zsui.test.win32.new_tab"]);
+
+        // Alt chords: bound ones are handled, unbound ones go back to the system.
+        let back = dispatch_windows_win32_window_view_key_down_with_modifiers(hwnd, 0x25, false, false, true)
+            .expect("Alt+Left should reach the route");
+        assert_eq!(back.ui_command_ids, vec!["zsui.test.win32.go_back"]);
+        assert_eq!(back.unhandled_key_count, 0);
+        let unbound = dispatch_windows_win32_window_view_key_down_with_modifiers(hwnd, 0x58, false, false, true)
+            .expect("Alt+X should reach the route");
+        assert!(unbound.ui_command_ids.is_empty());
+        assert_eq!(unbound.unhandled_key_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
     #[cfg(feature = "textbox")]
     fn window_view_input_route_submits_on_enter_and_keeps_shift_enter_line_breaks() {
         let _guard = view_input_route_test_lock();

@@ -1,3 +1,8 @@
+thread_local! {
+    /// Pairs a handled WM_SYSKEYDOWN shortcut with its following WM_SYSCHAR.
+    static ZSUI_WIN32_SYSCHAR_HANDLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub unsafe extern "system" fn zsui_win32_default_window_proc(
     hwnd: HWND,
     msg: u32,
@@ -317,15 +322,22 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
+        WM_KEYDOWN | WM_SYSKEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
             hwnd,
             wparam as u32,
             (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
             (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
+            msg == WM_SYSKEYDOWN || (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
         ) {
-            Some(report) if report.unhandled_key_count == 0 => 0,
+            Some(report) if report.unhandled_key_count == 0 => {
+                // TranslateMessage still posts WM_SYSCHAR for a handled Alt
+                // chord; swallow it so DefWindowProc does not beep.
+                ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.set(msg == WM_SYSKEYDOWN));
+                0
+            }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         },
+        WM_SYSCHAR if ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.replace(false)) => 0,
         WM_MOUSEWHEEL => {
             let point = mouse_wheel_point_from_lparam(hwnd, lparam);
             let delta_y = mouse_wheel_scroll_delta_from_wparam(wparam);

@@ -17,6 +17,8 @@ enum WindowsSharedInputKind {
         key: crate::native::NativeViewKey,
         target: Option<crate::ViewHitTarget>,
     },
+    #[cfg(feature = "shortcuts")]
+    Shortcut,
     Scroll,
     Blur,
     Background,
@@ -40,6 +42,8 @@ impl WindowsSharedInputKind {
             Self::ImeCommit => "ime_commit",
             Self::ImeCancel => "ime_cancel",
             Self::Key { .. } => "key_down",
+            #[cfg(feature = "shortcuts")]
+            Self::Shortcut => "shortcut",
             Self::Scroll => "scroll",
             Self::Blur => "blur",
             Self::Background => "background",
@@ -482,6 +486,11 @@ impl WindowsWin32ViewInputRoute {
             WindowsSharedInputKind::PointerUp(_) => report.pointer_up_count = 1,
             WindowsSharedInputKind::Text { accepted, .. } => {
                 report.text_input_count = usize::from(shared.handled) * accepted;
+            }
+            #[cfg(feature = "shortcuts")]
+            WindowsSharedInputKind::Shortcut => {
+                report.key_down_count = 1;
+                report.unhandled_key_count = usize::from(!shared.handled);
             }
             WindowsSharedInputKind::Key { key, target } => {
                 report.key_down_count = 1;

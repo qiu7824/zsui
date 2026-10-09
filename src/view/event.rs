@@ -85,6 +85,12 @@ pub enum ViewEvent {
         widget: WidgetId,
         selection: ZsTextSelection,
     },
+    /// A keyboard shortcut bound with `ViewNode::shortcut`. It is not targeted
+    /// at a widget; the root resolves the first matching binding.
+    #[cfg(feature = "shortcuts")]
+    Shortcut {
+        accelerator: crate::ZsAccelerator,
+    },
     /// Enter in a text input that has an `on_submit` handler.
     #[cfg(feature = "textbox")]
     TextSubmitted {

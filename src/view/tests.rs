@@ -277,6 +277,41 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "shortcuts", feature = "textbox"))]
+    fn shortcuts_follow_view_state_and_resolve_the_first_binding_once() {
+        let new_tab = crate::ZsAccelerator::primary_character('t');
+        let back = crate::ZsAccelerator::new(crate::ZsAcceleratorKey::Left).with_alt();
+        let build = |bound: bool| -> ViewNode<Msg> {
+            let mut root = column([textbox("")
+                .id(WidgetId::new(740))
+                .shortcut(new_tab, Msg::NameChanged("inner".into()))]);
+            if bound {
+                root = root
+                    .shortcut(new_tab, Msg::NameChanged("root".into()))
+                    .shortcut(back, Msg::NameChanged("back".into()));
+            }
+            root
+        };
+        let mut view = build(true);
+        assert_eq!(view.shortcut_message(new_tab), Some(&Msg::NameChanged("root".into())));
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: new_tab });
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: back });
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameChanged("root".into()), Msg::NameChanged("back".into())]
+        );
+
+        // A rebuilt View without the root bindings falls back to the inner one
+        // and no longer knows Alt+Left.
+        let mut view = build(false);
+        assert_eq!(view.shortcut_message(back), None);
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: new_tab });
+        assert_eq!(events.into_messages(), vec![Msg::NameChanged("inner".into())]);
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);

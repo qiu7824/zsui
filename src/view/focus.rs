@@ -28,6 +28,8 @@ trait LiveViewDriver: Send {
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     #[cfg(feature = "textbox")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap>;
+    #[cfg(feature = "shortcuts")]
+    fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool;
     #[cfg(feature = "textbox")]
     fn widget_text_submits(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "password-box")]
@@ -203,6 +205,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "textbox")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.lock().widget_text_wrap(widget)
+    }
+
+    #[cfg(feature = "shortcuts")]
+    pub fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
+        self.lock().has_shortcut(accelerator)
     }
 
     #[cfg(feature = "textbox")]
@@ -713,6 +720,11 @@ where
     #[cfg(feature = "textbox")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.view.widget_text_wrap(widget)
+    }
+
+    #[cfg(feature = "shortcuts")]
+    fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
+        self.view.shortcut_message(accelerator).is_some()
     }
 
     #[cfg(feature = "textbox")]

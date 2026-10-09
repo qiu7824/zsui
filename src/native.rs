@@ -764,6 +764,40 @@ pub enum NativeViewKey {
     PageDown,
 }
 
+/// Keys a focused text input owns even when the application binds them.
+#[cfg(feature = "shortcuts")]
+fn native_shortcut_yields_to_text_input(accelerator: crate::ZsAccelerator) -> bool {
+    use crate::ZsAcceleratorKey as Key;
+    let key = accelerator.key();
+    if matches!(key, Key::Function(_) | Key::Escape) {
+        return false;
+    }
+    let primary_only = accelerator.uses_primary() && !accelerator.uses_alt();
+    if !accelerator.uses_primary() && !accelerator.uses_alt() && !accelerator.uses_super() {
+        // Plain and Shift+ keys type, delete or move the caret.
+        return true;
+    }
+    primary_only
+        && match key {
+            Key::Character(character) => {
+                matches!(
+                    character.to_ascii_uppercase(),
+                    'A' | 'C' | 'V' | 'X' | 'Y' | 'Z'
+                )
+            }
+            Key::Enter
+            | Key::Backspace
+            | Key::Delete
+            | Key::Left
+            | Key::Right
+            | Key::Up
+            | Key::Down
+            | Key::Home
+            | Key::End => true,
+            _ => false,
+        }
+}
+
 #[cfg(feature = "tabs")]
 fn native_tab_cycle_offset(
     platform: crate::ZsTabPlatformStyle,
@@ -4733,6 +4767,45 @@ impl NativeViewInputRuntime {
         {
             report
         }
+    }
+
+    /// Dispatches an application shortcut. Unbound accelerators, and editing
+    /// chords while a text input has focus, return an unhandled report so the
+    /// host can continue with ordinary key handling.
+    #[cfg(feature = "shortcuts")]
+    pub(crate) fn dispatch_shortcut(
+        &mut self,
+        accelerator: crate::ZsAccelerator,
+    ) -> NativeViewInputDispatchReport {
+        let report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let bound = self
+            .live_view
+            .as_ref()
+            .is_some_and(|runtime| runtime.has_shortcut(accelerator))
+            || self
+                .ui_command_view
+                .as_ref()
+                .is_some_and(|view| view.shortcut_message(accelerator).is_some());
+        if !bound {
+            return report;
+        }
+        let text_focus = self
+            .focused_widget
+            .and_then(|widget| {
+                self.current_interaction_plan()
+                    .and_then(|plan| plan.focus_target_for_widget(widget))
+            })
+            .is_some_and(|target| target.kind.accepts_text_input());
+        if text_focus && native_shortcut_yields_to_text_input(accelerator) {
+            return report;
+        }
+        let mut report = report;
+        report.handled = true;
+        self.dispatch_view_event(ViewEvent::Shortcut { accelerator }, report)
     }
 
     pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
