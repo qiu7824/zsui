@@ -1569,6 +1569,30 @@ fn measured_height_px<Msg>(
         .unwrap_or(0);
     let content_width = available_width.saturating_sub(padding.saturating_mul(2));
 
+    #[cfg(feature = "canvas")]
+    if let ViewNodeKind::Canvas {
+        builder: Some(builder),
+        ..
+    } = &node.kind
+    {
+        if node.style.height.is_none() {
+            let scale = dpi.scale_factor().max(f32::EPSILON);
+            let context = crate::ZsCanvasLayoutContext::new(
+                crate::ZsCanvasSize::new(
+                    Dp::new(content_width.max(0) as f32 / scale),
+                    Dp::new(0.0),
+                ),
+                dpi,
+                typography_scale,
+                Some(text_measurements),
+            );
+            if let Some(extent) = builder.build(&context).extent_height() {
+                let content = extent.to_px(dpi).round_i32().max(0);
+                return declared.max(content.saturating_add(padding.saturating_mul(2)));
+            }
+        }
+    }
+
     #[cfg(feature = "scroll")]
     if matches!(node.kind, ViewNodeKind::Scroll { .. }) {
         return declared;

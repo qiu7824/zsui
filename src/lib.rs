@@ -422,8 +422,9 @@ pub use calculator::{
 #[cfg(feature = "canvas")]
 #[doc(hidden)]
 pub use canvas::{
-    zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase,
-    ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
+    zs_canvas_native_draw_plan, ZsCanvasBuilder, ZsCanvasLayoutContext, ZsCanvasPoint,
+    ZsCanvasPointerEvent, ZsCanvasPointerPhase, ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
+    ZsCanvasSize,
 };
 #[doc(hidden)]
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
@@ -874,9 +875,6 @@ pub use view::badge;
 #[cfg(feature = "breadcrumb")]
 #[doc(hidden)]
 pub use view::breadcrumb_bar;
-#[cfg(feature = "canvas")]
-#[doc(hidden)]
-pub use view::canvas;
 #[cfg(feature = "checkbox")]
 #[doc(hidden)]
 pub use view::checkbox;
@@ -993,6 +991,9 @@ pub use view::{
 #[cfg(feature = "calculator")]
 #[doc(hidden)]
 pub use view::{calculator_view, ZsCalculatorViewIds};
+#[cfg(feature = "canvas")]
+#[doc(hidden)]
+pub use view::{canvas, canvas_with};
 #[doc(hidden)]
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,

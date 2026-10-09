@@ -223,6 +223,111 @@ mod tests {
 
     #[test]
     #[cfg(feature = "canvas")]
+    fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
+        let canvas_id = WidgetId::new(9);
+        // Right-aligned 30 DP badge: only correct when the builder sees the real width.
+        let mut view: ViewNode<Msg> = canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+            let size = cx.size();
+            crate::ZsCanvasScene::new().with(crate::ZsCanvasPrimitive::round_fill(
+                crate::ZsCanvasRect::new(
+                    Dp::new(size.width.0 - 30.0),
+                    Dp::new(0.0),
+                    Dp::new(30.0),
+                    size.height,
+                ),
+                crate::NativeDrawFill::role(crate::ColorRole::Accent),
+                Dp::new(4.0),
+            ))
+        })
+        .id(canvas_id)
+        .on_canvas_pointer(Msg::CanvasPointer);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 200,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { x: 180, y: 20, width: 30, height: 40 },
+                ..
+            }
+        )));
+
+        // A narrower final size moves the badge with it on the next layout.
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 120,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { x: 100, y: 20, width: 30, height: 40 },
+                ..
+            }
+        )));
+        let target = view
+            .interaction_plan()
+            .hit_target_for_widget(canvas_id)
+            .expect("size-aware canvas keeps its hit target");
+        assert_eq!(target.bounds, Rect { x: 10, y: 20, width: 120, height: 40 });
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn size_aware_canvas_reports_its_extent_as_natural_height() {
+        let view: ViewNode<Msg> = canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+            // Content height grows as the width shrinks, like wrapped chat bubbles.
+            let rows = (600.0 / cx.size().width.0.max(1.0)).ceil();
+            crate::ZsCanvasScene::new().with_extent_height(Dp::new(rows * 20.0))
+        });
+        let measurements = ViewTextMeasurements::default();
+        assert_eq!(natural_height_px(&view, 300, Dpi::standard(), 1.0, &measurements), 40);
+        assert_eq!(natural_height_px(&view, 150, Dpi::standard(), 1.0, &measurements), 80);
+        let fixed: ViewNode<Msg> = canvas_with(|_: &crate::ZsCanvasLayoutContext<'_>| {
+            crate::ZsCanvasScene::new().with_extent_height(Dp::new(500.0))
+        })
+        .height(Dp::new(32.0));
+        assert_eq!(natural_height_px(&fixed, 300, Dpi::standard(), 1.0, &measurements), 32);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn canvas_text_measurement_prefers_native_measurements_over_estimates() {
+        let text = "原生测量 / Native measurement";
+        let mut style = SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(text, style, 120, crate::Size { width: 118, height: 40 });
+        let size = crate::ZsCanvasSize::new(Dp::new(240.0), Dp::new(0.0));
+        let native = crate::ZsCanvasLayoutContext::new(size, Dpi::standard(), 1.0, Some(&measurements));
+        let measured = native.measure_text(text, style, Some(Dp::new(120.0)));
+        assert_eq!((measured.width.0, measured.height.0), (118.0, 40.0));
+
+        // Without a native entry the framework estimate still wraps by width.
+        let detached = crate::ZsCanvasLayoutContext::detached(size);
+        let wide = detached.measure_text(text, style, Some(Dp::new(400.0)));
+        let narrow = detached.measure_text(text, style, Some(Dp::new(60.0)));
+        assert!(wide.width.0 > 0.0 && wide.height.0 > 0.0);
+        assert!(narrow.height.0 > wide.height.0);
+        assert!(narrow.width.0 <= 60.0);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
     fn canvas_layout_paint_hit_target_and_typed_activation_share_one_node() {
         let canvas_id = WidgetId::new(8);
         let scene = crate::ZsCanvasScene::new()

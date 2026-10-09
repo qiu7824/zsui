@@ -563,6 +563,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
 
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
+        #[cfg(feature = "canvas")]
+        if let ViewNodeKind::Canvas {
+            scene,
+            builder: Some(builder),
+            ..
+        } = &mut self.kind
+        {
+            let scale = cx.dpi.scale_factor().max(f32::EPSILON);
+            let context = crate::ZsCanvasLayoutContext::new(
+                crate::ZsCanvasSize::new(
+                    Dp::new(cx.bounds.width.max(0) as f32 / scale),
+                    Dp::new(cx.bounds.height.max(0) as f32 / scale),
+                ),
+                cx.dpi,
+                cx.typography_scale(),
+                Some(cx.text_measurements.as_ref()),
+            );
+            *scene = builder.build(&context);
+        }
         let mut children = Vec::new();
         if let Some(id) = self.id {
             children.push(LayoutNode {

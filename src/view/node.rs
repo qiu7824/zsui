@@ -916,6 +916,9 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "canvas")]
     Canvas {
         scene: crate::ZsCanvasScene,
+        /// Present for size-aware canvases: layout rebuilds `scene` from the
+        /// final bounds before paint and hit testing.
+        builder: Option<crate::ZsCanvasBuilder>,
         on_click: Option<Msg>,
         on_pointer: Option<ViewMessageMapper<crate::ZsCanvasPointerEvent, Msg>>,
     },
