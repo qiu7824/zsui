@@ -271,6 +271,48 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "textbox", feature = "shortcuts"))]
+    fn window_view_input_route_moves_focus_on_app_request() {
+        #[derive(Clone)]
+        enum Msg {
+            EditAddress,
+            Address(String),
+        }
+
+        let address = crate::WidgetId::new(334);
+        let builder = crate::native_window("Win32 focus request")
+            .size(320, 120)
+            .stateful_view(
+                String::from("D:\\rust"),
+                move |path: &String| {
+                    crate::column([crate::textbox(path.clone())
+                        .id(address)
+                        .width(crate::Dp::new(240.0))
+                        .on_change(Msg::Address)])
+                    .shortcut(
+                        crate::ZsAccelerator::primary_character('l'),
+                        Msg::EditAddress,
+                    )
+                },
+                move |path, message, cx| match message {
+                    Msg::EditAddress => {
+                        cx.focus(address);
+                        cx.text_edit_command_for(address, crate::ZsTextEditCommand::SelectAll);
+                    }
+                    Msg::Address(next) => *path = next,
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("address box should own a live runtime")
+            .clone();
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let report = route.dispatch_key_down_with_modifiers(0x4C, false, true);
+        assert_eq!(report.focused_widget, Some(address.0));
+        assert_eq!(report.text_selection, Some((0, 7)));
+    }
+
+    #[test]
     fn window_create_params_carry_the_custom_title_bar_flag() {
         let plain = WindowsWindowCreateParams::new(WindowsWindowRole::Main, None);
         assert!(!plain.custom_title_bar);

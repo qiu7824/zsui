@@ -8353,6 +8353,7 @@ impl NativeViewInputRuntime {
         report.view_event_count += 1;
         #[cfg(feature = "textbox")]
         let mut text_edit_commands = Vec::new();
+        let mut focus_request = None;
         let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_event(&event);
             report.message_count += update.message_count;
@@ -8362,6 +8363,7 @@ impl NativeViewInputRuntime {
             report
                 .window_commands
                 .extend(update.window_commands.iter().copied());
+            focus_request = update.focus_request;
             if update.redraw {
                 report.redraw_plan = Some(live_view.draw_plan());
                 report.hit_target_count = live_view.interaction_plan().hit_target_count();
@@ -8449,6 +8451,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        if let Some(target) = focus_request.and_then(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget))
+        }) {
+            self.focus_target(target, &mut report);
+        }
         #[cfg(feature = "textbox")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
@@ -8596,6 +8604,7 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "textbox")]
         let mut text_edit_commands = Vec::new();
 
+        let mut focus_request = None;
         let update = self
             .live_view
             .as_ref()
@@ -8606,6 +8615,7 @@ impl NativeViewInputRuntime {
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
             report.handled = true;
             report.message_count = update.message_count;
+            focus_request = update.focus_request;
             report.app_command_count = update.commands.len();
             report.ui_command_count = update.ui_commands.len();
             report.quit_requested =
@@ -8683,6 +8693,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        if let Some(target) = focus_request.and_then(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget))
+        }) {
+            self.focus_target(target, &mut report);
+        }
         #[cfg(feature = "textbox")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {

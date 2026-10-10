@@ -1191,6 +1191,7 @@ pub struct AppCx {
     #[cfg(feature = "textbox")]
     text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
+    focus_request: Option<WidgetId>,
     #[cfg(feature = "window-chrome")]
     window_commands: Vec<crate::ZsWindowCommand>,
 }
@@ -1222,6 +1223,17 @@ impl AppCx {
 
     pub fn quit(&mut self) {
         self.quit_requested = true;
+    }
+
+    /// Moves keyboard focus to `widget` once the rebuilt View is laid out,
+    /// for example to put the caret in an address box after Ctrl+L. The last
+    /// request of an update wins; a widget that is not focusable is ignored.
+    pub fn focus(&mut self, widget: WidgetId) {
+        self.focus_request = Some(widget);
+    }
+
+    pub const fn focus_request(&self) -> Option<WidgetId> {
+        self.focus_request
     }
 
     /// Asks the host to minimize, maximize/restore or close this window,

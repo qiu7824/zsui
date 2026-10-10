@@ -7,6 +7,7 @@ pub struct LiveViewUpdate {
     #[cfg(feature = "textbox")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
+    pub focus_request: Option<WidgetId>,
     #[cfg(feature = "window-chrome")]
     pub window_commands: Vec<crate::ZsWindowCommand>,
     pub revision: u64,
@@ -553,6 +554,7 @@ where
             #[cfg(feature = "textbox")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
+            focus_request: app_cx.focus_request(),
             #[cfg(feature = "window-chrome")]
             window_commands: app_cx.window_commands().to_vec(),
             revision: self.revision,
