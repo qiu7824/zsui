@@ -4,9 +4,9 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan,
-    NativeIconColorMode, Rect, SemanticTextStyle, WidgetId, ZsIcon, ZsPointerButton,
-    ZsPointerModifiers,
+    Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
+    NativeDrawPlan, NativeIconColorMode, Rect, SemanticTextStyle, WidgetId, ZsIcon,
+    ZsPointerButton, ZsPointerModifiers,
 };
 
 /// Lifecycle phase for a Canvas pointer capture.
@@ -133,6 +133,22 @@ pub enum ZsCanvasPrimitive {
         rect: ZsCanvasRect,
         color: ColorRole,
     },
+    /// Text in an explicit brand color, for example on a dark navigation
+    /// rail or an avatar. High-contrast mode falls back to `style.color`.
+    ColoredText {
+        text: String,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Color,
+    },
+    /// A theme-aware icon tinted with an explicit brand color. High-contrast
+    /// mode falls back to `fallback`.
+    ColoredIcon {
+        icon: ZsIcon,
+        rect: ZsCanvasRect,
+        color: Color,
+        fallback: ColorRole,
+    },
 }
 
 impl ZsCanvasPrimitive {
@@ -154,6 +170,36 @@ impl ZsCanvasPrimitive {
 
     pub const fn icon(icon: ZsIcon, rect: ZsCanvasRect, color: ColorRole) -> Self {
         Self::Icon { icon, rect, color }
+    }
+
+    /// Text drawn in `color`; `style.color` remains the high-contrast fallback.
+    pub fn colored_text(
+        text: impl Into<String>,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Color,
+    ) -> Self {
+        Self::ColoredText {
+            text: text.into(),
+            rect,
+            style,
+            color,
+        }
+    }
+
+    /// An icon tinted with `color`; `fallback` is used in high contrast.
+    pub const fn colored_icon(
+        icon: ZsIcon,
+        rect: ZsCanvasRect,
+        color: Color,
+        fallback: ColorRole,
+    ) -> Self {
+        Self::ColoredIcon {
+            icon,
+            rect,
+            color,
+            fallback,
+        }
     }
 }
 
@@ -473,6 +519,33 @@ fn canvas_primitive_to_native(
                 NativeIconColorMode::ThemeAware,
             )
             .with_color(*color),
+        ),
+        ZsCanvasPrimitive::ColoredText {
+            text,
+            rect,
+            style,
+            color,
+        } => NativeDrawCommand::Text(
+            crate::NativeDrawTextCommand::new(
+                text,
+                canvas_rect_to_native(bounds, *rect, dpi),
+                *style,
+            )
+            .with_color(*color),
+        ),
+        ZsCanvasPrimitive::ColoredIcon {
+            icon,
+            rect,
+            color,
+            fallback,
+        } => NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                *icon,
+                canvas_rect_to_native(bounds, *rect, dpi),
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(*fallback)
+            .with_custom_color(*color),
         ),
     }
 }

@@ -334,12 +334,17 @@ impl<'a> LinuxLiteDrawSink<'a> {
     }
 
     fn draw_text_command(&mut self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.palette.high_contrast) {
+            style.color = color;
+        }
         self.draw_text_style(&command.text, command.bounds, &style);
     }
 
     fn draw_icon(&mut self, command: &NativeDrawIconCommand) {
-        let color = self.palette.resolve(command.color);
+        let color = command
+            .color_override(self.palette.high_contrast)
+            .unwrap_or_else(|| self.palette.resolve(command.color));
         let scale = self.scale_factor;
         let origin_y = self.origin_y;
         let mask = self.mask.as_ref();

@@ -989,6 +989,7 @@ mod tests {
             ViewHitTargetKind::Button,
         );
         let plan = NativeDrawPlan::new([NativeDrawCommand::Text(NativeDrawTextCommand {
+            color: None,
             text: "保存 / Save".to_string(),
             bounds: target.bounds,
             style: SemanticTextStyle::body(),

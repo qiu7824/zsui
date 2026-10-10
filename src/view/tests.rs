@@ -443,6 +443,76 @@ mod tests {
 
     #[test]
     #[cfg(feature = "canvas")]
+    fn canvas_brand_colors_reach_the_draw_plan_and_yield_to_high_contrast() {
+        let brand = crate::Color::rgb(7, 193, 96);
+        let rail_text = crate::Color::rgb(155, 155, 155);
+        let cell =
+            crate::ZsCanvasRect::new(Dp::new(4.0), Dp::new(4.0), Dp::new(40.0), Dp::new(20.0));
+        let scene = crate::ZsCanvasScene::new()
+            .with(crate::ZsCanvasPrimitive::colored_text(
+                "文件",
+                cell,
+                SemanticTextStyle::body(),
+                rail_text,
+            ))
+            .with(crate::ZsCanvasPrimitive::colored_icon(
+                crate::ZsIcon::Folder,
+                cell,
+                brand,
+                crate::ColorRole::SecondaryText,
+            ))
+            .with(crate::ZsCanvasPrimitive::text(
+                "plain",
+                cell,
+                SemanticTextStyle::body(),
+            ));
+        let plan = crate::zs_canvas_native_draw_plan(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 100,
+                height: 60,
+            },
+            &scene,
+            Dpi::standard(),
+        );
+        let texts = plan
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::Text(text) => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(texts.len(), 2);
+        assert_eq!(texts[0].text, "文件");
+        assert_eq!(texts[0].color_override(false), Some(rail_text));
+        assert_eq!(texts[0].color_override(true), None, "high contrast keeps the role");
+        assert_eq!(texts[1].color_override(false), None);
+        let icon = plan
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                NativeDrawCommand::Icon(icon) => Some(icon),
+                _ => None,
+            })
+            .expect("colored icon should become an icon command");
+        assert_eq!(icon.color, crate::ColorRole::SecondaryText);
+        assert_eq!(icon.color_override(false), Some(brand));
+        assert_eq!(icon.color_override(true), None);
+        assert_eq!(
+            icon.bounds,
+            Rect {
+                x: 14,
+                y: 24,
+                width: 40,
+                height: 20,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);
         // Right-aligned 30 DP badge: only correct when the builder sees the real width.

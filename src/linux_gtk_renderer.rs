@@ -1504,7 +1504,10 @@ impl<'a> LinuxGtkDrawSink<'a> {
     }
 
     fn draw_text(&self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.palette.high_contrast) {
+            style.color = color;
+        }
         let layout = self
             .text_layout
             .pango_layout(&command.text, &style, Some(command.bounds));

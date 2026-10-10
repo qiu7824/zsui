@@ -1605,7 +1605,10 @@ impl WindowsGdiDrawSink {
     }
 
     fn draw_text_command(&mut self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.high_contrast) {
+            style.color = color;
+        }
         let run = TextRun {
             text: command.text.clone(),
             bounds: command.bounds,
@@ -1651,7 +1654,9 @@ impl WindowsGdiDrawSink {
             line_height: size / self.renderer.dpi_scale.max(1.0),
             semantic_role: Some(crate::TextRole::Icon),
             weight: TextWeight::Regular,
-            color: self.palette.resolve(command.color),
+            color: command
+                .color_override(self.high_contrast)
+                .unwrap_or_else(|| self.palette.resolve(command.color)),
             horizontal_align: HorizontalAlign::Center,
             vertical_align: VerticalAlign::Center,
             wrap: TextWrap::NoWrap,
