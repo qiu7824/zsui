@@ -452,7 +452,7 @@ mod tests {
             .with(crate::ZsCanvasPrimitive::colored_text(
                 "文件",
                 cell,
-                SemanticTextStyle::body(),
+                crate::SemanticTextStyle::body(),
                 rail_text,
             ))
             .with(crate::ZsCanvasPrimitive::colored_icon(
@@ -464,7 +464,7 @@ mod tests {
             .with(crate::ZsCanvasPrimitive::text(
                 "plain",
                 cell,
-                SemanticTextStyle::body(),
+                crate::SemanticTextStyle::body(),
             ));
         let plan = crate::zs_canvas_native_draw_plan(
             Rect {
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "canvas")]
+    #[cfg(all(feature = "canvas", feature = "scroll"))]
     fn size_aware_canvas_reports_its_extent_as_natural_height() {
         let view: ViewNode<Msg> = canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
             // Content height grows as the width shrinks, like wrapped chat bubbles.
@@ -598,7 +598,7 @@ mod tests {
     #[cfg(feature = "canvas")]
     fn canvas_text_measurement_prefers_native_measurements_over_estimates() {
         let text = "原生测量 / Native measurement";
-        let mut style = SemanticTextStyle::body();
+        let mut style = crate::SemanticTextStyle::body();
         style.wrap = crate::TextWrap::Word;
         let mut measurements = ViewTextMeasurements::default();
         measurements.insert(text, style, 120, crate::Size { width: 118, height: 40 });
