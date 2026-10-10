@@ -1695,6 +1695,9 @@ pub(crate) struct NativeViewInputRuntime {
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
     #[cfg(feature = "canvas")]
     canvas_hover: Option<(crate::WidgetId, Option<u64>)>,
+    /// Whether focus rings are shown: set by keyboard traversal, cleared by
+    /// pointer presses (the platform focus-visible rule).
+    focus_visible: bool,
     #[cfg(any(
         feature = "auto-suggest",
         feature = "button",
@@ -2062,6 +2065,7 @@ impl NativeViewInputRuntime {
             color_picker_drag: None,
             #[cfg(feature = "canvas")]
             canvas_hover: None,
+            focus_visible: true,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "button",
@@ -3357,6 +3361,7 @@ impl NativeViewInputRuntime {
         button: ZsPointerButton,
         modifiers: ZsPointerModifiers,
     ) -> NativeViewInputDispatchReport {
+        self.focus_visible = false;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             ..NativeViewInputDispatchReport::default()
@@ -4901,6 +4906,9 @@ impl NativeViewInputRuntime {
     ) -> NativeViewInputDispatchReport {
         #[cfg(not(any(feature = "radio", feature = "tabs", feature = "textbox")))]
         let _ = control;
+        if key == NativeViewKey::Tab {
+            self.focus_visible = true;
+        }
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
             focused_widget: self.focused_widget.map(|widget| widget.0),
@@ -7039,7 +7047,13 @@ impl NativeViewInputRuntime {
         }
         let mut plan = self.compose_ime_preedit(plan);
         if let Some(interaction_plan) = self.current_interaction_plan() {
-            decorate_native_focus_ring(&mut plan, &interaction_plan, self.focused_widget, self.dpi);
+            decorate_native_focus_ring(
+                &mut plan,
+                &interaction_plan,
+                self.focused_widget,
+                self.dpi,
+                self.focus_visible,
+            );
         }
         #[cfg(feature = "tooltip")]
         self.compose_tooltip(&mut plan);

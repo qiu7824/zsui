@@ -1427,11 +1427,15 @@ fn decorate_native_text_editor_viewport_with_backend(
     plan.commands.splice(text_index..text_index, commands);
 }
 
+/// Draws the keyboard focus visual. `focus_visible` follows the platform
+/// focus-visible rule: rings appear after keyboard navigation, not after a
+/// pointer press, while text inputs keep their focused indicator either way.
 pub(crate) fn decorate_native_focus_ring(
     plan: &mut NativeDrawPlan,
     interaction_plan: &ViewInteractionPlan,
     focused_widget: Option<WidgetId>,
     dpi: Dpi,
+    focus_visible: bool,
 ) -> Option<Rect> {
     #[allow(unused_mut)]
     let mut target = interaction_plan.focus_target_for_widget(focused_widget?)?;
@@ -1518,6 +1522,9 @@ pub(crate) fn decorate_native_focus_ring(
     #[cfg(feature = "number-box")]
     {
         uses_text_input_indicator |= target.kind == ViewHitTargetKind::NumberBox;
+    }
+    if !focus_visible && !uses_text_input_indicator {
+        return None;
     }
     if uses_text_input_indicator {
         if let Some(height) = focus_profile.text_input_indicator_height {
@@ -2473,6 +2480,66 @@ mod tests {
     }
 
     #[test]
+    fn pointer_focus_hides_rings_but_keeps_text_input_indicators() {
+        let button = WidgetId::new(93);
+        let edit = WidgetId::new(94);
+        let interaction_plan = ViewInteractionPlan::new([
+            ViewHitTarget::with_kind(
+                button,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 32,
+                },
+                ViewHitTargetKind::Button,
+            ),
+            ViewHitTarget::with_kind(
+                edit,
+                Rect {
+                    x: 0,
+                    y: 40,
+                    width: 100,
+                    height: 32,
+                },
+                ViewHitTargetKind::Textbox,
+            ),
+        ]);
+
+        let mut plan = NativeDrawPlan::default();
+        let pointer = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(button),
+            Dpi::standard(),
+            false,
+        );
+        assert!(pointer.is_none());
+        assert!(plan.commands.is_empty());
+        let keyboard = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(button),
+            Dpi::standard(),
+            true,
+        );
+        assert!(keyboard.is_some());
+
+        let mut plan = NativeDrawPlan::default();
+        let _ = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(edit),
+            Dpi::standard(),
+            false,
+        );
+        assert!(
+            !plan.commands.is_empty(),
+            "text inputs keep their focused indicator after a click"
+        );
+    }
+
+    #[test]
     fn focus_ring_uses_semantic_accent_and_insets_target_bounds() {
         let widget = WidgetId::new(91);
         let interaction_plan = ViewInteractionPlan::new([ViewHitTarget::with_kind(
@@ -2487,9 +2554,14 @@ mod tests {
         )]);
         let mut plan = NativeDrawPlan::default();
 
-        let ring =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused target should produce a ring");
+        let ring = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            Dpi::standard(),
+            true,
+        )
+        .expect("focused target should produce a ring");
 
         assert_eq!(ring.x, 11);
         assert_eq!(ring.y, 21);
@@ -2533,9 +2605,14 @@ mod tests {
         ]);
         let mut plan = NativeDrawPlan::default();
 
-        let ring =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused grid view should outline its selected tile");
+        let ring = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            Dpi::standard(),
+            true,
+        )
+        .expect("focused grid view should outline its selected tile");
 
         assert_eq!(
             ring,
@@ -2578,6 +2655,7 @@ mod tests {
                 &interaction_plan,
                 Some(widget),
                 Dpi::standard(),
+                true,
             ),
             None
         );
@@ -2640,7 +2718,13 @@ mod tests {
         let mut plan = NativeDrawPlan::default();
 
         assert_eq!(
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard(),),
+            decorate_native_focus_ring(
+                &mut plan,
+                &interaction_plan,
+                Some(widget),
+                Dpi::standard(),
+                true,
+            ),
             None
         );
         assert!(plan.commands.is_empty());
@@ -2663,9 +2747,14 @@ mod tests {
         )]);
         let mut plan = NativeDrawPlan::default();
 
-        let indicator =
-            decorate_native_focus_ring(&mut plan, &interaction_plan, Some(widget), Dpi::standard())
-                .expect("focused auto-suggest should produce an indicator");
+        let indicator = decorate_native_focus_ring(
+            &mut plan,
+            &interaction_plan,
+            Some(widget),
+            Dpi::standard(),
+            true,
+        )
+        .expect("focused auto-suggest should produce an indicator");
 
         assert_eq!(
             indicator,
