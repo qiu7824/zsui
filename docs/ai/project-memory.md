@@ -297,6 +297,28 @@ history remain authoritative for implementation status.
   excluding literal platform palettes and native handles. The typed
   `canvas_pointer_event` payload omits the private numeric WidgetId because the
   enclosing document action already carries the stable author node ID.
+- Rust-authored Canvas content may carry branded visuals: `TextRun` and
+  `ColoredIcon` primitives (and `glyph` for icon-font glyphs) add an explicit
+  color and DIP size on top of the still-required semantic role. Renderers use
+  the role whenever the system high-contrast appearance is active, and
+  UiDocument canvases stay palette-free. Built-in controls keep using theme
+  tokens only.
+- Canvas scenes declare hover regions. The runtime dispatches `CanvasHover`
+  only when the hovered region changes, and pointer events carry the region
+  under the pointer, so custom-drawn tabs, rows and buttons need neither a
+  rebuild per pointer move nor a second hit test in `update`.
+- `size-aware` canvases (`canvas_with`) rebuild their scene from final layout
+  bounds and measure text through the shared native measurement cache; their
+  declared extent is their natural height inside a Scroll.
+- Custom title bars are the opt-in `window-chrome` feature: the window keeps
+  native resize, snap and taskbar behavior, the View marks caption areas with
+  `window_drag_region()` (inside a drag-region Canvas only its hover regions are
+  interactive) and caption buttons raise `ZsWindowCommand`s. Hosts without
+  support keep their native title bar.
+- Focus follows the platform focus-visible rule: pointer presses hide focus
+  rings, Tab traversal shows them, text inputs keep their focused indicator.
+  Updates can move focus with `AppCx::focus`, applied after layout and before
+  queued text edit commands.
 - The public `crate::view` module is physically organized under `src/view/`:
   node, layout, event, focus, paint, overlay and widget-family source units
   share the existing module namespace so public paths and privacy stay stable.
