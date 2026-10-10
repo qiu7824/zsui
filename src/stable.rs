@@ -408,6 +408,13 @@ impl WindowBuilder {
         self
     }
 
+    /// Lets the View draw the title bar while the platform keeps the frame.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.inner = self.inner.custom_title_bar(custom_title_bar);
+        self
+    }
+
     /// Keeps the native window above ordinary windows when supported.
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.inner = self.inner.always_on_top(always_on_top);

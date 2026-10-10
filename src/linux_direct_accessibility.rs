@@ -989,6 +989,8 @@ mod tests {
             ViewHitTargetKind::Button,
         );
         let plan = NativeDrawPlan::new([NativeDrawCommand::Text(NativeDrawTextCommand {
+            color: None,
+            size: None,
             text: "保存 / Save".to_string(),
             bounds: target.bounds,
             style: SemanticTextStyle::body(),
@@ -1103,6 +1105,8 @@ mod tests {
             ],
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         };
         #[cfg(feature = "tabs")]
         let tabs = Vec::new();
@@ -1302,6 +1306,8 @@ mod tests {
             ],
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         };
         #[cfg(feature = "tabs")]
         let tabs = Vec::new();

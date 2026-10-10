@@ -7,6 +7,9 @@ pub struct LiveViewUpdate {
     #[cfg(feature = "text-input-core")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
+    pub focus_request: Option<WidgetId>,
+    #[cfg(feature = "window-chrome")]
+    pub window_commands: Vec<crate::ZsWindowCommand>,
     pub revision: u64,
 }
 
@@ -33,6 +36,14 @@ trait LiveViewDriver: Send {
     ) -> Option<ViewEditableTextDescriptor>;
     #[cfg(feature = "text-input-core")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap>;
+    #[cfg(feature = "shortcuts")]
+    fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool;
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool;
+    #[cfg(feature = "canvas")]
+    fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>>;
+    #[cfg(feature = "textbox")]
+    fn widget_text_submits(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "password-box")]
     fn widget_password_value(&self, widget: WidgetId) -> Option<crate::ZsPassword>;
     fn widget_checked_value(&self, widget: WidgetId) -> Option<bool>;
@@ -214,6 +225,26 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "text-input-core")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.lock().widget_text_wrap(widget)
+    }
+
+    #[cfg(feature = "shortcuts")]
+    pub fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
+        self.lock().has_shortcut(accelerator)
+    }
+
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        self.lock().window_drag_region_at(point)
+    }
+
+    #[cfg(feature = "canvas")]
+    pub fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>> {
+        self.lock().canvas_hover_region(widget, point)
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn widget_text_submits(&self, widget: WidgetId) -> Option<bool> {
+        self.lock().widget_text_submits(widget)
     }
 
     #[cfg(feature = "password-box")]
@@ -559,6 +590,9 @@ where
             #[cfg(feature = "text-input-core")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
+            focus_request: app_cx.focus_request(),
+            #[cfg(feature = "window-chrome")]
+            window_commands: app_cx.window_commands().to_vec(),
             revision: self.revision,
         }
     }
@@ -761,6 +795,30 @@ where
     #[cfg(feature = "text-input-core")]
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
         self.view.widget_text_wrap(widget)
+    }
+
+    #[cfg(feature = "shortcuts")]
+    fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
+        self.view.shortcut_message(accelerator).is_some()
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        !self.suspended && self.view.window_drag_region_at(point)
+    }
+
+    #[cfg(feature = "canvas")]
+    fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>> {
+        if self.suspended {
+            None
+        } else {
+            self.view.canvas_hover_region(widget, point)
+        }
+    }
+
+    #[cfg(feature = "textbox")]
+    fn widget_text_submits(&self, widget: WidgetId) -> Option<bool> {
+        self.view.widget_text_submits(widget)
     }
 
     #[cfg(feature = "password-box")]

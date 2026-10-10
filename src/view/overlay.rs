@@ -124,9 +124,12 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
             #[cfg(feature = "canvas")]
             (Some(id), ViewEvent::CanvasPointer { event }) => id == event.widget,
+            #[cfg(feature = "canvas")]
+            (Some(id), ViewEvent::CanvasHover { widget, .. }) => id == *widget,
             #[cfg(feature = "textbox")]
             (Some(id), ViewEvent::TextEdited { widget, .. })
-            | (Some(id), ViewEvent::TextSelectionChanged { widget, .. }) => id == *widget,
+            | (Some(id), ViewEvent::TextSelectionChanged { widget, .. })
+            | (Some(id), ViewEvent::TextSubmitted { widget, .. }) => id == *widget,
             #[cfg(feature = "password-box")]
             (Some(id), ViewEvent::PasswordChanged { widget, .. }) => id == *widget,
             #[cfg(feature = "slider")]
@@ -218,6 +221,8 @@ impl<Msg> ViewNode<Msg> {
                 feature = "time-picker"
             ))]
             (Some(_), ViewEvent::DismissPopupOverlays { .. }) => false,
+            #[cfg(feature = "shortcuts")]
+            (_, ViewEvent::Shortcut { .. }) => false,
             (None, _) => false,
         }
     }
@@ -273,13 +278,131 @@ impl<Msg> ViewNode<Msg> {
         let mut tooltip_targets = Vec::new();
         #[cfg(feature = "tooltip")]
         self.collect_tooltip_targets(&mut tooltip_targets, None);
+        #[cfg(feature = "window-chrome")]
+        let mut window_drag_regions = Vec::new();
+        #[cfg(feature = "window-chrome")]
+        self.collect_window_drag_regions(&mut window_drag_regions);
         ViewInteractionPlan {
             hit_targets,
             #[cfg(feature = "accessibility")]
             accessibility_nodes,
             #[cfg(feature = "tooltip")]
             tooltip_targets,
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions,
         }
+    }
+
+    /// Whether `point` is uncovered caption area: inside a drag region and
+    /// outside every interactive target, including open overlays.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        // Most pointer moves are outside the title bar; only build the full
+        // interaction plan once the cheap region walk matches.
+        if !self.window_drag_region_contains(point) {
+            return false;
+        }
+        let target = self.interaction_plan().hit_target_at(point);
+        #[cfg(feature = "canvas")]
+        if let Some(target) = target.filter(|target| target.kind == ViewHitTargetKind::Canvas) {
+            return self.drag_canvas_caption_at(target.widget, point);
+        }
+        target.is_none()
+    }
+
+    /// A Canvas that is itself a window drag region draws its own caption:
+    /// its hover regions are the interactive parts and the rest drags.
+    #[cfg(all(feature = "window-chrome", feature = "canvas"))]
+    fn drag_canvas_caption_at(&self, widget: WidgetId, point: crate::Point) -> bool {
+        if self.id == Some(widget) {
+            return match (&self.kind, self.bounds) {
+                (ViewNodeKind::Canvas { scene, .. }, Some(bounds)) if self.window_drag_region => {
+                    scene
+                        .hover_region_at(self.canvas_local_point(bounds, point))
+                        .is_none()
+                }
+                _ => false,
+            };
+        }
+        self.children
+            .iter()
+            .any(|child| child.drag_canvas_caption_at(widget, point))
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_contains(&self, point: crate::Point) -> bool {
+        if self.window_drag_region && self.bounds.is_some_and(|bounds| bounds.contains(point)) {
+            return true;
+        }
+        #[cfg(feature = "tabs")]
+        if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+            return selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected))
+                .and_then(|index| self.children.get(index))
+                .is_some_and(|child| child.window_drag_region_contains(point));
+        }
+        self.children
+            .iter()
+            .any(|child| child.window_drag_region_contains(point))
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn collect_window_drag_regions(&self, regions: &mut Vec<crate::Rect>) {
+        if self.window_drag_region {
+            if let Some(bounds) = self.bounds {
+                regions.push(bounds);
+            }
+        }
+        #[cfg(feature = "tabs")]
+        if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+            if let Some(child) = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected))
+                .and_then(|index| self.children.get(index))
+            {
+                child.collect_window_drag_regions(regions);
+            }
+            return;
+        }
+        for child in &self.children {
+            child.collect_window_drag_regions(regions);
+        }
+    }
+
+    /// The hover region under `point` for the hover-aware Canvas `widget`:
+    /// `None` when `widget` is not a Canvas with `on_canvas_hover`, and
+    /// `Some(None)` when the pointer is outside every declared region.
+    #[cfg(feature = "canvas")]
+    pub fn canvas_hover_region(
+        &self,
+        widget: WidgetId,
+        point: crate::Point,
+    ) -> Option<Option<u64>> {
+        if self.id == Some(widget) {
+            let (
+                ViewNodeKind::Canvas {
+                    scene,
+                    on_hover: Some(_),
+                    ..
+                },
+                Some(bounds),
+            ) = (&self.kind, self.bounds)
+            else {
+                return None;
+            };
+            return Some(scene.hover_region_at(self.canvas_local_point(bounds, point)));
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.canvas_hover_region(widget, point))
+    }
+
+    #[cfg(feature = "canvas")]
+    fn canvas_local_point(&self, bounds: Rect, point: crate::Point) -> crate::ZsCanvasPoint {
+        let scale = self.layout_dpi.scale_factor().max(f32::EPSILON);
+        crate::ZsCanvasPoint::new(
+            crate::Dp::new(point.x.saturating_sub(bounds.x) as f32 / scale),
+            crate::Dp::new(point.y.saturating_sub(bounds.y) as f32 / scale),
+        )
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {
@@ -369,6 +492,19 @@ impl<Msg> ViewNode<Msg> {
         self.children
             .iter()
             .find_map(|child| child.widget_text_wrap(widget))
+    }
+
+    /// Whether the text input `widget` submits on Enter (has `on_submit`).
+    #[cfg(feature = "textbox")]
+    pub fn widget_text_submits(&self, widget: WidgetId) -> Option<bool> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::Textbox { on_submit, .. } = &self.kind {
+                return Some(on_submit.is_some());
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_text_submits(widget))
     }
 
     #[cfg(feature = "password-box")]
@@ -2575,6 +2711,7 @@ impl<Msg> ViewNode<Msg> {
             target,
             #[cfg(feature = "context-menu")]
             context_anchor,
+            anchor,
             highlighted,
             open_submenus,
             ..
@@ -2587,7 +2724,13 @@ impl<Msg> ViewNode<Msg> {
             let target_bounds = self
                 .children
                 .first()
-                .and_then(|page| page.widget_layout_bounds(*target));
+                .and_then(|page| page.widget_layout_bounds(*target))
+                .map(|bounds| match anchor {
+                    Some(anchor) => anchor.placement_rect(bounds, self.layout_dpi),
+                    None => bounds,
+                });
+            // A secondary-click context menu opens at the retained pointer
+            // point; an application anchor places menus it opens itself.
             #[cfg(feature = "context-menu")]
             let target_bounds = context_anchor
                 .map(|anchor| Rect {
@@ -3220,6 +3363,7 @@ impl<Msg> ViewNode<Msg> {
             target,
             #[cfg(feature = "context-menu")]
             context_anchor,
+            anchor,
             highlighted,
             open_submenus,
             ..
@@ -3232,7 +3376,13 @@ impl<Msg> ViewNode<Msg> {
             let target_bounds = self
                 .children
                 .first()
-                .and_then(|page| page.widget_layout_bounds(*target));
+                .and_then(|page| page.widget_layout_bounds(*target))
+                .map(|bounds| match anchor {
+                    Some(anchor) => anchor.placement_rect(bounds, self.layout_dpi),
+                    None => bounds,
+                });
+            // A secondary-click context menu opens at the retained pointer
+            // point; an application anchor places menus it opens itself.
             #[cfg(feature = "context-menu")]
             let target_bounds = context_anchor
                 .map(|anchor| Rect {

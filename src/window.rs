@@ -14,6 +14,10 @@ pub struct WindowSpec {
     pub visible: bool,
     pub resizable: bool,
     pub decorations: bool,
+    /// The application draws the title bar inside the client area; the
+    /// platform keeps resize borders, snapping and the taskbar entry.
+    #[serde(default)]
+    pub custom_title_bar: bool,
     pub always_on_top: bool,
     pub transparent: bool,
     pub icon_path: Option<String>,
@@ -51,6 +55,7 @@ impl WindowSpec {
             visible: true,
             resizable: true,
             decorations: true,
+            custom_title_bar: false,
             always_on_top: false,
             transparent: false,
             icon_path: None,
@@ -83,6 +88,17 @@ impl WindowSpec {
 
     pub fn decorations(mut self, decorations: bool) -> Self {
         self.decorations = decorations;
+        self
+    }
+
+    /// Lets the application draw the title bar inside the client area while
+    /// the platform keeps resize borders, snapping and the taskbar entry.
+    /// Mark draggable parts of the View with `ViewNode::window_drag_region`
+    /// and drive caption buttons through `AppCx::window_command`. Hosts
+    /// without support keep their native title bar.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.custom_title_bar = custom_title_bar;
         self
     }
 

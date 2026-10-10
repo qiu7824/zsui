@@ -258,6 +258,9 @@ pub mod render_protocol;
 #[cfg(feature = "rust-text")]
 #[doc(hidden)]
 pub mod rust_text_renderer;
+#[cfg(feature = "window-chrome")]
+#[doc(hidden)]
+pub mod window_chrome;
 #[cfg(feature = "rust-text-proof")]
 #[doc(hidden)]
 pub use rust_text_renderer::{
@@ -428,8 +431,9 @@ pub use calculator::{
 #[cfg(feature = "canvas")]
 #[doc(hidden)]
 pub use canvas::{
-    zs_canvas_native_draw_plan, ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase,
-    ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
+    zs_canvas_native_draw_plan, ZsCanvasBuilder, ZsCanvasHoverRegion, ZsCanvasLayoutContext,
+    ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase, ZsCanvasPrimitive, ZsCanvasRect,
+    ZsCanvasScene, ZsCanvasSize,
 };
 #[doc(hidden)]
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};
@@ -579,9 +583,9 @@ pub use menu::{MenuItemSpec, MenuSpec, ZsAccelerator, ZsAcceleratorKey};
 #[cfg(feature = "menu-flyout")]
 #[doc(hidden)]
 pub use menu_flyout::{
-    zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutMetrics,
-    ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan, ZsMenuFlyoutRowKind,
-    ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
+    zs_menu_flyout_native_draw_plan, zs_menu_flyout_render_plan, ZsMenuFlyoutAnchor,
+    ZsMenuFlyoutMetrics, ZsMenuFlyoutPath, ZsMenuFlyoutPlatformStyle, ZsMenuFlyoutRenderPlan,
+    ZsMenuFlyoutRowKind, ZsMenuFlyoutRowRenderPlan, ZsMenuFlyoutState, ZS_MENU_FLYOUT_MAX_DEPTH,
 };
 #[doc(hidden)]
 pub use mobile_host::{
@@ -794,8 +798,8 @@ pub use render_protocol::{
     NativeFontMetrics, NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation,
     NativeStyleResolver, NativeTypographyProfile, Renderer, RendererHostOperation,
     SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole, TextRun, TextStyle,
-    TextWeight, TextWrap, VerticalAlign, ZsImageFrame, ZsImageFrameId, ZsTypographyMetrics,
-    ZsTypographyPlatformStyle, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
+    TextWeight, TextWrap, VerticalAlign, ZsFontSize, ZsImageFrame, ZsImageFrameId,
+    ZsTypographyMetrics, ZsTypographyPlatformStyle, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
     REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
     REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };
@@ -884,9 +888,6 @@ pub use view::badge;
 #[cfg(feature = "breadcrumb")]
 #[doc(hidden)]
 pub use view::breadcrumb_bar;
-#[cfg(feature = "canvas")]
-#[doc(hidden)]
-pub use view::canvas;
 #[cfg(feature = "checkbox")]
 #[doc(hidden)]
 pub use view::checkbox;
@@ -1006,6 +1007,9 @@ pub use view::{
 #[cfg(feature = "calculator")]
 #[doc(hidden)]
 pub use view::{calculator_view, ZsCalculatorViewIds};
+#[cfg(feature = "canvas")]
+#[doc(hidden)]
+pub use view::{canvas, canvas_with};
 #[doc(hidden)]
 pub use view::{
     column, live_view_runtime, live_view_runtime_with_app_commands, row, spacer, AppCx,
@@ -1225,6 +1229,8 @@ pub use widget_render::{
 };
 #[doc(hidden)]
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
+#[cfg(feature = "window-chrome")]
+pub use window_chrome::ZsWindowCommand;
 #[cfg(all(windows, feature = "windows-gdi"))]
 #[doc(hidden)]
 pub use windows_gdi_renderer::{

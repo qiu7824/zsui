@@ -21,6 +21,8 @@ enum WindowsSharedInputKind {
     TextEditShortcut {
         target: Option<crate::ViewHitTarget>,
     },
+    #[cfg(feature = "shortcuts")]
+    Shortcut,
     Scroll,
     Blur,
     Background,
@@ -46,6 +48,8 @@ impl WindowsSharedInputKind {
             Self::Key { .. } => "key_down",
             #[cfg(feature = "text-input-core")]
             Self::TextEditShortcut { .. } => "text_edit_shortcut",
+            #[cfg(feature = "shortcuts")]
+            Self::Shortcut => "shortcut",
             Self::Scroll => "scroll",
             Self::Blur => "blur",
             Self::Background => "background",
@@ -122,6 +126,16 @@ impl WindowsWin32ViewInputRoute {
 
     fn take_quit_requested(&mut self) -> bool {
         std::mem::take(&mut self.quit_requested)
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn take_pending_window_commands(&mut self) -> Vec<crate::ZsWindowCommand> {
+        std::mem::take(&mut self.pending_window_commands)
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        self.shared_runtime.window_drag_region_at(point)
     }
 
     fn approve_next_close(&mut self) {
@@ -355,6 +369,11 @@ impl WindowsWin32ViewInputRoute {
             self.pending_draw_plan = Some(plan);
         }
         self.quit_requested |= shared.quit_requested;
+        #[cfg(feature = "window-chrome")]
+        let window_commands = std::mem::take(&mut shared.window_commands);
+        #[cfg(feature = "window-chrome")]
+        self.pending_window_commands
+            .extend(window_commands.iter().copied());
         self.sync_shared_host_state();
 
         let target = kind.target();
@@ -460,6 +479,10 @@ impl WindowsWin32ViewInputRoute {
             )],
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "window-chrome")]
+        {
+            report.window_commands = window_commands;
+        }
         #[cfg(feature = "canvas")]
         {
             report.canvas_pointer_event_count = shared.canvas_pointer_event_count;
@@ -495,6 +518,11 @@ impl WindowsWin32ViewInputRoute {
             WindowsSharedInputKind::PointerUp(_) => report.pointer_up_count = 1,
             WindowsSharedInputKind::Text { accepted, .. } => {
                 report.text_input_count = usize::from(shared.handled) * accepted;
+            }
+            #[cfg(feature = "shortcuts")]
+            WindowsSharedInputKind::Shortcut => {
+                report.key_down_count = 1;
+                report.unhandled_key_count = usize::from(!shared.handled);
             }
             WindowsSharedInputKind::Key { key, target } => {
                 report.key_down_count = 1;

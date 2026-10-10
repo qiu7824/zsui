@@ -28,6 +28,7 @@ pub fn menu_flyout<Msg>(
         context_trigger: false,
         #[cfg(feature = "context-menu")]
         context_anchor: None,
+        anchor: None,
         highlighted: highlighted.flatten(),
         open_submenus: Vec::new(),
         on_command: None,
@@ -54,6 +55,7 @@ pub fn context_menu<Msg>(
         target: widget,
         context_trigger: true,
         context_anchor: None,
+        anchor: None,
         highlighted: None,
         open_submenus: Vec::new(),
         on_command: None,

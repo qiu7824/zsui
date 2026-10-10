@@ -1186,3 +1186,39 @@ mod tests {
         );
     }
 }
+
+/// A point inside a MenuFlyout target, in the target's local DP space.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ZsMenuFlyoutAnchor {
+    pub x: crate::Dp,
+    pub y: crate::Dp,
+}
+
+impl ZsMenuFlyoutAnchor {
+    pub const fn new(x: crate::Dp, y: crate::Dp) -> Self {
+        Self { x, y }
+    }
+
+    /// The zero-size placement rectangle at this point inside `target`.
+    /// Placement then flips and clamps against the viewport exactly as for
+    /// an ordinary target-anchored menu.
+    pub fn placement_rect(self, target: crate::Rect, dpi: crate::Dpi) -> crate::Rect {
+        let px = |value: crate::Dp| {
+            if value.0.is_finite() {
+                value.to_px(dpi).round_i32()
+            } else {
+                0
+            }
+        };
+        crate::Rect {
+            x: target
+                .x
+                .saturating_add(px(self.x).clamp(0, target.width.max(0))),
+            y: target
+                .y
+                .saturating_add(px(self.y).clamp(0, target.height.max(0))),
+            width: 0,
+            height: 0,
+        }
+    }
+}

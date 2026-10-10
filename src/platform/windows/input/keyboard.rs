@@ -28,8 +28,17 @@ impl WindowsWin32ViewInputRoute {
         alt: bool,
         super_key: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
-        #[cfg(not(feature = "text-input-core"))]
-        let _ = (alt, super_key);
+        #[cfg(not(any(feature = "text-input-core", feature = "shortcuts")))]
+        let _ = super_key;
+        #[cfg(feature = "shortcuts")]
+        if let Some(accelerator) =
+            windows_shortcut_accelerator(virtual_key, shift, control, alt, super_key)
+        {
+            let report = self.shared_runtime.dispatch_shortcut(accelerator);
+            if report.handled {
+                return self.adapt_shared_report(report, WindowsSharedInputKind::Shortcut);
+            }
+        }
         #[cfg(feature = "text-input-core")]
         if let Some(command) =
             windows_text_edit_shortcut(virtual_key, shift, control, alt, super_key)
@@ -40,6 +49,17 @@ impl WindowsWin32ViewInputRoute {
                 report,
                 WindowsSharedInputKind::TextEditShortcut { target },
             );
+        }
+        if alt {
+            // Alt chords that are not application shortcuts keep their system
+            // meaning (menus, Alt+F4) instead of moving carets or selection.
+            return WindowsWin32ViewInputDispatchReport {
+                hit_target_count: self.hit_target_count(),
+                key_down_count: 1,
+                unhandled_key_count: 1,
+                events: vec![format!("win32_view_key_unhandled:{virtual_key}")],
+                ..WindowsWin32ViewInputDispatchReport::default()
+            };
         }
         let Some(key) = windows_native_view_key(virtual_key) else {
             return WindowsWin32ViewInputDispatchReport {
@@ -71,6 +91,52 @@ fn windows_text_edit_shortcut(
     }
     char::from_u32(virtual_key)
         .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+}
+
+#[cfg(feature = "shortcuts")]
+fn windows_shortcut_accelerator(
+    virtual_key: u32,
+    shift: bool,
+    control: bool,
+    alt: bool,
+    super_key: bool,
+) -> Option<crate::ZsAccelerator> {
+    use crate::ZsAcceleratorKey as Key;
+    let key = match virtual_key {
+        0x30..=0x39 | 0x41..=0x5a => Key::Character(char::from_u32(virtual_key)?),
+        key if (u32::from(VK_F1)..u32::from(VK_F1) + 24).contains(&key) => {
+            Key::Function(u8::try_from(key - u32::from(VK_F1) + 1).ok()?)
+        }
+        ZSUI_WIN32_VK_RETURN => Key::Enter,
+        key if key == u32::from(VK_ESCAPE) => Key::Escape,
+        ZSUI_WIN32_VK_TAB => Key::Tab,
+        ZSUI_WIN32_VK_SPACE => Key::Space,
+        key if key == u32::from(VK_BACK) => Key::Backspace,
+        key if key == u32::from(VK_DELETE) => Key::Delete,
+        key if key == u32::from(VK_UP) => Key::Up,
+        key if key == u32::from(VK_DOWN) => Key::Down,
+        key if key == u32::from(VK_LEFT) => Key::Left,
+        key if key == u32::from(VK_RIGHT) => Key::Right,
+        key if key == u32::from(VK_HOME) => Key::Home,
+        key if key == u32::from(VK_END) => Key::End,
+        key if key == u32::from(VK_PRIOR) => Key::PageUp,
+        key if key == u32::from(VK_NEXT) => Key::PageDown,
+        _ => return None,
+    };
+    let mut accelerator = crate::ZsAccelerator::new(key);
+    if control {
+        accelerator = crate::ZsAccelerator::primary(key);
+    }
+    if shift {
+        accelerator = accelerator.shifted();
+    }
+    if alt {
+        accelerator = accelerator.with_alt();
+    }
+    if super_key {
+        accelerator = accelerator.with_super();
+    }
+    Some(accelerator)
 }
 
 fn windows_native_view_key(virtual_key: u32) -> Option<crate::native::NativeViewKey> {

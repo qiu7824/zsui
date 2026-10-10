@@ -771,6 +771,40 @@ pub enum NativeViewKey {
     PageDown,
 }
 
+/// Keys a focused text input owns even when the application binds them.
+#[cfg(feature = "shortcuts")]
+fn native_shortcut_yields_to_text_input(accelerator: crate::ZsAccelerator) -> bool {
+    use crate::ZsAcceleratorKey as Key;
+    let key = accelerator.key();
+    if matches!(key, Key::Function(_) | Key::Escape) {
+        return false;
+    }
+    let primary_only = accelerator.uses_primary() && !accelerator.uses_alt();
+    if !accelerator.uses_primary() && !accelerator.uses_alt() && !accelerator.uses_super() {
+        // Plain and Shift+ keys type, delete or move the caret.
+        return true;
+    }
+    primary_only
+        && match key {
+            Key::Character(character) => {
+                matches!(
+                    character.to_ascii_uppercase(),
+                    'A' | 'C' | 'V' | 'X' | 'Y' | 'Z'
+                )
+            }
+            Key::Enter
+            | Key::Backspace
+            | Key::Delete
+            | Key::Left
+            | Key::Right
+            | Key::Up
+            | Key::Down
+            | Key::Home
+            | Key::End => true,
+            _ => false,
+        }
+}
+
 #[cfg(feature = "tabs")]
 fn native_tab_cycle_offset(
     platform: crate::ZsTabPlatformStyle,
@@ -1646,6 +1680,10 @@ pub(crate) struct NativeViewInputRuntime {
     #[cfg(feature = "toast")]
     toast: crate::toast::ZsToastRuntime,
     text_edit: Option<NativeTextEditState>,
+    /// Enter just submitted a text input; swallow the matching carriage-return
+    /// character so a multiline editor does not gain a trailing line break.
+    #[cfg(feature = "textbox")]
+    submit_return_pending: bool,
     #[cfg(feature = "text-input-core")]
     text_history: NativeTextHistory,
     #[cfg(feature = "text-input-core")]
@@ -1663,6 +1701,8 @@ pub(crate) struct NativeViewInputRuntime {
     items_repeater_scrollbar_drag: Option<NativeScrollbarDrag>,
     #[cfg(feature = "color-picker")]
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
+    #[cfg(feature = "canvas")]
+    canvas_hover: Option<(crate::WidgetId, Option<u64>)>,
     #[cfg(any(
         feature = "auto-suggest",
         feature = "button",
@@ -1960,6 +2000,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub ime_cancelled: bool,
     pub redraw_plan: Option<NativeDrawPlan>,
     pub quit_requested: bool,
+    #[cfg(feature = "window-chrome")]
+    pub window_commands: Vec<crate::ZsWindowCommand>,
     pub errors: Vec<String>,
 }
 
@@ -2008,6 +2050,8 @@ impl NativeViewInputRuntime {
             #[cfg(feature = "toast")]
             toast: crate::toast::ZsToastRuntime::default(),
             text_edit: None,
+            #[cfg(feature = "textbox")]
+            submit_return_pending: false,
             #[cfg(feature = "text-input-core")]
             text_history: NativeTextHistory::default(),
             #[cfg(feature = "text-input-core")]
@@ -2025,6 +2069,8 @@ impl NativeViewInputRuntime {
             items_repeater_scrollbar_drag: None,
             #[cfg(feature = "color-picker")]
             color_picker_drag: None,
+            #[cfg(feature = "canvas")]
+            canvas_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "button",
@@ -2245,6 +2291,8 @@ impl NativeViewInputRuntime {
         self.pending_app_commands.extend(update.commands);
         self.pending_ui_commands.extend(update.ui_commands);
         report.quit_requested = update.quit_requested;
+        #[cfg(feature = "window-chrome")]
+        report.window_commands.extend(update.window_commands);
         self.reconcile_live_view_state(previous_interaction_plan.as_ref(), &mut report);
         #[cfg(feature = "toast")]
         {
@@ -2401,6 +2449,20 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone())
+    }
+
+    /// Whether `point` is uncovered caption area of a custom title bar.
+    /// Hosts call this from their non-client hit test, so live Views answer
+    /// without building a full interaction plan for every pointer move.
+    #[cfg(feature = "window-chrome")]
+    pub(crate) fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        match &self.live_view {
+            Some(live_view) => live_view.window_drag_region_at(point),
+            None => self
+                .interaction_plan
+                .as_ref()
+                .is_some_and(|plan| plan.window_drag_region_at(point)),
+        }
     }
 
     pub(crate) const fn focused_widget(&self) -> Option<crate::WidgetId> {
@@ -3762,6 +3824,10 @@ impl NativeViewInputRuntime {
                 report,
             );
         }
+        #[cfg(feature = "canvas")]
+        {
+            report = self.sync_canvas_hover(Some(point), report);
+        }
         #[cfg(feature = "password-box")]
         if let Some(widget) = self.password_peek {
             let still_peeking = self
@@ -4716,6 +4782,10 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "canvas")]
+        {
+            report = self.sync_canvas_hover(None, report);
+        }
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
             report.handled = true;
@@ -4768,6 +4838,88 @@ impl NativeViewInputRuntime {
         }
     }
 
+    /// Sends `CanvasHover` when the hover-aware Canvas region under `point`
+    /// changes; `None` means the pointer left the window.
+    #[cfg(feature = "canvas")]
+    fn sync_canvas_hover(
+        &mut self,
+        point: Option<Point>,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let next = point.and_then(|point| {
+            let target = self.current_interaction_plan()?.hit_target_at(point)?;
+            if target.kind != crate::ViewHitTargetKind::Canvas {
+                return None;
+            }
+            let region = self
+                .live_view
+                .as_ref()?
+                .canvas_hover_region(target.widget, point)?;
+            Some((target.widget, region))
+        });
+        let previous = self.canvas_hover;
+        if previous == next {
+            return report;
+        }
+        self.canvas_hover = next;
+        if let Some((widget, _)) = previous {
+            if next.map(|(next_widget, _)| next_widget) != Some(widget) {
+                report.handled = true;
+                report = self.dispatch_view_event(
+                    ViewEvent::CanvasHover {
+                        widget,
+                        region: None,
+                    },
+                    report,
+                );
+            }
+        }
+        if let Some((widget, region)) = next {
+            report.handled = true;
+            report = self.dispatch_view_event(ViewEvent::CanvasHover { widget, region }, report);
+        }
+        report
+    }
+
+    /// Dispatches an application shortcut. Unbound accelerators, and editing
+    /// chords while a text input has focus, return an unhandled report so the
+    /// host can continue with ordinary key handling.
+    #[cfg(feature = "shortcuts")]
+    pub(crate) fn dispatch_shortcut(
+        &mut self,
+        accelerator: crate::ZsAccelerator,
+    ) -> NativeViewInputDispatchReport {
+        let report = NativeViewInputDispatchReport {
+            hit_target_count: self.hit_target_count(),
+            focused_widget: self.focused_widget.map(|widget| widget.0),
+            ..NativeViewInputDispatchReport::default()
+        };
+        let bound = self
+            .live_view
+            .as_ref()
+            .is_some_and(|runtime| runtime.has_shortcut(accelerator))
+            || self
+                .ui_command_view
+                .as_ref()
+                .is_some_and(|view| view.shortcut_message(accelerator).is_some());
+        if !bound {
+            return report;
+        }
+        let text_focus = self
+            .focused_widget
+            .and_then(|widget| {
+                self.current_interaction_plan()
+                    .and_then(|plan| plan.focus_target_for_widget(widget))
+            })
+            .is_some_and(|target| self.target_accepts_text_input(target));
+        if text_focus && native_shortcut_yields_to_text_input(accelerator) {
+            return report;
+        }
+        let mut report = report;
+        report.handled = true;
+        self.dispatch_view_event(ViewEvent::Shortcut { accelerator }, report)
+    }
+
     pub(crate) fn dispatch_key(&mut self, key: NativeViewKey) -> NativeViewInputDispatchReport {
         self.dispatch_key_with_modifiers(key, false, false)
     }
@@ -4786,7 +4938,7 @@ impl NativeViewInputRuntime {
         shift: bool,
         control: bool,
     ) -> NativeViewInputDispatchReport {
-        #[cfg(not(any(feature = "radio", feature = "tabs")))]
+        #[cfg(not(any(feature = "radio", feature = "tabs", feature = "textbox")))]
         let _ = control;
         let mut report = NativeViewInputDispatchReport {
             hit_target_count: self.hit_target_count(),
@@ -4795,6 +4947,31 @@ impl NativeViewInputRuntime {
         };
         if self.focused_widget.is_some() || key == NativeViewKey::Tab {
             self.set_focus_outline_visible(true, &mut report);
+        }
+        #[cfg(feature = "textbox")]
+        {
+            self.submit_return_pending = false;
+            if key == NativeViewKey::Enter && !shift && !control {
+                if let Some(widget) = self.focused_widget.filter(|widget| {
+                    self.widget_text_submits(*widget)
+                        && self
+                            .current_interaction_plan()
+                            .and_then(|plan| plan.focus_target_for_widget(*widget))
+                            .is_some_and(|target| {
+                                matches!(
+                                    target.kind,
+                                    crate::ViewHitTargetKind::Textbox
+                                        | crate::ViewHitTargetKind::TextEditor
+                                )
+                            })
+                }) {
+                    let value = self.widget_text_value(widget).unwrap_or_default();
+                    self.submit_return_pending = true;
+                    report.handled = true;
+                    return self
+                        .dispatch_view_event(ViewEvent::TextSubmitted { widget, value }, report);
+                }
+            }
         }
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
@@ -6254,6 +6431,11 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "textbox")]
+        if std::mem::take(&mut self.submit_return_pending) && text == "\r" {
+            report.handled = true;
+            return report;
+        }
         let Some(widget) = self.focused_widget else {
             return report;
         };
@@ -7668,6 +7850,19 @@ impl NativeViewInputRuntime {
             })
     }
 
+    #[cfg(feature = "textbox")]
+    fn widget_text_submits(&self, widget: crate::WidgetId) -> bool {
+        self.live_view
+            .as_ref()
+            .and_then(|runtime| runtime.widget_text_submits(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_text_submits(widget))
+            })
+            .unwrap_or(false)
+    }
+
     fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
         #[cfg(feature = "text-input-core")]
         {
@@ -8265,11 +8460,17 @@ impl NativeViewInputRuntime {
         report.view_event_count += 1;
         #[cfg(feature = "text-input-core")]
         let mut text_edit_commands = Vec::new();
+        let mut focus_request = None;
         let (commands, ui_commands, quit_requested) = if let Some(live_view) = &self.live_view {
             let update = live_view.dispatch_event(&event);
             report.message_count += update.message_count;
             #[cfg(feature = "text-input-core")]
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
+            #[cfg(feature = "window-chrome")]
+            report
+                .window_commands
+                .extend(update.window_commands.iter().copied());
+            focus_request = update.focus_request;
             if update.redraw {
                 report.redraw_plan = Some(live_view.draw_plan());
                 report.hit_target_count = live_view.interaction_plan().hit_target_count();
@@ -8357,6 +8558,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        if let Some(target) = focus_request.and_then(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget))
+        }) {
+            self.focus_target(target, &mut report);
+        }
         #[cfg(feature = "text-input-core")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
@@ -8573,6 +8780,7 @@ impl NativeViewInputRuntime {
         #[cfg(feature = "text-input-core")]
         let mut text_edit_commands = Vec::new();
 
+        let mut focus_request = None;
         let update = self
             .live_view
             .as_ref()
@@ -8583,10 +8791,15 @@ impl NativeViewInputRuntime {
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
             report.handled = true;
             report.message_count = update.message_count;
+            focus_request = update.focus_request;
             report.app_command_count = update.commands.len();
             report.ui_command_count = update.ui_commands.len();
             report.quit_requested =
                 update.quit_requested || update.commands.contains(&Command::Quit);
+            #[cfg(feature = "window-chrome")]
+            report
+                .window_commands
+                .extend(update.window_commands.iter().copied());
 
             if self.defer_app_command_execution {
                 self.pending_app_commands.extend(update.commands);
@@ -8656,6 +8869,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        if let Some(target) = focus_request.and_then(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget))
+        }) {
+            self.focus_target(target, &mut report);
+        }
         #[cfg(feature = "text-input-core")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
@@ -9559,6 +9778,13 @@ impl NativeWindowBuilder {
         self
     }
 
+    /// Draws the title bar in the View; see `WindowSpec::custom_title_bar`.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.window = self.window.custom_title_bar(custom_title_bar);
+        self
+    }
+
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.window = self.window.always_on_top(always_on_top);
         self
@@ -9953,6 +10179,13 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
         self
     }
 
+    /// Draws the title bar in the View; see `WindowSpec::custom_title_bar`.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.inner = self.inner.custom_title_bar(custom_title_bar);
+        self
+    }
+
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.inner = self.inner.always_on_top(always_on_top);
         self
@@ -10194,6 +10427,7 @@ fn window_spec_from_startup_request(request: &NativeRuntimeStartupRequest) -> Wi
         .decorations(options.decorations)
         .always_on_top(options.always_on_top)
         .transparent(options.transparent);
+    window.custom_title_bar = options.custom_title_bar;
 
     if let Some(min_size) = &options.min_size {
         window = window.min_size(

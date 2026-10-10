@@ -2615,7 +2615,11 @@ impl MacosAppKitDrawSink {
     }
 
     fn draw_text(&self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.palette.high_contrast) {
+            style.color = color;
+        }
+        command.apply_size_override(&mut style);
         let attributes = appkit_text_attributes(&style);
         let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
         let text = NSString::from_str(&command.text);
@@ -2660,7 +2664,12 @@ impl MacosAppKitDrawSink {
         };
         if command.color_mode == NativeIconColorMode::ThemeAware {
             image.setTemplate(true);
-            appkit_color(self.palette.resolve(command.color)).set();
+            appkit_color(
+                command
+                    .color_override(self.palette.high_contrast)
+                    .unwrap_or_else(|| self.palette.resolve(command.color)),
+            )
+            .set();
         }
         image.drawInRect(appkit_rect(command.bounds));
     }

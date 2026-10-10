@@ -155,6 +155,8 @@ mod tests {
         #[cfg(feature = "textbox")]
         NameChanged(String),
         #[cfg(feature = "textbox")]
+        NameSubmitted(String),
+        #[cfg(feature = "textbox")]
         TextSelectionChanged(ZsTextSelection),
         #[cfg(feature = "password-box")]
         PasswordChanged(crate::ZsPassword),
@@ -426,6 +428,568 @@ mod tests {
         collision.layout(&mut ViewLayoutCx::new(bounds, Dpi::standard()));
         assert_eq!(collision.children[0].id, Some(first_ids[1]));
         assert_ne!(collision.children[1].id, Some(first_ids[1]));
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn textbox_placeholder_paints_only_while_empty_and_submit_maps_the_value() {
+        let widget = WidgetId::new(731);
+        let hint = "搜索文件 / Search files";
+        let paint_texts = |value: &str| {
+            let mut view: ViewNode<Msg> = textbox(value).id(widget).placeholder(hint);
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 220,
+                    height: 32,
+                },
+                Dpi::standard(),
+            ));
+            let mut paint = ViewPaintCx::new(Dpi::standard());
+            view.paint(&mut paint);
+            paint
+                .plan()
+                .commands
+                .iter()
+                .filter_map(|command| match command {
+                    NativeDrawCommand::Text(text) => Some((text.text.clone(), text.style.color)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(paint_texts("")
+            .iter()
+            .any(|(text, color)| text == hint && *color == crate::ColorRole::SecondaryText));
+        assert!(!paint_texts("zsagent").iter().any(|(text, _)| text == hint));
+
+        let mut view: ViewNode<Msg> = text_editor("第一行").id(widget).on_submit(Msg::NameSubmitted);
+        assert_eq!(view.widget_text_submits(widget), Some(true));
+        assert_eq!(
+            textbox::<Msg>("").id(widget).widget_text_submits(widget),
+            Some(false)
+        );
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::TextSubmitted {
+                widget,
+                value: "发送这一条".to_string(),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameSubmitted("发送这一条".to_string())]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "shortcuts", feature = "textbox"))]
+    fn shortcuts_follow_view_state_and_resolve_the_first_binding_once() {
+        let new_tab = crate::ZsAccelerator::primary_character('t');
+        let back = crate::ZsAccelerator::new(crate::ZsAcceleratorKey::Left).with_alt();
+        let build = |bound: bool| -> ViewNode<Msg> {
+            let mut root = column([textbox("")
+                .id(WidgetId::new(740))
+                .shortcut(new_tab, Msg::NameChanged("inner".into()))]);
+            if bound {
+                root = root
+                    .shortcut(new_tab, Msg::NameChanged("root".into()))
+                    .shortcut(back, Msg::NameChanged("back".into()));
+            }
+            root
+        };
+        let mut view = build(true);
+        assert_eq!(view.shortcut_message(new_tab), Some(&Msg::NameChanged("root".into())));
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: new_tab });
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: back });
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameChanged("root".into()), Msg::NameChanged("back".into())]
+        );
+
+        // A rebuilt View without the root bindings falls back to the inner one
+        // and no longer knows Alt+Left.
+        let mut view = build(false);
+        assert_eq!(view.shortcut_message(back), None);
+        let mut events = ViewEventCx::new();
+        view.event(&mut events, &ViewEvent::Shortcut { accelerator: new_tab });
+        assert_eq!(events.into_messages(), vec![Msg::NameChanged("inner".into())]);
+    }
+
+    #[test]
+    #[cfg(all(feature = "menu-flyout", feature = "canvas"))]
+    fn anchored_menu_flyout_opens_at_the_pointer_inside_its_target() {
+        let presenter = WidgetId::new(741);
+        let surface = WidgetId::new(742);
+        let menu = crate::MenuSpec::new()
+            .item("Open / 打开", crate::Command::custom("file.open"))
+            .item("Rename / 重命名", crate::Command::custom("file.rename"));
+        let page = |anchor| {
+            menu_flyout(
+                presenter,
+                true,
+                surface,
+                menu.clone(),
+                canvas(crate::ZsCanvasScene::new())
+                    .id(surface)
+                    .width(Dp::new(400.0))
+                    .height(Dp::new(300.0)),
+            )
+            .menu_flyout_anchor(anchor)
+        };
+        let menu_bounds = |mut view: ViewNode<Msg>| {
+            view.layout(&mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 900,
+                    height: 700,
+                },
+                Dpi::standard(),
+            ));
+            view.interaction_plan()
+                .hit_targets
+                .iter()
+                .find(|target| target.kind == ViewHitTargetKind::MenuFlyout)
+                .map(|target| target.bounds)
+                .expect("open menu should expose its surface")
+        };
+
+        let under_target = menu_bounds(page(None));
+        let at_pointer = menu_bounds(page(Some(crate::ZsMenuFlyoutAnchor::new(
+            Dp::new(220.0),
+            Dp::new(140.0),
+        ))));
+        // Without an anchor the whole 400x300 target is the placement source;
+        // with one the menu opens at the pointer inside the target.
+        assert_ne!((under_target.x, under_target.y), (at_pointer.x, at_pointer.y));
+        assert!(at_pointer.x >= 210 && at_pointer.x <= 230, "{at_pointer:?}");
+        assert!(at_pointer.y >= 130 && at_pointer.y <= 150, "{at_pointer:?}");
+
+        assert_eq!(
+            crate::ZsMenuFlyoutAnchor::new(Dp::new(-5.0), Dp::new(9999.0)).placement_rect(
+                Rect {
+                    x: 10,
+                    y: 20,
+                    width: 100,
+                    height: 50,
+                },
+                Dpi::standard(),
+            ),
+            Rect {
+                x: 10,
+                y: 70,
+                width: 0,
+                height: 0,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "window-chrome", feature = "button"))]
+    fn window_drag_regions_leave_interactive_targets_to_the_view() {
+        let close = WidgetId::new(751);
+        let mut view: ViewNode<Msg> = column([
+            row([button("Close / 关闭")
+                .id(close)
+                .width(Dp::new(46.0))
+                .height(Dp::new(32.0))
+                .on_click(Msg::SaveClicked)])
+            .width(Dp::new(400.0))
+            .height(Dp::new(32.0))
+            .window_drag_region(),
+            spacer().height(Dp::new(100.0)),
+        ]);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+            },
+            Dpi::standard(),
+        ));
+        let plan = view.interaction_plan();
+        assert_eq!(plan.window_drag_regions.len(), 1);
+        let region = plan.window_drag_regions[0];
+        let button = plan
+            .hit_target_for_widget(close)
+            .expect("caption button should stay interactive")
+            .bounds;
+        let on_button = Point {
+            x: button.x + button.width / 2,
+            y: button.y + button.height / 2,
+        };
+        let empty_caption = Point {
+            x: region.x + region.width - 8,
+            y: region.y + region.height / 2,
+        };
+        let body = Point {
+            x: empty_caption.x,
+            y: region.y + region.height + 20,
+        };
+        assert!(!button.contains(empty_caption));
+        for (point, expected) in [(empty_caption, true), (on_button, false), (body, false)] {
+            assert_eq!(plan.window_drag_region_at(point), expected, "{point:?}");
+            assert_eq!(view.window_drag_region_at(point), expected, "{point:?}");
+        }
+
+        let mut cx = AppCx::new();
+        cx.window_command(crate::ZsWindowCommand::ToggleMaximize);
+        cx.window_command(crate::ZsWindowCommand::Close);
+        assert_eq!(
+            cx.window_commands(),
+            &[
+                crate::ZsWindowCommand::ToggleMaximize,
+                crate::ZsWindowCommand::Close
+            ]
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn canvas_brand_colors_reach_the_draw_plan_and_yield_to_high_contrast() {
+        let brand = crate::Color::rgb(7, 193, 96);
+        let rail_text = crate::Color::rgb(155, 155, 155);
+        let cell =
+            crate::ZsCanvasRect::new(Dp::new(4.0), Dp::new(4.0), Dp::new(40.0), Dp::new(20.0));
+        let scene = crate::ZsCanvasScene::new()
+            .with(crate::ZsCanvasPrimitive::colored_text(
+                "文件",
+                cell,
+                crate::SemanticTextStyle::body(),
+                rail_text,
+            ))
+            .with(crate::ZsCanvasPrimitive::colored_icon(
+                crate::ZsIcon::Folder,
+                cell,
+                brand,
+                crate::ColorRole::SecondaryText,
+            ))
+            .with(crate::ZsCanvasPrimitive::text(
+                "plain",
+                cell,
+                crate::SemanticTextStyle::body(),
+            ))
+            .with(crate::ZsCanvasPrimitive::glyph(
+                '\u{E734}',
+                crate::ZsCanvasRect::new(Dp::new(0.0), Dp::new(0.0), Dp::new(22.0), Dp::new(30.0)),
+                brand,
+                crate::ColorRole::SecondaryText,
+            ));
+        let plan = crate::zs_canvas_native_draw_plan(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 100,
+                height: 60,
+            },
+            &scene,
+            Dpi::standard(),
+        );
+        let texts = plan
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                NativeDrawCommand::Text(text) => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(texts.len(), 3);
+        assert_eq!(texts[2].style.role, crate::TextRole::Icon);
+        assert_eq!(
+            texts[2].size.map(crate::ZsFontSize::dip),
+            Some(22.0),
+            "glyphs size to the shorter side"
+        );
+        assert_eq!(texts[1].size, None);
+        let mut resolved = crate::TextStyle {
+            font_family: "Segoe MDL2 Assets".into(),
+            size: 16.0,
+            line_height: 20.0,
+            semantic_role: Some(crate::TextRole::Icon),
+            weight: crate::TextWeight::Regular,
+            color: crate::Color::rgb(0, 0, 0),
+            horizontal_align: crate::HorizontalAlign::Center,
+            vertical_align: crate::VerticalAlign::Center,
+            wrap: crate::TextWrap::NoWrap,
+            ellipsis: false,
+        };
+        texts[2].apply_size_override(&mut resolved);
+        assert_eq!((resolved.size, resolved.line_height), (22.0, 27.5));
+        assert_eq!(texts[0].text, "文件");
+        assert_eq!(texts[0].color_override(false), Some(rail_text));
+        assert_eq!(
+            texts[0].color_override(true),
+            None,
+            "high contrast keeps the role"
+        );
+        assert_eq!(texts[1].color_override(false), None);
+        let icon = plan
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                NativeDrawCommand::Icon(icon) => Some(icon),
+                _ => None,
+            })
+            .expect("colored icon should become an icon command");
+        assert_eq!(icon.color, crate::ColorRole::SecondaryText);
+        assert_eq!(icon.color_override(false), Some(brand));
+        assert_eq!(icon.color_override(true), None);
+        assert_eq!(
+            icon.bounds,
+            Rect {
+                x: 14,
+                y: 24,
+                width: 40,
+                height: 20,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "canvas", feature = "textbox"))]
+    fn canvas_hover_regions_resolve_the_topmost_region_in_local_dp() {
+        let widget = WidgetId::new(761);
+        let row = |y: f32| {
+            crate::ZsCanvasRect::new(Dp::new(0.0), Dp::new(y), Dp::new(200.0), Dp::new(28.0))
+        };
+        let scene = crate::ZsCanvasScene::new()
+            .with_hover_region(1, row(0.0))
+            .with_hover_region(2, row(28.0))
+            .with_hover_region(
+                9,
+                crate::ZsCanvasRect::new(
+                    Dp::new(170.0),
+                    Dp::new(28.0),
+                    Dp::new(24.0),
+                    Dp::new(28.0),
+                ),
+            );
+        let mut view: ViewNode<Msg> = canvas(scene.clone())
+            .id(widget)
+            .width(Dp::new(200.0))
+            .height(Dp::new(100.0))
+            .on_canvas_hover(|region| Msg::NameChanged(format!("{region:?}")));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 300,
+                height: 200,
+            },
+            Dpi::new(192.0),
+        ));
+        let at = |x: f32, y: f32| Point {
+            x: 10 + (x * 2.0) as i32,
+            y: 20 + (y * 2.0) as i32,
+        };
+        assert_eq!(
+            view.canvas_hover_region(widget, at(5.0, 5.0)),
+            Some(Some(1))
+        );
+        assert_eq!(
+            view.canvas_hover_region(widget, at(5.0, 30.0)),
+            Some(Some(2))
+        );
+        assert_eq!(
+            view.canvas_hover_region(widget, at(180.0, 30.0)),
+            Some(Some(9))
+        );
+        assert_eq!(view.canvas_hover_region(widget, at(5.0, 80.0)), Some(None));
+        assert_eq!(
+            view.canvas_hover_region(WidgetId::new(1), at(5.0, 5.0)),
+            None
+        );
+        let plain: ViewNode<Msg> = canvas(scene).id(widget);
+        assert_eq!(plain.canvas_hover_region(widget, at(5.0, 5.0)), None);
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasHover {
+                widget,
+                region: Some(2),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameChanged("Some(2)".into())]
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "canvas", feature = "window-chrome"))]
+    fn drag_region_canvas_keeps_hover_regions_interactive_and_tags_pointer_events() {
+        let strip = WidgetId::new(771);
+        let tab =
+            crate::ZsCanvasRect::new(Dp::new(40.0), Dp::new(6.0), Dp::new(120.0), Dp::new(34.0));
+        let mut view: ViewNode<Msg> = column([
+            canvas(crate::ZsCanvasScene::new().with_hover_region(7, tab))
+                .id(strip)
+                .height(Dp::new(40.0))
+                .on_canvas_pointer(Msg::CanvasPointer)
+                .window_drag_region(),
+            spacer().height(Dp::new(200.0)),
+        ]);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 600,
+                height: 300,
+            },
+            Dpi::standard(),
+        ));
+        assert!(!view.window_drag_region_at(Point { x: 60, y: 20 }), "tab");
+        assert!(
+            view.window_drag_region_at(Point { x: 400, y: 20 }),
+            "empty strip"
+        );
+        assert!(
+            !view.window_drag_region_at(Point { x: 400, y: 120 }),
+            "body"
+        );
+
+        let pointer = |x: f32| {
+            crate::ZsCanvasPointerEvent::new(
+                strip,
+                crate::ZsCanvasPointerPhase::Pressed,
+                crate::ZsCanvasPoint::new(Dp::new(x), Dp::new(20.0)),
+                crate::ZsPointerButton::Primary,
+                crate::ZsPointerModifiers::default(),
+                true,
+            )
+        };
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasPointer {
+                event: pointer(60.0),
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasPointer {
+                event: pointer(400.0),
+            },
+        );
+        let regions = events
+            .into_messages()
+            .into_iter()
+            .map(|message| match message {
+                Msg::CanvasPointer(event) => event.region,
+                _ => panic!("expected canvas pointer messages"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(regions, vec![Some(7), None]);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
+        let canvas_id = WidgetId::new(9);
+        // Right-aligned 30 DP badge: only correct when the builder sees the real width.
+        let mut view: ViewNode<Msg> = canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+            let size = cx.size();
+            crate::ZsCanvasScene::new().with(crate::ZsCanvasPrimitive::round_fill(
+                crate::ZsCanvasRect::new(
+                    Dp::new(size.width.0 - 30.0),
+                    Dp::new(0.0),
+                    Dp::new(30.0),
+                    size.height,
+                ),
+                crate::NativeDrawFill::role(crate::ColorRole::Accent),
+                Dp::new(4.0),
+            ))
+        })
+        .id(canvas_id)
+        .on_canvas_pointer(Msg::CanvasPointer);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 200,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { x: 180, y: 20, width: 30, height: 40 },
+                ..
+            }
+        )));
+
+        // A narrower final size moves the badge with it on the next layout.
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 120,
+                height: 40,
+            },
+            Dpi::standard(),
+        ));
+        let mut paint = ViewPaintCx::new(Dpi::standard());
+        view.paint(&mut paint);
+        assert!(paint.plan().commands.iter().any(|command| matches!(
+            command,
+            NativeDrawCommand::RoundFill {
+                rect: Rect { x: 100, y: 20, width: 30, height: 40 },
+                ..
+            }
+        )));
+        let target = view
+            .interaction_plan()
+            .hit_target_for_widget(canvas_id)
+            .expect("size-aware canvas keeps its hit target");
+        assert_eq!(target.bounds, Rect { x: 10, y: 20, width: 120, height: 40 });
+    }
+
+    #[test]
+    #[cfg(all(feature = "canvas", feature = "scroll"))]
+    fn size_aware_canvas_reports_its_extent_as_natural_height() {
+        let view: ViewNode<Msg> = canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+            // Content height grows as the width shrinks, like wrapped chat bubbles.
+            let rows = (600.0 / cx.size().width.0.max(1.0)).ceil();
+            crate::ZsCanvasScene::new().with_extent_height(Dp::new(rows * 20.0))
+        });
+        let measurements = ViewTextMeasurements::default();
+        assert_eq!(natural_height_px(&view, 300, Dpi::standard(), 1.0, &measurements), 40);
+        assert_eq!(natural_height_px(&view, 150, Dpi::standard(), 1.0, &measurements), 80);
+        let fixed: ViewNode<Msg> = canvas_with(|_: &crate::ZsCanvasLayoutContext<'_>| {
+            crate::ZsCanvasScene::new().with_extent_height(Dp::new(500.0))
+        })
+        .height(Dp::new(32.0));
+        assert_eq!(natural_height_px(&fixed, 300, Dpi::standard(), 1.0, &measurements), 32);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn canvas_text_measurement_prefers_native_measurements_over_estimates() {
+        let text = "原生测量 / Native measurement";
+        let mut style = crate::SemanticTextStyle::body();
+        style.wrap = crate::TextWrap::Word;
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(text, style, 120, crate::Size { width: 118, height: 40 });
+        let size = crate::ZsCanvasSize::new(Dp::new(240.0), Dp::new(0.0));
+        let native = crate::ZsCanvasLayoutContext::new(size, Dpi::standard(), 1.0, Some(&measurements));
+        let measured = native.measure_text(text, style, Some(Dp::new(120.0)));
+        assert_eq!((measured.width.0, measured.height.0), (118.0, 40.0));
+
+        // Without a native entry the framework estimate still wraps by width.
+        let detached = crate::ZsCanvasLayoutContext::detached(size);
+        let wide = detached.measure_text(text, style, Some(Dp::new(400.0)));
+        let narrow = detached.measure_text(text, style, Some(Dp::new(60.0)));
+        assert!(wide.width.0 > 0.0 && wide.height.0 > 0.0);
+        assert!(narrow.height.0 > wide.height.0);
+        assert!(narrow.width.0 <= 60.0);
     }
 
     #[test]

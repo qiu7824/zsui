@@ -1,3 +1,8 @@
+thread_local! {
+    /// Pairs a handled WM_SYSKEYDOWN shortcut with its following WM_SYSCHAR.
+    static ZSUI_WIN32_SYSCHAR_HANDLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 pub unsafe extern "system" fn zsui_win32_default_window_proc(
     hwnd: HWND,
     msg: u32,
@@ -83,6 +88,54 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 PostQuitMessage(0);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        #[cfg(feature = "window-chrome")]
+        WM_NCCALCSIZE if windows_win32_window_has_custom_title_bar(hwnd) => {
+            // Both forms of WM_NCCALCSIZE start with the proposed window
+            // rectangle. Keep the default side and bottom resize frame but
+            // give the caption to the client so the View draws the title bar.
+            let proposed = lparam as *mut RECT;
+            let original_top = (*proposed).top;
+            let result = DefWindowProcW(hwnd, msg, wparam, lparam);
+            if result != 0 {
+                return result;
+            }
+            (*proposed).top = original_top;
+            if IsZoomed(hwnd) != 0 {
+                // A maximized window hangs its frame off-screen.
+                (*proposed).top += windows_win32_resize_border_height(hwnd);
+            }
+            0
+        }
+        #[cfg(feature = "window-chrome")]
+        WM_NCHITTEST if windows_win32_window_has_custom_title_bar(hwnd) => {
+            let hit = DefWindowProcW(hwnd, msg, wparam, lparam);
+            if hit != HTCLIENT as LRESULT {
+                return hit;
+            }
+            let screen = point_from_lparam(lparam);
+            let mut point = POINT {
+                x: screen.x,
+                y: screen.y,
+            };
+            ScreenToClient(hwnd, &mut point);
+            if IsZoomed(hwnd) == 0
+                && point.y >= 0
+                && point.y < windows_win32_resize_border_height(hwnd)
+            {
+                return HTTOP as LRESULT;
+            }
+            if windows_win32_window_view_drag_region_at(
+                hwnd,
+                crate::Point {
+                    x: point.x,
+                    y: point.y,
+                },
+            ) {
+                HTCAPTION as LRESULT
+            } else {
+                HTCLIENT as LRESULT
+            }
         }
         WM_ERASEBKGND => 1,
         #[cfg(feature = "accessibility")]
@@ -326,18 +379,24 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_KEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
+        WM_KEYDOWN | WM_SYSKEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
             hwnd,
             wparam as u32,
             (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
             (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
-            (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
+            msg == WM_SYSKEYDOWN || (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
             (GetKeyState(VK_LWIN as i32) as u16 & 0x8000) != 0
                 || (GetKeyState(VK_RWIN as i32) as u16 & 0x8000) != 0,
         ) {
-            Some(report) if report.unhandled_key_count == 0 => 0,
+            Some(report) if report.unhandled_key_count == 0 => {
+                // TranslateMessage still posts WM_SYSCHAR for a handled Alt
+                // chord; swallow it so DefWindowProc does not beep.
+                ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.set(msg == WM_SYSKEYDOWN));
+                0
+            }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         },
+        WM_SYSCHAR if ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.replace(false)) => 0,
         WM_MOUSEWHEEL => {
             let point = mouse_wheel_point_from_lparam(hwnd, lparam);
             let delta_y = mouse_wheel_scroll_delta_from_wparam(wparam);
@@ -368,6 +427,22 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_PAINT => paint_no_flicker_background(hwnd),
         WM_PRINTCLIENT => paint_window_client_to_dc(hwnd, wparam as _),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
+}
+
+#[cfg(feature = "window-chrome")]
+fn windows_win32_window_has_custom_title_bar(hwnd: HWND) -> bool {
+    let state =
+        unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const WindowsWindowCreateParams;
+    !state.is_null() && unsafe { (*state).custom_title_bar }
+}
+
+#[cfg(feature = "window-chrome")]
+fn windows_win32_resize_border_height(hwnd: HWND) -> i32 {
+    let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
+    unsafe {
+        GetSystemMetricsForDpi(SM_CYSIZEFRAME as _, dpi)
+            + GetSystemMetricsForDpi(SM_CXPADDEDBORDER as _, dpi)
     }
 }
 

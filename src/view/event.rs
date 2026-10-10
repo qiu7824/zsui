@@ -176,6 +176,12 @@ pub enum ViewEvent {
     CanvasPointer {
         event: crate::ZsCanvasPointerEvent,
     },
+    /// The hover region under the pointer changed for a hover-aware Canvas.
+    #[cfg(feature = "canvas")]
+    CanvasHover {
+        widget: WidgetId,
+        region: Option<u64>,
+    },
     TextChanged {
         widget: WidgetId,
         value: String,
@@ -190,6 +196,18 @@ pub enum ViewEvent {
     TextSelectionChanged {
         widget: WidgetId,
         selection: ZsTextSelection,
+    },
+    /// A keyboard shortcut bound with `ViewNode::shortcut`. It is not targeted
+    /// at a widget; the root resolves the first matching binding.
+    #[cfg(feature = "shortcuts")]
+    Shortcut {
+        accelerator: crate::ZsAccelerator,
+    },
+    /// Enter in a text input that has an `on_submit` handler.
+    #[cfg(feature = "textbox")]
+    TextSubmitted {
+        widget: WidgetId,
+        value: String,
     },
     #[cfg(feature = "password-box")]
     PasswordChanged {
@@ -749,6 +767,10 @@ pub struct ViewInteractionPlan {
     #[cfg(feature = "tooltip")]
     #[serde(default)]
     pub tooltip_targets: Vec<ViewTooltipTarget>,
+    /// Bounds of nodes marked with `ViewNode::window_drag_region`.
+    #[cfg(feature = "window-chrome")]
+    #[serde(default)]
+    pub window_drag_regions: Vec<Rect>,
 }
 
 impl ViewInteractionPlan {
@@ -759,6 +781,8 @@ impl ViewInteractionPlan {
             accessibility_nodes: Vec::new(),
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         }
     }
 
@@ -801,6 +825,16 @@ impl ViewInteractionPlan {
             .rev()
             .copied()
             .find(|target| target.contains(point))
+    }
+
+    /// Whether `point` is inside a window drag region and outside every
+    /// interactive target, so a custom title bar host treats it as caption.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region_at(&self, point: Point) -> bool {
+        self.window_drag_regions
+            .iter()
+            .any(|region| region.contains(point))
+            && self.hit_target_at(point).is_none()
     }
 
     pub fn hit_target_for_widget(&self, widget: WidgetId) -> Option<ViewHitTarget> {
@@ -1273,6 +1307,9 @@ pub struct AppCx {
     #[cfg(feature = "text-input-core")]
     text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
+    focus_request: Option<WidgetId>,
+    #[cfg(feature = "window-chrome")]
+    window_commands: Vec<crate::ZsWindowCommand>,
 }
 
 impl AppCx {
@@ -1302,6 +1339,29 @@ impl AppCx {
 
     pub fn quit(&mut self) {
         self.quit_requested = true;
+    }
+
+    /// Moves keyboard focus to `widget` once the rebuilt View is laid out,
+    /// for example to put the caret in an address box after Ctrl+L. The last
+    /// request of an update wins; a widget that is not focusable is ignored.
+    pub fn focus(&mut self, widget: WidgetId) {
+        self.focus_request = Some(widget);
+    }
+
+    pub const fn focus_request(&self) -> Option<WidgetId> {
+        self.focus_request
+    }
+
+    /// Asks the host to minimize, maximize/restore or close this window,
+    /// typically from the caption buttons of a custom title bar.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_command(&mut self, command: crate::ZsWindowCommand) {
+        self.window_commands.push(command);
+    }
+
+    #[cfg(feature = "window-chrome")]
+    pub fn window_commands(&self) -> &[crate::ZsWindowCommand] {
+        &self.window_commands
     }
 
     pub fn commands(&self) -> &[Command] {

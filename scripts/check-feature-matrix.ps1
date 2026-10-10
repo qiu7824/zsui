@@ -35,6 +35,8 @@ $singleFeatures = @(
     "virtual-list",
     "paged-list",
     "textbox",
+    "shortcuts",
+    "window-chrome",
     "password-box",
     "tooltip",
     "dialog",

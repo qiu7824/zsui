@@ -10,6 +10,7 @@ pub fn textbox<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         wrap: crate::TextWrap::NoWrap,
         on_change: None,
         on_selection_change: None,
+        on_submit: None,
     })
     .editable_text(ViewEditableTextDescriptor::textbox(false))
     .min_width(metrics.text_input_minimum_width)
@@ -25,6 +26,7 @@ pub fn text_editor<Msg>(value: impl Into<String>) -> ViewNode<Msg> {
         wrap: crate::TextWrap::Word,
         on_change: None,
         on_selection_change: None,
+        on_submit: None,
     })
     .editable_text(ViewEditableTextDescriptor::textbox(true))
 }

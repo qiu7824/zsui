@@ -208,6 +208,208 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "canvas")]
+    fn window_view_input_route_reports_canvas_hover_only_when_the_region_changes() {
+        #[derive(Clone)]
+        enum Msg {
+            Hover(Option<u64>),
+        }
+
+        let widget = crate::WidgetId::new(332);
+        let builder = crate::native_window("Win32 canvas hover")
+            .size(240, 120)
+            .stateful_view(
+                Vec::<Option<u64>>::new(),
+                move |_| {
+                    crate::column(
+                        [crate::canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+                            let width = cx.size().width;
+                            let row = |y: f32| {
+                                crate::ZsCanvasRect::new(
+                                    crate::Dp::new(0.0),
+                                    crate::Dp::new(y),
+                                    width,
+                                    crate::Dp::new(30.0),
+                                )
+                            };
+                            crate::ZsCanvasScene::new()
+                                .with_hover_region(1, row(0.0))
+                                .with_hover_region(2, row(30.0))
+                        })
+                        .id(widget)
+                        .width(crate::Dp::new(200.0))
+                        .height(crate::Dp::new(90.0))
+                        .on_canvas_hover(Msg::Hover)],
+                    )
+                },
+                |seen, message, _| match message {
+                    Msg::Hover(region) => seen.push(region),
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("hover canvas should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("hover canvas should expose Win32 geometry")
+            .bounds;
+        let scale = target.width as f32 / 200.0;
+        let at = |y: f32| crate::Point {
+            x: target.x + (20.0 * scale) as i32,
+            y: target.y + (y * scale) as i32,
+        };
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let messages = [at(5.0), at(12.0), at(40.0), at(50.0), at(75.0)]
+            .into_iter()
+            .map(|point| route.dispatch_pointer_move(point).message_count)
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec![1, 0, 1, 0, 1]);
+        assert_eq!(route.dispatch_pointer_leave().message_count, 1);
+        assert_eq!(route.dispatch_pointer_leave().message_count, 0);
+    }
+
+    #[test]
+    #[cfg(all(feature = "textbox", feature = "shortcuts"))]
+    fn window_view_input_route_moves_focus_on_app_request() {
+        #[derive(Clone)]
+        enum Msg {
+            EditAddress,
+            Address(String),
+        }
+
+        let address = crate::WidgetId::new(334);
+        let builder = crate::native_window("Win32 focus request")
+            .size(320, 120)
+            .stateful_view(
+                String::from("D:\\rust"),
+                move |path: &String| {
+                    crate::column([crate::textbox(path.clone())
+                        .id(address)
+                        .width(crate::Dp::new(240.0))
+                        .on_change(Msg::Address)])
+                    .shortcut(
+                        crate::ZsAccelerator::primary_character('l'),
+                        Msg::EditAddress,
+                    )
+                },
+                move |path, message, cx| match message {
+                    Msg::EditAddress => {
+                        cx.focus(address);
+                        cx.text_edit_command_for(address, crate::ZsTextEditCommand::SelectAll);
+                    }
+                    Msg::Address(next) => *path = next,
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("address box should own a live runtime")
+            .clone();
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let report = route.dispatch_key_down_with_modifiers(0x4C, false, true);
+        assert_eq!(report.focused_widget, Some(address.0));
+        assert_eq!(report.text_selection, Some((0, 7)));
+    }
+
+    #[test]
+    fn window_create_params_carry_the_custom_title_bar_flag() {
+        let plain = WindowsWindowCreateParams::new(WindowsWindowRole::Main, None);
+        assert!(!plain.custom_title_bar);
+        let params = plain.with_custom_title_bar(true);
+        let decoded = WindowsWindowCreateParams::from_create_param(&params as *const _ as isize);
+        assert!(decoded.custom_title_bar);
+        assert_eq!(decoded, params);
+    }
+
+    #[test]
+    #[cfg(all(feature = "window-chrome", feature = "button"))]
+    fn window_view_input_route_reports_caption_regions_and_window_commands() {
+        #[derive(Clone)]
+        enum Msg {
+            Minimize,
+            Maximize,
+        }
+
+        let minimize = crate::WidgetId::new(330);
+        let maximize = crate::WidgetId::new(331);
+        let builder = crate::native_window("Win32 custom title bar")
+            .size(320, 160)
+            .custom_title_bar(true)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::column([crate::row([
+                        crate::spacer().width(crate::Dp::new(200.0)),
+                        crate::button("-")
+                            .id(minimize)
+                            .width(crate::Dp::new(46.0))
+                            .on_click(Msg::Minimize),
+                        crate::button("[]")
+                            .id(maximize)
+                            .width(crate::Dp::new(46.0))
+                            .on_click(Msg::Maximize),
+                    ])
+                    .height(crate::Dp::new(32.0))
+                    .window_drag_region()])
+                },
+                |_, message, cx| match message {
+                    Msg::Minimize => cx.window_command(crate::ZsWindowCommand::Minimize),
+                    Msg::Maximize => cx.window_command(crate::ZsWindowCommand::ToggleMaximize),
+                },
+            );
+        assert!(builder.window_spec().custom_title_bar);
+        assert!(
+            crate::NativeWindowOptions::from_zsui_window(builder.window_spec()).custom_title_bar
+        );
+        assert!(
+            !crate::NativeWindowOptions::from_zsui_window(
+                &builder.window_spec().clone().decorations(false)
+            )
+            .custom_title_bar,
+            "an undecorated window has no frame to keep"
+        );
+
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("title bar should own a live runtime")
+            .clone();
+        let plan = runtime.interaction_plan();
+        let region = plan.window_drag_regions[0];
+        let button = plan
+            .hit_target_for_widget(minimize)
+            .expect("caption button should expose Win32 geometry")
+            .bounds;
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let caption = crate::Point {
+            x: region.x + 8,
+            y: region.y + region.height / 2,
+        };
+        let on_button = crate::Point {
+            x: button.x + button.width / 2,
+            y: button.y + button.height / 2,
+        };
+        assert!(route.window_drag_region_at(caption));
+        assert!(!route.window_drag_region_at(on_button));
+        assert!(!route.window_drag_region_at(crate::Point {
+            x: caption.x,
+            y: region.y + region.height + 20,
+        }));
+
+        route.dispatch_pointer_down(on_button, false);
+        let click = route.dispatch_pointer_up(on_button);
+        assert_eq!(
+            click.window_commands,
+            vec![crate::ZsWindowCommand::Minimize]
+        );
+        assert_eq!(
+            route.take_pending_window_commands(),
+            vec![crate::ZsWindowCommand::Minimize]
+        );
+        assert!(route.take_pending_window_commands().is_empty());
+    }
+
+    #[test]
     fn min_track_size_converts_the_requested_client_floor_to_outer_pixels() {
         let style = WS_OVERLAPPED
             | WS_CAPTION
@@ -863,6 +1065,141 @@ mod tests {
         assert_eq!(aggregate.focus_count, 1);
         assert_eq!(aggregate.text_input_count, 2);
         assert_eq!(aggregate.ui_command_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(all(feature = "shortcuts", feature = "textbox"))]
+    fn window_view_input_route_dispatches_shortcuts_and_leaves_editing_chords_to_text() {
+        let _guard = view_input_route_test_lock();
+        fn new_tab() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.new_tab"))
+        }
+        fn copy_file() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.copy_file"))
+        }
+        fn go_back() -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.go_back"))
+        }
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.search_changed"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 92isize as HWND;
+        let search = crate::WidgetId::new(24);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                search,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 200,
+                    height: 32,
+                },
+                crate::ViewHitTargetKind::Textbox,
+            )]),
+            crate::column([crate::textbox("").id(search).on_change(text_changed)])
+                .shortcut(crate::ZsAccelerator::primary_character('t'), new_tab())
+                .shortcut(crate::ZsAccelerator::primary_character('c'), copy_file())
+                .shortcut(
+                    crate::ZsAccelerator::new(crate::ZsAcceleratorKey::Left).with_alt(),
+                    go_back(),
+                ),
+        );
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+
+        // No focus: Ctrl+C and Ctrl+T are both application shortcuts.
+        let copy = dispatch_windows_win32_window_view_key_down_with_modifiers(
+            hwnd, 0x43, false, true, false, false,
+        )
+        .expect("Ctrl+C should reach the route");
+        assert_eq!(copy.ui_command_ids, vec!["zsui.test.win32.copy_file"]);
+        assert_eq!(copy.unhandled_key_count, 0);
+
+        // Focused text input keeps Ctrl+C for itself but Ctrl+T still opens a tab.
+        dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 16 })
+            .expect("click should focus the search box");
+        let editing = dispatch_windows_win32_window_view_key_down_with_modifiers(
+            hwnd, 0x43, false, true, false, false,
+        )
+        .expect("Ctrl+C should reach the route");
+        assert!(editing.ui_command_ids.is_empty());
+        let tab = dispatch_windows_win32_window_view_key_down_with_modifiers(
+            hwnd, 0x54, false, true, false, false,
+        )
+        .expect("Ctrl+T should reach the route");
+        assert_eq!(tab.ui_command_ids, vec!["zsui.test.win32.new_tab"]);
+
+        // Alt chords: bound ones are handled, unbound ones go back to the system.
+        let back = dispatch_windows_win32_window_view_key_down_with_modifiers(
+            hwnd, 0x25, false, false, true, false,
+        )
+        .expect("Alt+Left should reach the route");
+        assert_eq!(back.ui_command_ids, vec!["zsui.test.win32.go_back"]);
+        assert_eq!(back.unhandled_key_count, 0);
+        let unbound = dispatch_windows_win32_window_view_key_down_with_modifiers(
+            hwnd, 0x58, false, false, true, false,
+        )
+        .expect("Alt+X should reach the route");
+        assert!(unbound.ui_command_ids.is_empty());
+        assert_eq!(unbound.unhandled_key_count, 1);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
+    #[cfg(feature = "textbox")]
+    fn window_view_input_route_submits_on_enter_and_keeps_shift_enter_line_breaks() {
+        let _guard = view_input_route_test_lock();
+        fn text_changed(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.composer_changed"))
+        }
+        fn text_submitted(_: String) -> UiCommand {
+            UiCommand::app(crate::CommandId("zsui.test.win32.composer_submitted"))
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        let hwnd = 91isize as HWND;
+        let widget = crate::WidgetId::new(23);
+        let route = WindowsWin32ViewInputRoute::new(
+            crate::ViewInteractionPlan::new([crate::ViewHitTarget::with_kind(
+                widget,
+                crate::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 240,
+                    height: 80,
+                },
+                crate::ViewHitTargetKind::TextEditor,
+            )]),
+            crate::text_editor("")
+                .id(widget)
+                .on_change(text_changed)
+                .on_submit(text_submitted),
+        );
+
+        assert!(set_windows_win32_window_view_input_route(hwnd, route));
+        dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
+            .expect("registered route should focus the editor");
+        dispatch_windows_win32_window_view_text_input(hwnd, "ZS")
+            .expect("focused editor should accept text");
+
+        let enter = dispatch_windows_win32_window_view_key_down_with_shift(hwnd, 0x0D, false)
+            .expect("Enter should reach the focused editor");
+        assert!(enter.handled);
+        assert_eq!(enter.ui_command_ids, vec!["zsui.test.win32.composer_submitted"]);
+        // WM_CHAR delivers the carriage return after WM_KEYDOWN; it must not edit.
+        let swallowed = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
+            .expect("carriage return should still be routed");
+        assert!(swallowed.handled);
+        assert_eq!(swallowed.ui_command_count, 0);
+
+        let shift_enter = dispatch_windows_win32_window_view_key_down_with_shift(hwnd, 0x0D, true)
+            .expect("Shift+Enter should reach the focused editor");
+        assert!(shift_enter.ui_command_ids.is_empty());
+        let line_break = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
+            .expect("Shift+Enter carriage return should edit");
+        assert_eq!(line_break.ui_command_ids, vec!["zsui.test.win32.composer_changed"]);
         clear_windows_win32_window_view_input_route(hwnd);
     }
 

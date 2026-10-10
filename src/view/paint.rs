@@ -563,6 +563,25 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
 
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
+        #[cfg(feature = "canvas")]
+        if let ViewNodeKind::Canvas {
+            scene,
+            builder: Some(builder),
+            ..
+        } = &mut self.kind
+        {
+            let scale = cx.dpi.scale_factor().max(f32::EPSILON);
+            let context = crate::ZsCanvasLayoutContext::new(
+                crate::ZsCanvasSize::new(
+                    Dp::new(cx.bounds.width.max(0) as f32 / scale),
+                    Dp::new(cx.bounds.height.max(0) as f32 / scale),
+                ),
+                cx.dpi,
+                cx.typography_scale(),
+                Some(cx.text_measurements.as_ref()),
+            );
+            *scene = builder.build(&context);
+        }
         let mut children = Vec::new();
         if let Some(id) = self.id {
             children.push(LayoutNode {
@@ -695,6 +714,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "shortcuts")]
+        if let ViewEvent::Shortcut { accelerator } = event {
+            if let Some(message) = self.shortcut_message(*accelerator) {
+                cx.emit(message.clone());
+            }
+            return;
+        }
         #[cfg(feature = "workbench")]
         if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
             let Some(root) = self.id else {
@@ -1825,11 +1851,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 #[cfg(feature = "canvas")]
                 (
-                    ViewNodeKind::Canvas { on_pointer, .. },
+                    ViewNodeKind::Canvas {
+                        on_pointer, scene, ..
+                    },
                     ViewEvent::CanvasPointer { event },
                 ) => {
                     if let Some(message) = on_pointer {
-                        cx.emit(message.map(*event));
+                        let region = scene.hover_region_at(event.position);
+                        cx.emit(message.map(event.with_region(region)));
+                    }
+                }
+                #[cfg(feature = "canvas")]
+                (ViewNodeKind::Canvas { on_hover, .. }, ViewEvent::CanvasHover { region, .. }) => {
+                    if let Some(message) = on_hover {
+                        cx.emit(message.map(*region));
                     }
                 }
                 #[cfg(feature = "toggle-button")]
@@ -1893,6 +1928,20 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) => {
                     if let Some(message) = on_selection_change {
                         cx.emit(message(*selection));
+                    }
+                }
+                #[cfg(feature = "textbox")]
+                (
+                    ViewNodeKind::Textbox {
+                        value, on_submit, ..
+                    },
+                    ViewEvent::TextSubmitted {
+                        value: submitted, ..
+                    },
+                ) => {
+                    *value = submitted.clone();
+                    if let Some(message) = on_submit {
+                        cx.emit(message.map(submitted.clone()));
                     }
                 }
                 #[cfg(feature = "auto-suggest")]

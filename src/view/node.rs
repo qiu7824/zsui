@@ -948,8 +948,12 @@ pub enum ViewNodeKind<Msg> {
     #[cfg(feature = "canvas")]
     Canvas {
         scene: crate::ZsCanvasScene,
+        /// Present for size-aware canvases: layout rebuilds `scene` from the
+        /// final bounds before paint and hit testing.
+        builder: Option<crate::ZsCanvasBuilder>,
         on_click: Option<Msg>,
         on_pointer: Option<ViewMessageMapper<crate::ZsCanvasPointerEvent, Msg>>,
+        on_hover: Option<ViewMessageMapper<Option<u64>, Msg>>,
     },
     #[cfg(feature = "button")]
     Button {
@@ -980,6 +984,9 @@ pub enum ViewNodeKind<Msg> {
         wrap: crate::TextWrap,
         on_change: Option<ViewMessageMapper<String, Msg>>,
         on_selection_change: Option<fn(ZsTextSelection) -> Msg>,
+        /// When present, Enter submits the current value instead of editing;
+        /// Shift+Enter and Ctrl+Enter keep inserting a line break.
+        on_submit: Option<ViewMessageMapper<String, Msg>>,
     },
     #[cfg(feature = "password-box")]
     PasswordBox {
@@ -1094,6 +1101,9 @@ pub enum ViewNodeKind<Msg> {
         context_trigger: bool,
         #[cfg(feature = "context-menu")]
         context_anchor: Option<Point>,
+        /// Optional point inside the target, in the target's local DP space.
+        /// When present the menu opens at that point, like a context menu.
+        anchor: Option<crate::ZsMenuFlyoutAnchor>,
         highlighted: Option<crate::ZsMenuFlyoutPath>,
         open_submenus: Vec<crate::ZsMenuFlyoutPath>,
         on_command: Option<ViewMessageMapper<crate::Command, Msg>>,
@@ -1336,6 +1346,10 @@ pub struct ViewNode<Msg> {
     workbench_transient_source: Option<ViewWorkbenchTransientSource>,
     #[cfg(feature = "workbench")]
     workbench_owner_applies_interaction: bool,
+    #[cfg(feature = "shortcuts")]
+    shortcuts: Vec<(crate::ZsAccelerator, Msg)>,
+    #[cfg(feature = "window-chrome")]
+    window_drag_region: bool,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -1391,6 +1405,10 @@ impl<Msg> ViewNode<Msg> {
             workbench_transient_source,
             #[cfg(feature = "workbench")]
             workbench_owner_applies_interaction: false,
+            #[cfg(feature = "shortcuts")]
+            shortcuts: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_region: false,
             message: PhantomData,
         }
     }
@@ -2184,6 +2202,70 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    /// Marks this node as part of an application-drawn title bar.
+    ///
+    /// In a window built with `custom_title_bar(true)`, pressing inside this
+    /// node moves the window, double-clicking maximizes or restores it and a
+    /// secondary press opens the system window menu. Interactive descendants
+    /// such as tabs and caption buttons keep their input; only the areas no
+    /// hit target covers act as caption.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region(mut self) -> Self {
+        self.window_drag_region = true;
+        self
+    }
+
+/// Binds a window keyboard shortcut to a typed message.
+    ///
+    /// Shortcuts belong to the View, so they follow application state: a
+    /// rebuilt View without the binding disables it. The first binding in
+    /// preorder wins. While a text input has focus, plain typing keys and
+    /// standard editing chords (Primary+A/C/V/X/Y/Z, Primary+Enter and
+    /// Primary+arrow/Backspace/Delete/Home/End) stay with the input; function
+    /// keys and other Primary/Alt chords still reach the shortcut.
+    #[cfg(feature = "shortcuts")]
+    pub fn shortcut(mut self, accelerator: crate::ZsAccelerator, message: Msg) -> Self {
+        self.shortcuts.push((accelerator, message));
+        self
+    }
+
+    /// The message bound to `accelerator` anywhere in this subtree.
+    #[cfg(feature = "shortcuts")]
+    pub fn shortcut_message(&self, accelerator: crate::ZsAccelerator) -> Option<&Msg> {
+        self.shortcuts
+            .iter()
+            .find(|(bound, _)| *bound == accelerator)
+            .map(|(_, message)| message)
+            .or_else(|| {
+                self.children
+                    .iter()
+                    .find_map(|child| child.shortcut_message(accelerator))
+            })
+    }
+
+    /// Emits the current value when Enter is pressed in this text input.
+    ///
+    /// With a submit handler, Enter no longer inserts a line break in a
+    /// multiline editor; Shift+Enter and Ctrl+Enter still do.
+    #[cfg(feature = "textbox")]
+    pub fn on_submit(mut self, message: fn(String) -> Msg) -> Self {
+        if let ViewNodeKind::Textbox { on_submit, .. } = &mut self.kind {
+            *on_submit = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "textbox")]
+    pub fn on_submit_with(
+        mut self,
+        message: impl Fn(String) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Textbox { on_submit, .. } = &mut self.kind {
+            *on_submit = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
     #[cfg(feature = "textbox")]
     pub fn on_text_selection_change(mut self, message: fn(ZsTextSelection) -> Msg) -> Self {
         if let ViewNodeKind::Textbox {
@@ -2713,6 +2795,32 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
+    #[cfg(feature = "canvas")]
+    /// Reports which hover region of the Canvas scene is under the pointer.
+    ///
+    /// Declare regions with [`crate::ZsCanvasScene::with_hover_region`]. The
+    /// message is sent only when the hovered region changes, with `None` when
+    /// the pointer leaves every region or the Canvas, so hover highlights do
+    /// not rebuild the View on every pointer move.
+    pub fn on_canvas_hover(mut self, message: fn(Option<u64>) -> Msg) -> Self {
+        if let ViewNodeKind::Canvas { on_hover, .. } = &mut self.kind {
+            *on_hover = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "canvas")]
+    /// Closure-capable counterpart to [`Self::on_canvas_hover`].
+    pub fn on_canvas_hover_with(
+        mut self,
+        message: impl Fn(Option<u64>) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Canvas { on_hover, .. } = &mut self.kind {
+            *on_hover = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
     #[cfg(feature = "flyout")]
     pub fn on_flyout_dismiss(
         mut self,
@@ -2769,6 +2877,17 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Flyout { on_open_change, .. } = &mut self.kind {
             *on_open_change = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    /// Opens the menu at `anchor` inside its target instead of below the
+    /// whole target, which turns a MenuFlyout into a pointer context menu.
+    /// Pass the local position of a secondary-button Canvas or list press.
+    #[cfg(feature = "menu-flyout")]
+    pub fn menu_flyout_anchor(mut self, anchor: Option<crate::ZsMenuFlyoutAnchor>) -> Self {
+        if let ViewNodeKind::MenuFlyout { anchor: current, .. } = &mut self.kind {
+            *current = anchor;
         }
         self
     }

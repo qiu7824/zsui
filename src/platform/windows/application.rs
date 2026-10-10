@@ -75,11 +75,22 @@ impl Default for WindowsWin32ClassNames {
 pub struct WindowsWindowCreateParams {
     pub role: WindowsWindowRole,
     pub min_size: Option<Size>,
+    /// The View draws the caption; see `WindowSpec::custom_title_bar`.
+    pub custom_title_bar: bool,
 }
 
 impl WindowsWindowCreateParams {
     pub const fn new(role: WindowsWindowRole, min_size: Option<Size>) -> Self {
-        Self { role, min_size }
+        Self {
+            role,
+            min_size,
+            custom_title_bar: false,
+        }
+    }
+
+    pub const fn with_custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.custom_title_bar = custom_title_bar;
+        self
     }
 
     pub fn from_create_param(value: isize) -> Self {
