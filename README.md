@@ -7,7 +7,7 @@
 用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
 
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.2.0-2f6fdf)
+![Version](https://img.shields.io/badge/version-0.3.0--alpha.1-2f6fdf)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
 ![Core](https://img.shields.io/badge/core-Rust-dea584)
 ![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
@@ -675,7 +675,7 @@ Video、动画或隐藏控件当成定时器，空闲时也不会因此持续轮
 
 ```toml
 [dependencies]
-zsui = { version = "0.2.0", default-features = false, features = [
+zsui = { version = "0.3.0-alpha.1", default-features = false, features = [
     "window",
     "button",
     "label",
@@ -688,7 +688,7 @@ zsui = { version = "0.2.0", default-features = false, features = [
 高级能力独立开启：
 
 ```toml
-zsui = { version = "0.2.0", default-features = false, features = [
+zsui = { version = "0.3.0-alpha.1", default-features = false, features = [
     "workbench",
     "document-shell",
     "calculator",
