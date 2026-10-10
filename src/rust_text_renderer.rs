@@ -639,6 +639,9 @@ struct CachedGlyphImage {
 /// clearing it never invalidates an already-owned [`ZsRustTextLayout`].
 pub struct ZsRustTextEngine {
     font_system: FontSystem,
+    /// Weight aliases registered for fallback matching, mapped to the real
+    /// face that renders them.
+    weight_aliases: HashMap<fontdb::ID, fontdb::ID>,
     scale_context: ScaleContext,
     layout_cache: HashMap<ZsTextLayoutCacheKey, CachedTextLayout>,
     layout_cache_limit: usize,
@@ -677,8 +680,17 @@ impl Default for ZsRustTextEngine {
 
 impl ZsRustTextEngine {
     pub fn new() -> Self {
+        let (locale, mut db) = FontSystem::new().into_locale_and_db();
+        #[cfg(windows)]
+        let weight_aliases = {
+            share_face_data(&mut db);
+            add_nearest_weight_aliases(&mut db)
+        };
+        #[cfg(not(windows))]
+        let weight_aliases = HashMap::new();
         Self {
-            font_system: FontSystem::new(),
+            font_system: FontSystem::new_with_locale_and_db(locale, db),
+            weight_aliases,
             scale_context: ScaleContext::new(),
             layout_cache: HashMap::new(),
             layout_cache_limit: DEFAULT_LAYOUT_CACHE_LIMIT,
@@ -904,6 +916,7 @@ impl ZsRustTextEngine {
                         });
                     let strength = windows_synthetic_bold_strength_dp(
                         &mut self.font_system,
+                        &self.weight_aliases,
                         glyph,
                         requested_weight,
                         cluster_is_whitespace,
@@ -1576,6 +1589,7 @@ fn gpos_kern_pair_values(
 /// The 2% em expansion is also the advance added by DirectWrite's simulation.
 fn windows_synthetic_bold_strength_dp(
     font_system: &mut FontSystem,
+    weight_aliases: &HashMap<fontdb::ID, fontdb::ID>,
     glyph: &LayoutGlyph,
     requested_weight: Weight,
     cluster_is_whitespace: bool,
@@ -1590,12 +1604,15 @@ fn windows_synthetic_bold_strength_dp(
     {
         return 0.0;
     }
-    let Some((actual_weight, family_name)) = font_system.db().face(glyph.font_id).map(|face| {
-        (
-            face.weight,
-            face.families.first().map(|family| family.0.clone()),
-        )
-    }) else {
+    let real_face = |id: fontdb::ID| weight_aliases.get(&id).copied().unwrap_or(id);
+    let Some((actual_weight, family_name)) =
+        font_system.db().face(real_face(glyph.font_id)).map(|face| {
+            (
+                face.weight,
+                face.families.first().map(|family| family.0.clone()),
+            )
+        })
+    else {
         return 0.0;
     };
     if actual_weight.0 >= SEMIBOLD_WEIGHT {
@@ -1611,6 +1628,7 @@ fn windows_synthetic_bold_strength_dp(
         if font_system
             .db()
             .query(&query)
+            .map(real_face)
             .and_then(|id| font_system.db().face(id))
             .is_some_and(|face| face.weight.0 >= SEMIBOLD_WEIGHT)
         {
@@ -1760,6 +1778,79 @@ fn blend_channel(destination: u8, source: u8, alpha: u8) -> u8 {
 
 fn multiply_alpha(left: u8, right: u8) -> u8 {
     ((u16::from(left) * u16::from(right) + 127) / 255) as u8
+}
+
+/// Maps every font file once. cosmic-text inspects each non-matching
+/// candidate's variation axes whenever it ranks fonts for a new family and
+/// weight; with file-backed sources each check opened and mapped the file
+/// again. Weight aliases created afterwards clone the shared source and reuse
+/// the same mapping.
+#[cfg(windows)]
+fn share_face_data(db: &mut fontdb::Database) {
+    let ids = db.faces().map(|face| face.id).collect::<Vec<_>>();
+    for id in ids {
+        // SAFETY: this is the memory mapping cosmic-text already applies to
+        // every face it renders; installed system font files are not
+        // rewritten while they are mapped.
+        unsafe {
+            db.make_shared_face_data(id);
+        }
+    }
+}
+
+/// Weights requested through [`cosmic_weight`].
+#[cfg_attr(not(windows), allow(dead_code))]
+const REQUESTED_FACE_WEIGHTS: [u16; 4] = [400, 500, 600, 700];
+
+/// cosmic-text only accepts a script or common fallback face whose weight
+/// equals the request. Families such as Microsoft YaHei UI ship Light,
+/// Regular and Bold faces only, so a Semibold run skipped them and each CJK
+/// glyph landed in whichever font happened to have a 600 face (DengXian Bold,
+/// Yu Gothic UI Semibold). For every family, style and stretch group, register
+/// each missing requested weight as an alias of the face CSS/DirectWrite
+/// matching selects (600 -> Bold, 500 -> Regular). The returned map resolves
+/// an alias to the face that actually renders it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn add_nearest_weight_aliases(db: &mut fontdb::Database) -> HashMap<fontdb::ID, fontdb::ID> {
+    let mut groups: Vec<(String, fontdb::Style, fontdb::Stretch)> = Vec::new();
+    for face in db.faces() {
+        let Some((family, _)) = face.families.first() else {
+            continue;
+        };
+        if !groups.iter().any(|(candidate, style, stretch)| {
+            candidate == family && *style == face.style && *stretch == face.stretch
+        }) {
+            groups.push((family.clone(), face.style, face.stretch));
+        }
+    }
+    let mut planned = Vec::new();
+    for (family, style, stretch) in &groups {
+        let families = [Family::Name(family)];
+        for weight in REQUESTED_FACE_WEIGHTS {
+            let query = fontdb::Query {
+                families: &families,
+                weight: Weight(weight),
+                stretch: *stretch,
+                style: *style,
+            };
+            let Some(id) = db.query(&query) else {
+                continue;
+            };
+            if db.face(id).is_some_and(|face| {
+                face.weight.0 != weight && face.style == *style && face.stretch == *stretch
+            }) {
+                planned.push((id, weight));
+            }
+        }
+    }
+    let mut aliases = HashMap::new();
+    for (real, weight) in planned {
+        if let Some(mut info) = db.face(real).cloned() {
+            info.weight = Weight(weight);
+            aliases.insert(db.push_face_info(info), real);
+        }
+    }
+    aliases
 }
 
 fn cosmic_weight(weight: TextWeight) -> Weight {
@@ -2046,6 +2137,92 @@ fn svg_path(commands: &[Command]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_requested_weights_alias_the_css_nearest_face() {
+        let mut db = fontdb::Database::new();
+        let face = |weight: u16| fontdb::FaceInfo {
+            id: fontdb::ID::dummy(),
+            source: fontdb::Source::Binary(Arc::new(Vec::<u8>::new())),
+            index: 0,
+            families: vec![(
+                "Han Sans UI".to_string(),
+                fontdb::Language::English_UnitedStates,
+            )],
+            post_script_name: format!("HanSansUI-{weight}"),
+            style: fontdb::Style::Normal,
+            weight: Weight(weight),
+            stretch: fontdb::Stretch::Normal,
+            monospaced: false,
+        };
+        let light = db.push_face_info(face(290));
+        let regular = db.push_face_info(face(400));
+        let bold = db.push_face_info(face(700));
+
+        let aliases = add_nearest_weight_aliases(&mut db);
+        let real_for = |weight: u16| {
+            aliases
+                .iter()
+                .find(|(alias, _)| db.face(**alias).is_some_and(|face| face.weight.0 == weight))
+                .map(|(_, real)| *real)
+        };
+        assert_eq!(aliases.len(), 2, "only 500 and 600 are missing");
+        assert_eq!(real_for(500), Some(regular));
+        assert_eq!(real_for(600), Some(bold));
+        assert_ne!(real_for(500), Some(light));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn semibold_cjk_fallback_uses_one_family_with_its_bold_face() {
+        let mut engine = ZsRustTextEngine::new();
+        let text = "计划 0/2";
+        let style = |weight| TextStyle {
+            font_family: "Segoe UI".to_string(),
+            size: 14.0,
+            line_height: 20.0,
+            semantic_role: Some(crate::TextRole::Body),
+            weight,
+            color: Color::rgb(0, 0, 0),
+            horizontal_align: HorizontalAlign::Start,
+            vertical_align: VerticalAlign::Center,
+            wrap: TextWrap::NoWrap,
+            ellipsis: false,
+        };
+        let mut cjk_faces = |weight| {
+            let layout = engine.layout(text, &style(weight), 400, 40, 1.0);
+            layout
+                .glyphs()
+                .iter()
+                .filter(|glyph| {
+                    text.get(glyph.cluster_start..glyph.cluster_end)
+                        .is_some_and(|cluster| cluster.chars().any(|c| c >= '\u{4E00}'))
+                })
+                .map(|glyph| {
+                    let real = engine
+                        .weight_aliases
+                        .get(&glyph.key.font_id)
+                        .copied()
+                        .unwrap_or(glyph.key.font_id);
+                    let face = engine.font_system.db().face(real).expect("glyph face");
+                    (face.families[0].0.clone(), face.weight.0)
+                })
+                .collect::<Vec<_>>()
+        };
+        let regular = cjk_faces(TextWeight::Regular);
+        if regular.is_empty() {
+            return; // no CJK font installed on this host
+        }
+        let semibold = cjk_faces(TextWeight::Semibold);
+        assert_eq!(semibold.len(), regular.len());
+        for ((family, weight), (regular_family, _)) in semibold.iter().zip(&regular) {
+            assert_eq!(
+                family, regular_family,
+                "semibold CJK must not switch typefaces"
+            );
+            assert!(*weight >= 600, "{family} rendered at {weight}");
+        }
+    }
     use std::sync::{Mutex, MutexGuard};
 
     fn text_engine_test_guard() -> MutexGuard<'static, ()> {
