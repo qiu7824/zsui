@@ -297,8 +297,34 @@ impl<Msg> ViewNode<Msg> {
     pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
         // Most pointer moves are outside the title bar; only build the full
         // interaction plan once the cheap region walk matches.
-        self.window_drag_region_contains(point)
-            && self.interaction_plan().hit_target_at(point).is_none()
+        if !self.window_drag_region_contains(point) {
+            return false;
+        }
+        let target = self.interaction_plan().hit_target_at(point);
+        #[cfg(feature = "canvas")]
+        if let Some(target) = target.filter(|target| target.kind == ViewHitTargetKind::Canvas) {
+            return self.drag_canvas_caption_at(target.widget, point);
+        }
+        target.is_none()
+    }
+
+    /// A Canvas that is itself a window drag region draws its own caption:
+    /// its hover regions are the interactive parts and the rest drags.
+    #[cfg(all(feature = "window-chrome", feature = "canvas"))]
+    fn drag_canvas_caption_at(&self, widget: WidgetId, point: crate::Point) -> bool {
+        if self.id == Some(widget) {
+            return match (&self.kind, self.bounds) {
+                (ViewNodeKind::Canvas { scene, .. }, Some(bounds)) if self.window_drag_region => {
+                    scene
+                        .hover_region_at(self.canvas_local_point(bounds, point))
+                        .is_none()
+                }
+                _ => false,
+            };
+        }
+        self.children
+            .iter()
+            .any(|child| child.drag_canvas_caption_at(widget, point))
     }
 
     #[cfg(feature = "window-chrome")]
@@ -361,16 +387,20 @@ impl<Msg> ViewNode<Msg> {
             else {
                 return None;
             };
-            let scale = self.layout_dpi.scale_factor().max(f32::EPSILON);
-            let local = crate::ZsCanvasPoint::new(
-                crate::Dp::new(point.x.saturating_sub(bounds.x) as f32 / scale),
-                crate::Dp::new(point.y.saturating_sub(bounds.y) as f32 / scale),
-            );
-            return Some(scene.hover_region_at(local));
+            return Some(scene.hover_region_at(self.canvas_local_point(bounds, point)));
         }
         self.children
             .iter()
             .find_map(|child| child.canvas_hover_region(widget, point))
+    }
+
+    #[cfg(feature = "canvas")]
+    fn canvas_local_point(&self, bounds: Rect, point: crate::Point) -> crate::ZsCanvasPoint {
+        let scale = self.layout_dpi.scale_factor().max(f32::EPSILON);
+        crate::ZsCanvasPoint::new(
+            crate::Dp::new(point.x.saturating_sub(bounds.x) as f32 / scale),
+            crate::Dp::new(point.y.saturating_sub(bounds.y) as f32 / scale),
+        )
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {

@@ -1809,11 +1809,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 }
                 #[cfg(feature = "canvas")]
                 (
-                    ViewNodeKind::Canvas { on_pointer, .. },
+                    ViewNodeKind::Canvas {
+                        on_pointer, scene, ..
+                    },
                     ViewEvent::CanvasPointer { event },
                 ) => {
                     if let Some(message) = on_pointer {
-                        cx.emit(message.map(*event));
+                        let region = scene.hover_region_at(event.position);
+                        cx.emit(message.map(event.with_region(region)));
                     }
                 }
                 #[cfg(feature = "canvas")]

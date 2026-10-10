@@ -583,6 +583,73 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "canvas", feature = "window-chrome"))]
+    fn drag_region_canvas_keeps_hover_regions_interactive_and_tags_pointer_events() {
+        let strip = WidgetId::new(771);
+        let tab =
+            crate::ZsCanvasRect::new(Dp::new(40.0), Dp::new(6.0), Dp::new(120.0), Dp::new(34.0));
+        let mut view: ViewNode<Msg> = column([
+            canvas(crate::ZsCanvasScene::new().with_hover_region(7, tab))
+                .id(strip)
+                .height(Dp::new(40.0))
+                .on_canvas_pointer(Msg::CanvasPointer)
+                .window_drag_region(),
+            spacer().height(Dp::new(200.0)),
+        ]);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 600,
+                height: 300,
+            },
+            Dpi::standard(),
+        ));
+        assert!(!view.window_drag_region_at(Point { x: 60, y: 20 }), "tab");
+        assert!(
+            view.window_drag_region_at(Point { x: 400, y: 20 }),
+            "empty strip"
+        );
+        assert!(
+            !view.window_drag_region_at(Point { x: 400, y: 120 }),
+            "body"
+        );
+
+        let pointer = |x: f32| {
+            crate::ZsCanvasPointerEvent::new(
+                strip,
+                crate::ZsCanvasPointerPhase::Pressed,
+                crate::ZsCanvasPoint::new(Dp::new(x), Dp::new(20.0)),
+                crate::ZsPointerButton::Primary,
+                crate::ZsPointerModifiers::default(),
+                true,
+            )
+        };
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasPointer {
+                event: pointer(60.0),
+            },
+        );
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasPointer {
+                event: pointer(400.0),
+            },
+        );
+        let regions = events
+            .into_messages()
+            .into_iter()
+            .map(|message| match message {
+                Msg::CanvasPointer(event) => event.region,
+                _ => panic!("expected canvas pointer messages"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(regions, vec![Some(7), None]);
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);

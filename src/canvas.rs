@@ -30,6 +30,10 @@ pub struct ZsCanvasPointerEvent {
     pub button: ZsPointerButton,
     pub modifiers: ZsPointerModifiers,
     pub inside: bool,
+    /// The topmost scene hover region under `position`, filled in when the
+    /// event reaches the Canvas, so custom-drawn controls need no hit test.
+    #[serde(default)]
+    pub region: Option<u64>,
 }
 
 impl ZsCanvasPointerEvent {
@@ -48,7 +52,13 @@ impl ZsCanvasPointerEvent {
             button,
             modifiers,
             inside,
+            region: None,
         }
+    }
+
+    pub const fn with_region(mut self, region: Option<u64>) -> Self {
+        self.region = region;
+        self
     }
 }
 
