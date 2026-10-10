@@ -680,6 +680,7 @@ impl Default for ZsRustTextEngine {
 
 impl ZsRustTextEngine {
     pub fn new() -> Self {
+        #[cfg_attr(not(windows), allow(unused_mut))]
         let (locale, mut db) = FontSystem::new().into_locale_and_db();
         #[cfg(windows)]
         let weight_aliases = {

@@ -901,6 +901,8 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::MenuFlyout => Role::Menu,
         #[cfg(feature = "menu-flyout")]
         ViewHitTargetKind::MenuFlyoutScrim => Role::GenericContainer,
+        #[cfg(feature = "context-menu")]
+        ViewHitTargetKind::ContextMenuRegion => Role::GenericContainer,
         #[cfg(feature = "menu-flyout")]
         ViewHitTargetKind::MenuFlyoutItem { row_kind, .. } => match row_kind {
             crate::ZsMenuFlyoutRowKind::Command { checked: true } => Role::MenuItemCheckBox,
