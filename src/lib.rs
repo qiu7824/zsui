@@ -425,9 +425,9 @@ pub use calculator::{
 #[cfg(feature = "canvas")]
 #[doc(hidden)]
 pub use canvas::{
-    zs_canvas_native_draw_plan, ZsCanvasBuilder, ZsCanvasLayoutContext, ZsCanvasPoint,
-    ZsCanvasPointerEvent, ZsCanvasPointerPhase, ZsCanvasPrimitive, ZsCanvasRect, ZsCanvasScene,
-    ZsCanvasSize,
+    zs_canvas_native_draw_plan, ZsCanvasBuilder, ZsCanvasHoverRegion, ZsCanvasLayoutContext,
+    ZsCanvasPoint, ZsCanvasPointerEvent, ZsCanvasPointerPhase, ZsCanvasPrimitive, ZsCanvasRect,
+    ZsCanvasScene, ZsCanvasSize,
 };
 #[doc(hidden)]
 pub use capability::{CapabilityStatus, CapabilitySupport, HostCapabilities, PlatformName};

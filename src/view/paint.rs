@@ -1816,6 +1816,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         cx.emit(message.map(*event));
                     }
                 }
+                #[cfg(feature = "canvas")]
+                (ViewNodeKind::Canvas { on_hover, .. }, ViewEvent::CanvasHover { region, .. }) => {
+                    if let Some(message) = on_hover {
+                        cx.emit(message.map(*region));
+                    }
+                }
                 #[cfg(feature = "toggle-button")]
                 (
                     ViewNodeKind::ToggleButton {

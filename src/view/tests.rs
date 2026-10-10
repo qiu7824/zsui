@@ -512,6 +512,77 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "canvas", feature = "textbox"))]
+    fn canvas_hover_regions_resolve_the_topmost_region_in_local_dp() {
+        let widget = WidgetId::new(761);
+        let row = |y: f32| {
+            crate::ZsCanvasRect::new(Dp::new(0.0), Dp::new(y), Dp::new(200.0), Dp::new(28.0))
+        };
+        let scene = crate::ZsCanvasScene::new()
+            .with_hover_region(1, row(0.0))
+            .with_hover_region(2, row(28.0))
+            .with_hover_region(
+                9,
+                crate::ZsCanvasRect::new(
+                    Dp::new(170.0),
+                    Dp::new(28.0),
+                    Dp::new(24.0),
+                    Dp::new(28.0),
+                ),
+            );
+        let mut view: ViewNode<Msg> = canvas(scene.clone())
+            .id(widget)
+            .width(Dp::new(200.0))
+            .height(Dp::new(100.0))
+            .on_canvas_hover(|region| Msg::NameChanged(format!("{region:?}")));
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 300,
+                height: 200,
+            },
+            Dpi::new(192.0),
+        ));
+        let at = |x: f32, y: f32| Point {
+            x: 10 + (x * 2.0) as i32,
+            y: 20 + (y * 2.0) as i32,
+        };
+        assert_eq!(
+            view.canvas_hover_region(widget, at(5.0, 5.0)),
+            Some(Some(1))
+        );
+        assert_eq!(
+            view.canvas_hover_region(widget, at(5.0, 30.0)),
+            Some(Some(2))
+        );
+        assert_eq!(
+            view.canvas_hover_region(widget, at(180.0, 30.0)),
+            Some(Some(9))
+        );
+        assert_eq!(view.canvas_hover_region(widget, at(5.0, 80.0)), Some(None));
+        assert_eq!(
+            view.canvas_hover_region(WidgetId::new(1), at(5.0, 5.0)),
+            None
+        );
+        let plain: ViewNode<Msg> = canvas(scene).id(widget);
+        assert_eq!(plain.canvas_hover_region(widget, at(5.0, 5.0)), None);
+
+        let mut events = ViewEventCx::new();
+        view.event(
+            &mut events,
+            &ViewEvent::CanvasHover {
+                widget,
+                region: Some(2),
+            },
+        );
+        assert_eq!(
+            events.into_messages(),
+            vec![Msg::NameChanged("Some(2)".into())]
+        );
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);

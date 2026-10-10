@@ -1693,6 +1693,8 @@ pub(crate) struct NativeViewInputRuntime {
     items_repeater_scrollbar_drag: Option<NativeScrollbarDrag>,
     #[cfg(feature = "color-picker")]
     color_picker_drag: Option<(crate::WidgetId, crate::ViewHitTargetKind)>,
+    #[cfg(feature = "canvas")]
+    canvas_hover: Option<(crate::WidgetId, Option<u64>)>,
     #[cfg(any(
         feature = "auto-suggest",
         feature = "button",
@@ -2058,6 +2060,8 @@ impl NativeViewInputRuntime {
             items_repeater_scrollbar_drag: None,
             #[cfg(feature = "color-picker")]
             color_picker_drag: None,
+            #[cfg(feature = "canvas")]
+            canvas_hover: None,
             #[cfg(any(
                 feature = "auto-suggest",
                 feature = "button",
@@ -3780,6 +3784,10 @@ impl NativeViewInputRuntime {
                 report,
             );
         }
+        #[cfg(feature = "canvas")]
+        {
+            report = self.sync_canvas_hover(Some(point), report);
+        }
         #[cfg(feature = "password-box")]
         if let Some(widget) = self.password_peek {
             let still_peeking = self
@@ -4735,6 +4743,10 @@ impl NativeViewInputRuntime {
             focused_widget: self.focused_widget.map(|widget| widget.0),
             ..NativeViewInputDispatchReport::default()
         };
+        #[cfg(feature = "canvas")]
+        {
+            report = self.sync_canvas_hover(None, report);
+        }
         #[cfg(feature = "tooltip")]
         if self.tooltip.dismiss() {
             report.handled = true;
@@ -4785,6 +4797,49 @@ impl NativeViewInputRuntime {
         {
             report
         }
+    }
+
+    /// Sends `CanvasHover` when the hover-aware Canvas region under `point`
+    /// changes; `None` means the pointer left the window.
+    #[cfg(feature = "canvas")]
+    fn sync_canvas_hover(
+        &mut self,
+        point: Option<Point>,
+        mut report: NativeViewInputDispatchReport,
+    ) -> NativeViewInputDispatchReport {
+        let next = point.and_then(|point| {
+            let target = self.current_interaction_plan()?.hit_target_at(point)?;
+            if target.kind != crate::ViewHitTargetKind::Canvas {
+                return None;
+            }
+            let region = self
+                .live_view
+                .as_ref()?
+                .canvas_hover_region(target.widget, point)?;
+            Some((target.widget, region))
+        });
+        let previous = self.canvas_hover;
+        if previous == next {
+            return report;
+        }
+        self.canvas_hover = next;
+        if let Some((widget, _)) = previous {
+            if next.map(|(next_widget, _)| next_widget) != Some(widget) {
+                report.handled = true;
+                report = self.dispatch_view_event(
+                    ViewEvent::CanvasHover {
+                        widget,
+                        region: None,
+                    },
+                    report,
+                );
+            }
+        }
+        if let Some((widget, region)) = next {
+            report.handled = true;
+            report = self.dispatch_view_event(ViewEvent::CanvasHover { widget, region }, report);
+        }
+        report
     }
 
     /// Dispatches an application shortcut. Unbound accelerators, and editing

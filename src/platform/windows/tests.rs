@@ -208,6 +208,69 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "canvas")]
+    fn window_view_input_route_reports_canvas_hover_only_when_the_region_changes() {
+        #[derive(Clone)]
+        enum Msg {
+            Hover(Option<u64>),
+        }
+
+        let widget = crate::WidgetId::new(332);
+        let builder = crate::native_window("Win32 canvas hover")
+            .size(240, 120)
+            .stateful_view(
+                Vec::<Option<u64>>::new(),
+                move |_| {
+                    crate::column(
+                        [crate::canvas_with(|cx: &crate::ZsCanvasLayoutContext<'_>| {
+                            let width = cx.size().width;
+                            let row = |y: f32| {
+                                crate::ZsCanvasRect::new(
+                                    crate::Dp::new(0.0),
+                                    crate::Dp::new(y),
+                                    width,
+                                    crate::Dp::new(30.0),
+                                )
+                            };
+                            crate::ZsCanvasScene::new()
+                                .with_hover_region(1, row(0.0))
+                                .with_hover_region(2, row(30.0))
+                        })
+                        .id(widget)
+                        .width(crate::Dp::new(200.0))
+                        .height(crate::Dp::new(90.0))
+                        .on_canvas_hover(Msg::Hover)],
+                    )
+                },
+                |seen, message, _| match message {
+                    Msg::Hover(region) => seen.push(region),
+                },
+            );
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("hover canvas should own a live runtime")
+            .clone();
+        let target = runtime
+            .interaction_plan()
+            .hit_target_for_widget(widget)
+            .expect("hover canvas should expose Win32 geometry")
+            .bounds;
+        let scale = target.width as f32 / 200.0;
+        let at = |y: f32| crate::Point {
+            x: target.x + (20.0 * scale) as i32,
+            y: target.y + (y * scale) as i32,
+        };
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let messages = [at(5.0), at(12.0), at(40.0), at(50.0), at(75.0)]
+            .into_iter()
+            .map(|point| route.dispatch_pointer_move(point).message_count)
+            .collect::<Vec<_>>();
+        assert_eq!(messages, vec![1, 0, 1, 0, 1]);
+        assert_eq!(route.dispatch_pointer_leave().message_count, 1);
+        assert_eq!(route.dispatch_pointer_leave().message_count, 0);
+    }
+
+    #[test]
     fn window_create_params_carry_the_custom_title_bar_flag() {
         let plain = WindowsWindowCreateParams::new(WindowsWindowRole::Main, None);
         assert!(!plain.custom_title_bar);

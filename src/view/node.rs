@@ -921,6 +921,7 @@ pub enum ViewNodeKind<Msg> {
         builder: Option<crate::ZsCanvasBuilder>,
         on_click: Option<Msg>,
         on_pointer: Option<ViewMessageMapper<crate::ZsCanvasPointerEvent, Msg>>,
+        on_hover: Option<ViewMessageMapper<Option<u64>, Msg>>,
     },
     #[cfg(feature = "button")]
     Button {
@@ -2616,6 +2617,32 @@ impl<Msg: Clone> ViewNode<Msg> {
     ) -> Self {
         if let ViewNodeKind::Canvas { on_pointer, .. } = &mut self.kind {
             *on_pointer = Some(ViewMessageMapper::from_shared(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "canvas")]
+    /// Reports which hover region of the Canvas scene is under the pointer.
+    ///
+    /// Declare regions with [`crate::ZsCanvasScene::with_hover_region`]. The
+    /// message is sent only when the hovered region changes, with `None` when
+    /// the pointer leaves every region or the Canvas, so hover highlights do
+    /// not rebuild the View on every pointer move.
+    pub fn on_canvas_hover(mut self, message: fn(Option<u64>) -> Msg) -> Self {
+        if let ViewNodeKind::Canvas { on_hover, .. } = &mut self.kind {
+            *on_hover = Some(ViewMessageMapper::from_function(message));
+        }
+        self
+    }
+
+    #[cfg(feature = "canvas")]
+    /// Closure-capable counterpart to [`Self::on_canvas_hover`].
+    pub fn on_canvas_hover_with(
+        mut self,
+        message: impl Fn(Option<u64>) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        if let ViewNodeKind::Canvas { on_hover, .. } = &mut self.kind {
+            *on_hover = Some(ViewMessageMapper::from_shared(message));
         }
         self
     }

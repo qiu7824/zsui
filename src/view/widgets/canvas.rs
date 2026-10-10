@@ -10,6 +10,7 @@ pub fn canvas<Msg>(scene: crate::ZsCanvasScene) -> ViewNode<Msg> {
         builder: None,
         on_click: None,
         on_pointer: None,
+        on_hover: None,
     })
 }
 
@@ -28,5 +29,6 @@ pub fn canvas_with<Msg>(
         builder: Some(crate::ZsCanvasBuilder::new(build)),
         on_click: None,
         on_pointer: None,
+        on_hover: None,
     })
 }

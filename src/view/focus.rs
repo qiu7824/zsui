@@ -34,6 +34,8 @@ trait LiveViewDriver: Send {
     fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool;
     #[cfg(feature = "window-chrome")]
     fn window_drag_region_at(&self, point: crate::Point) -> bool;
+    #[cfg(feature = "canvas")]
+    fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>>;
     #[cfg(feature = "textbox")]
     fn widget_text_submits(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "password-box")]
@@ -219,6 +221,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "window-chrome")]
     pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
         self.lock().window_drag_region_at(point)
+    }
+
+    #[cfg(feature = "canvas")]
+    pub fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>> {
+        self.lock().canvas_hover_region(widget, point)
     }
 
     #[cfg(feature = "textbox")]
@@ -741,6 +748,15 @@ where
     #[cfg(feature = "window-chrome")]
     fn window_drag_region_at(&self, point: crate::Point) -> bool {
         !self.suspended && self.view.window_drag_region_at(point)
+    }
+
+    #[cfg(feature = "canvas")]
+    fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>> {
+        if self.suspended {
+            None
+        } else {
+            self.view.canvas_hover_region(widget, point)
+        }
     }
 
     #[cfg(feature = "textbox")]

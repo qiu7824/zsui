@@ -70,6 +70,12 @@ pub enum ViewEvent {
     CanvasPointer {
         event: crate::ZsCanvasPointerEvent,
     },
+    /// The hover region under the pointer changed for a hover-aware Canvas.
+    #[cfg(feature = "canvas")]
+    CanvasHover {
+        widget: WidgetId,
+        region: Option<u64>,
+    },
     TextChanged {
         widget: WidgetId,
         value: String,

@@ -124,6 +124,8 @@ impl<Msg> ViewNode<Msg> {
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
             #[cfg(feature = "canvas")]
             (Some(id), ViewEvent::CanvasPointer { event }) => id == event.widget,
+            #[cfg(feature = "canvas")]
+            (Some(id), ViewEvent::CanvasHover { widget, .. }) => id == *widget,
             #[cfg(feature = "textbox")]
             (Some(id), ViewEvent::TextEdited { widget, .. })
             | (Some(id), ViewEvent::TextSelectionChanged { widget, .. })
@@ -336,6 +338,39 @@ impl<Msg> ViewNode<Msg> {
         for child in &self.children {
             child.collect_window_drag_regions(regions);
         }
+    }
+
+    /// The hover region under `point` for the hover-aware Canvas `widget`:
+    /// `None` when `widget` is not a Canvas with `on_canvas_hover`, and
+    /// `Some(None)` when the pointer is outside every declared region.
+    #[cfg(feature = "canvas")]
+    pub fn canvas_hover_region(
+        &self,
+        widget: WidgetId,
+        point: crate::Point,
+    ) -> Option<Option<u64>> {
+        if self.id == Some(widget) {
+            let (
+                ViewNodeKind::Canvas {
+                    scene,
+                    on_hover: Some(_),
+                    ..
+                },
+                Some(bounds),
+            ) = (&self.kind, self.bounds)
+            else {
+                return None;
+            };
+            let scale = self.layout_dpi.scale_factor().max(f32::EPSILON);
+            let local = crate::ZsCanvasPoint::new(
+                crate::Dp::new(point.x.saturating_sub(bounds.x) as f32 / scale),
+                crate::Dp::new(point.y.saturating_sub(bounds.y) as f32 / scale),
+            );
+            return Some(scene.hover_region_at(local));
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.canvas_hover_region(widget, point))
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {

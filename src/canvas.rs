@@ -211,6 +211,16 @@ pub struct ZsCanvasScene {
     /// when the node declares no height, for example inside a Scroll.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     extent_height: Option<Dp>,
+    /// Rectangles that report pointer hover through `on_canvas_hover`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hover_regions: Vec<ZsCanvasHoverRegion>,
+}
+
+/// A rectangle of a Canvas scene that reports pointer hover.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsCanvasHoverRegion {
+    pub id: u64,
+    pub rect: ZsCanvasRect,
 }
 
 impl ZsCanvasScene {
@@ -218,6 +228,7 @@ impl ZsCanvasScene {
         Self {
             primitives: Vec::new(),
             extent_height: None,
+            hover_regions: Vec::new(),
         }
     }
 
@@ -237,6 +248,36 @@ impl ZsCanvasScene {
 
     pub fn extent_height(&self) -> Option<Dp> {
         self.extent_height
+    }
+
+    /// Declares a hover region, for example one per tab, row or button
+    /// drawn in this scene. Later regions sit above earlier ones.
+    pub fn with_hover_region(mut self, id: u64, rect: ZsCanvasRect) -> Self {
+        self.push_hover_region(id, rect);
+        self
+    }
+
+    pub fn push_hover_region(&mut self, id: u64, rect: ZsCanvasRect) {
+        self.hover_regions.push(ZsCanvasHoverRegion { id, rect });
+    }
+
+    pub fn hover_regions(&self) -> &[ZsCanvasHoverRegion] {
+        &self.hover_regions
+    }
+
+    /// The topmost hover region containing `point`, in local DP.
+    pub fn hover_region_at(&self, point: ZsCanvasPoint) -> Option<u64> {
+        self.hover_regions
+            .iter()
+            .rev()
+            .find(|region| {
+                let rect = region.rect;
+                point.x.0 >= rect.x.0
+                    && point.y.0 >= rect.y.0
+                    && point.x.0 < rect.x.0 + rect.width.0
+                    && point.y.0 < rect.y.0 + rect.height.0
+            })
+            .map(|region| region.id)
     }
 
     pub fn with(mut self, primitive: ZsCanvasPrimitive) -> Self {
@@ -266,6 +307,7 @@ impl FromIterator<ZsCanvasPrimitive> for ZsCanvasScene {
         Self {
             primitives: iter.into_iter().collect(),
             extent_height: None,
+            hover_regions: Vec::new(),
         }
     }
 }
