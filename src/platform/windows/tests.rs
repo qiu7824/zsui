@@ -313,6 +313,50 @@ mod tests {
     }
 
     #[test]
+    fn window_painter_shares_text_resources_with_the_view_route() {
+        let _guard = view_input_route_test_lock();
+        fn painter_resources(hwnd: HWND) -> WindowsGdiResourceCache {
+            window_draw_plans()
+                .lock()
+                .expect("window draw plan registry should not be poisoned")
+                .iter()
+                .find(|record| record.hwnd == hwnd as isize)
+                .map(|record| record.renderer_resources.clone())
+                .expect("the window should have a painter record")
+        }
+        fn route() -> WindowsWin32ViewInputRoute {
+            WindowsWin32ViewInputRoute::new(
+                crate::ViewInteractionPlan::new([]),
+                crate::column(Vec::<crate::ViewNode<UiCommand>>::new()),
+            )
+        }
+
+        clear_windows_win32_window_view_input_routes();
+        // Painter first: registering the route hands its resources over.
+        let hwnd = 94isize as HWND;
+        assert!(set_windows_win32_window_draw_plan(
+            hwnd,
+            NativeDrawPlan::default()
+        ));
+        let first = route();
+        let route_resources = first.text_resources.clone();
+        assert!(!painter_resources(hwnd).shares_with(&route_resources));
+        assert!(set_windows_win32_window_view_input_route(hwnd, first));
+        assert!(painter_resources(hwnd).shares_with(&route_resources));
+
+        // A painter recreated after the window was hidden adopts them too.
+        clear_windows_win32_window_draw_plan(hwnd);
+        assert!(set_windows_win32_window_draw_plan(
+            hwnd,
+            NativeDrawPlan::default()
+        ));
+        assert!(painter_resources(hwnd).shares_with(&route_resources));
+
+        clear_windows_win32_window_draw_plan(hwnd);
+        clear_windows_win32_window_view_input_route(hwnd);
+    }
+
+    #[test]
     fn window_create_params_carry_the_custom_title_bar_flag() {
         let plain = WindowsWindowCreateParams::new(WindowsWindowRole::Main, None);
         assert!(!plain.custom_title_bar);

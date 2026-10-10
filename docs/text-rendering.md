@@ -68,7 +68,11 @@ least-recently-used, clearing glyph images does not invalidate an owned layout,
 and `ZsTextCacheStats` exposes hit/miss/eviction counters for framework
 diagnostics. The Win32 adapter initializes this context on first measure or
 draw, and `WindowsGdiRenderer::text_layout()` returns a facade backed by the
-same per-window resource cache. Linux Direct Lite also owns one shared context
+same per-window resource cache. View layout measurement uses that same
+per-window cache: the window's View route owns it and the painter adopts it,
+so one `FontSystem` serves measuring and painting for the window's lifetime.
+Measurement resolves the installed UI and icon families (probed once through a
+memory DC), the same faces the painter draws with. Linux Direct Lite also owns one shared context
 for menu measurement, final-surface drawing, typography metrics and text-input
 caret/selection geometry; it no longer constructs a second `FontSystem`,
 `Buffer` or `SwashCache` path beside the ZSUI engine.

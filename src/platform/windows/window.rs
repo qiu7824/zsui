@@ -3,6 +3,8 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
         return false;
     }
     apply_windows_win32_window_theme(hwnd, plan.theme_mode);
+    // Paint with the same text engine the View route measures with.
+    let route_resources = windows_win32_window_view_text_resources(hwnd);
     let mut plans = window_draw_plans()
         .lock()
         .expect("window draw plan registry should not be poisoned");
@@ -14,10 +16,23 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
         plans.push(WindowsWindowDrawPlanRecord {
             hwnd,
             plan,
-            renderer_resources: WindowsGdiResourceCache::default(),
+            renderer_resources: route_resources.unwrap_or_default(),
         });
     }
     true
+}
+
+/// Lets an existing painter adopt the View route's text resources.
+fn adopt_windows_win32_window_renderer_resources(hwnd: HWND, resources: WindowsGdiResourceCache) {
+    let hwnd = hwnd as isize;
+    if let Some(record) = window_draw_plans()
+        .lock()
+        .expect("window draw plan registry should not be poisoned")
+        .iter_mut()
+        .find(|record| record.hwnd == hwnd)
+    {
+        record.renderer_resources = resources;
+    }
 }
 
 pub fn clear_windows_win32_window_draw_plan(hwnd: HWND) {

@@ -17,6 +17,9 @@ pub struct WindowsWin32ViewInputRoute {
     shared_color_picker_drag_active: bool,
     pending_utf16_high_surrogate: Option<u16>,
     pending_draw_plan: Option<NativeDrawPlan>,
+    /// Renderer resources shared by text measurement and the window's
+    /// painter, so both use one text engine.
+    text_resources: WindowsGdiResourceCache,
     quit_requested: bool,
     #[cfg(feature = "window-chrome")]
     pending_window_commands: Vec<crate::ZsWindowCommand>,
@@ -127,8 +130,11 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn from_shared_runtime(mut shared_runtime: crate::native::NativeViewInputRuntime) -> Self {
+        let text_resources = WindowsGdiResourceCache::default();
         shared_runtime.set_text_shaping_backend(
-            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
+            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend_with_resources(
+                text_resources.clone(),
+            ),
         );
         #[cfg(feature = "tooltip")]
         shared_runtime.set_tooltip_timing(windows_tooltip_timing());
@@ -156,6 +162,7 @@ impl WindowsWin32ViewInputRoute {
             shared_color_picker_drag_active: false,
             pending_utf16_high_surrogate: None,
             pending_draw_plan: None,
+            text_resources,
             quit_requested: false,
             #[cfg(feature = "window-chrome")]
             pending_window_commands: Vec::new(),
@@ -479,6 +486,7 @@ pub fn set_windows_win32_window_view_input_route(
     route.bind_invalidation_target(hwnd);
     let draw_plan = route.take_pending_draw_plan();
     let poll_interval_ms = route.background_poll_interval_ms();
+    let text_resources = route.text_resources.clone();
     let hwnd_value = hwnd as isize;
     completed_window_view_input_reports()
         .lock()
@@ -502,6 +510,7 @@ pub fn set_windows_win32_window_view_input_route(
         });
     }
     drop(routes);
+    adopt_windows_win32_window_renderer_resources(hwnd, text_resources);
     if let Some(draw_plan) = draw_plan {
         set_windows_win32_window_draw_plan(hwnd, draw_plan);
         unsafe {
@@ -510,6 +519,17 @@ pub fn set_windows_win32_window_view_input_route(
     }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     true
+}
+
+/// The text resources of the View route registered for `hwnd`, if any. A
+/// busy registry yields `None`; the painter then keeps its own resources.
+fn windows_win32_window_view_text_resources(hwnd: HWND) -> Option<WindowsGdiResourceCache> {
+    let hwnd_value = hwnd as isize;
+    let routes = window_view_input_routes().try_lock().ok()?;
+    routes
+        .iter()
+        .find(|record| record.hwnd == hwnd_value)
+        .map(|record| record.route.text_resources.clone())
 }
 
 pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
