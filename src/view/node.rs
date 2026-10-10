@@ -1302,6 +1302,8 @@ pub struct ViewNode<Msg> {
     workbench_transient_source: Option<ViewWorkbenchTransientSource>,
     #[cfg(feature = "shortcuts")]
     shortcuts: Vec<(crate::ZsAccelerator, Msg)>,
+    #[cfg(feature = "window-chrome")]
+    window_drag_region: bool,
     message: PhantomData<fn() -> Msg>,
 }
 
@@ -1355,6 +1357,8 @@ impl<Msg> ViewNode<Msg> {
             workbench_transient_source,
             #[cfg(feature = "shortcuts")]
             shortcuts: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_region: false,
             message: PhantomData,
         }
     }
@@ -2023,7 +2027,20 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-    /// Binds a window keyboard shortcut to a typed message.
+    /// Marks this node as part of an application-drawn title bar.
+    ///
+    /// In a window built with `custom_title_bar(true)`, pressing inside this
+    /// node moves the window, double-clicking maximizes or restores it and a
+    /// secondary press opens the system window menu. Interactive descendants
+    /// such as tabs and caption buttons keep their input; only the areas no
+    /// hit target covers act as caption.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region(mut self) -> Self {
+        self.window_drag_region = true;
+        self
+    }
+
+/// Binds a window keyboard shortcut to a typed message.
     ///
     /// Shortcuts belong to the View, so they follow application state: a
     /// rebuilt View without the binding disables it. The first binding in

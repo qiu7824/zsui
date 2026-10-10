@@ -255,6 +255,9 @@ pub mod render_protocol;
 #[cfg(feature = "rust-text")]
 #[doc(hidden)]
 pub mod rust_text_renderer;
+#[cfg(feature = "window-chrome")]
+#[doc(hidden)]
+pub mod window_chrome;
 #[cfg(feature = "rust-text-proof")]
 #[doc(hidden)]
 pub use rust_text_renderer::{
@@ -1212,6 +1215,8 @@ pub use widget_render::{
 };
 #[doc(hidden)]
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
+#[cfg(feature = "window-chrome")]
+pub use window_chrome::ZsWindowCommand;
 #[cfg(all(windows, feature = "windows-gdi"))]
 #[doc(hidden)]
 pub use windows_gdi_renderer::{

@@ -1990,6 +1990,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub ime_cancelled: bool,
     pub redraw_plan: Option<NativeDrawPlan>,
     pub quit_requested: bool,
+    #[cfg(feature = "window-chrome")]
+    pub window_commands: Vec<crate::ZsWindowCommand>,
     pub errors: Vec<String>,
 }
 
@@ -2276,6 +2278,8 @@ impl NativeViewInputRuntime {
         self.pending_app_commands.extend(update.commands);
         self.pending_ui_commands.extend(update.ui_commands);
         report.quit_requested = update.quit_requested;
+        #[cfg(feature = "window-chrome")]
+        report.window_commands.extend(update.window_commands);
         self.reconcile_live_view_state(previous_interaction_plan.as_ref(), &mut report);
         #[cfg(feature = "toast")]
         {
@@ -2432,6 +2436,20 @@ impl NativeViewInputRuntime {
             .as_ref()
             .map(SharedLiveViewRuntime::interaction_plan)
             .or_else(|| self.interaction_plan.clone())
+    }
+
+    /// Whether `point` is uncovered caption area of a custom title bar.
+    /// Hosts call this from their non-client hit test, so live Views answer
+    /// without building a full interaction plan for every pointer move.
+    #[cfg(feature = "window-chrome")]
+    pub(crate) fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        match &self.live_view {
+            Some(live_view) => live_view.window_drag_region_at(point),
+            None => self
+                .interaction_plan
+                .as_ref()
+                .is_some_and(|plan| plan.window_drag_region_at(point)),
+        }
     }
 
     pub(crate) const fn focused_widget(&self) -> Option<crate::WidgetId> {
@@ -8285,6 +8303,10 @@ impl NativeViewInputRuntime {
             report.message_count += update.message_count;
             #[cfg(feature = "textbox")]
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
+            #[cfg(feature = "window-chrome")]
+            report
+                .window_commands
+                .extend(update.window_commands.iter().copied());
             if update.redraw {
                 report.redraw_plan = Some(live_view.draw_plan());
                 report.hit_target_count = live_view.interaction_plan().hit_target_count();
@@ -8533,6 +8555,10 @@ impl NativeViewInputRuntime {
             report.ui_command_count = update.ui_commands.len();
             report.quit_requested =
                 update.quit_requested || update.commands.contains(&Command::Quit);
+            #[cfg(feature = "window-chrome")]
+            report
+                .window_commands
+                .extend(update.window_commands.iter().copied());
 
             if self.defer_app_command_execution {
                 self.pending_app_commands.extend(update.commands);
@@ -9505,6 +9531,13 @@ impl NativeWindowBuilder {
         self
     }
 
+    /// Draws the title bar in the View; see `WindowSpec::custom_title_bar`.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.window = self.window.custom_title_bar(custom_title_bar);
+        self
+    }
+
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.window = self.window.always_on_top(always_on_top);
         self
@@ -9899,6 +9932,13 @@ impl<ContentState> TypedNativeWindowBuilder<ContentState> {
         self
     }
 
+    /// Draws the title bar in the View; see `WindowSpec::custom_title_bar`.
+    #[cfg(feature = "window-chrome")]
+    pub fn custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.inner = self.inner.custom_title_bar(custom_title_bar);
+        self
+    }
+
     pub fn always_on_top(mut self, always_on_top: bool) -> Self {
         self.inner = self.inner.always_on_top(always_on_top);
         self
@@ -10140,6 +10180,7 @@ fn window_spec_from_startup_request(request: &NativeRuntimeStartupRequest) -> Wi
         .decorations(options.decorations)
         .always_on_top(options.always_on_top)
         .transparent(options.transparent);
+    window.custom_title_bar = options.custom_title_bar;
 
     if let Some(min_size) = &options.min_size {
         window = window.min_size(

@@ -92,6 +92,8 @@ paged-list = ["virtual-list"]
 textbox = ["text-input-core"]
 # Application keyboard shortcuts declared on View nodes (ZsAccelerator -> Msg).
 shortcuts = ["widgets-base"]
+# Application-drawn title bars: drag regions and window commands (Win32).
+window-chrome = ["widgets-base"]
 password-box = ["text-input-core", "dep:zeroize"]
 tooltip = ["widgets-base"]
 dialog = ["widgets-base"]
@@ -163,6 +165,7 @@ full = [
     "accessibility",
     "all-widgets",
     "shortcuts",
+    "window-chrome",
     "clipboard",
     "calculator",
     "dark-mode",

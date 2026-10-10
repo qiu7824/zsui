@@ -115,6 +115,16 @@ impl WindowsWin32ViewInputRoute {
         std::mem::take(&mut self.quit_requested)
     }
 
+    #[cfg(feature = "window-chrome")]
+    fn take_pending_window_commands(&mut self) -> Vec<crate::ZsWindowCommand> {
+        std::mem::take(&mut self.pending_window_commands)
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        self.shared_runtime.window_drag_region_at(point)
+    }
+
     fn approve_next_close(&mut self) {
         self.close_approved = true;
     }
@@ -346,6 +356,11 @@ impl WindowsWin32ViewInputRoute {
             self.pending_draw_plan = Some(plan);
         }
         self.quit_requested |= shared.quit_requested;
+        #[cfg(feature = "window-chrome")]
+        let window_commands = std::mem::take(&mut shared.window_commands);
+        #[cfg(feature = "window-chrome")]
+        self.pending_window_commands
+            .extend(window_commands.iter().copied());
         self.sync_shared_host_state();
 
         let target = kind.target();
@@ -451,6 +466,10 @@ impl WindowsWin32ViewInputRoute {
             )],
             ..WindowsWin32ViewInputDispatchReport::default()
         };
+        #[cfg(feature = "window-chrome")]
+        {
+            report.window_commands = window_commands;
+        }
         #[cfg(feature = "canvas")]
         {
             report.canvas_pointer_event_count = shared.canvas_pointer_event_count;

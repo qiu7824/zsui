@@ -7,6 +7,8 @@ pub struct LiveViewUpdate {
     #[cfg(feature = "textbox")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
+    #[cfg(feature = "window-chrome")]
+    pub window_commands: Vec<crate::ZsWindowCommand>,
     pub revision: u64,
 }
 
@@ -30,6 +32,8 @@ trait LiveViewDriver: Send {
     fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap>;
     #[cfg(feature = "shortcuts")]
     fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool;
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool;
     #[cfg(feature = "textbox")]
     fn widget_text_submits(&self, widget: WidgetId) -> Option<bool>;
     #[cfg(feature = "password-box")]
@@ -210,6 +214,11 @@ impl SharedLiveViewRuntime {
     #[cfg(feature = "shortcuts")]
     pub fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
         self.lock().has_shortcut(accelerator)
+    }
+
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        self.lock().window_drag_region_at(point)
     }
 
     #[cfg(feature = "textbox")]
@@ -537,6 +546,8 @@ where
             #[cfg(feature = "textbox")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
+            #[cfg(feature = "window-chrome")]
+            window_commands: app_cx.window_commands().to_vec(),
             revision: self.revision,
         }
     }
@@ -725,6 +736,11 @@ where
     #[cfg(feature = "shortcuts")]
     fn has_shortcut(&self, accelerator: crate::ZsAccelerator) -> bool {
         self.view.shortcut_message(accelerator).is_some()
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        !self.suspended && self.view.window_drag_region_at(point)
     }
 
     #[cfg(feature = "textbox")]

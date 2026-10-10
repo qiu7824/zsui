@@ -274,12 +274,67 @@ impl<Msg> ViewNode<Msg> {
         let mut tooltip_targets = Vec::new();
         #[cfg(feature = "tooltip")]
         self.collect_tooltip_targets(&mut tooltip_targets, None);
+        #[cfg(feature = "window-chrome")]
+        let mut window_drag_regions = Vec::new();
+        #[cfg(feature = "window-chrome")]
+        self.collect_window_drag_regions(&mut window_drag_regions);
         ViewInteractionPlan {
             hit_targets,
             #[cfg(feature = "accessibility")]
             accessibility_nodes,
             #[cfg(feature = "tooltip")]
             tooltip_targets,
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions,
+        }
+    }
+
+    /// Whether `point` is uncovered caption area: inside a drag region and
+    /// outside every interactive target, including open overlays.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region_at(&self, point: crate::Point) -> bool {
+        // Most pointer moves are outside the title bar; only build the full
+        // interaction plan once the cheap region walk matches.
+        self.window_drag_region_contains(point)
+            && self.interaction_plan().hit_target_at(point).is_none()
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn window_drag_region_contains(&self, point: crate::Point) -> bool {
+        if self.window_drag_region && self.bounds.is_some_and(|bounds| bounds.contains(point)) {
+            return true;
+        }
+        #[cfg(feature = "tabs")]
+        if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+            return selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected))
+                .and_then(|index| self.children.get(index))
+                .is_some_and(|child| child.window_drag_region_contains(point));
+        }
+        self.children
+            .iter()
+            .any(|child| child.window_drag_region_contains(point))
+    }
+
+    #[cfg(feature = "window-chrome")]
+    fn collect_window_drag_regions(&self, regions: &mut Vec<crate::Rect>) {
+        if self.window_drag_region {
+            if let Some(bounds) = self.bounds {
+                regions.push(bounds);
+            }
+        }
+        #[cfg(feature = "tabs")]
+        if let ViewNodeKind::Tabs { tabs, selected, .. } = &self.kind {
+            if let Some(child) = selected
+                .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected))
+                .and_then(|index| self.children.get(index))
+            {
+                child.collect_window_drag_regions(regions);
+            }
+            return;
+        }
+        for child in &self.children {
+            child.collect_window_drag_regions(regions);
         }
     }
 

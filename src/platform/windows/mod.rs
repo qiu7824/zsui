@@ -114,6 +114,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::WM_GETOBJECT;
 use windows_sys::Win32::UI::WindowsAndMessaging::SPI_GETMENUSHOWDELAY;
 #[cfg(feature = "tooltip")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{SPI_GETMESSAGEDURATION, SPI_GETMOUSEHOVERTIME};
+#[cfg(feature = "window-chrome")]
+use windows_sys::Win32::UI::{
+    HiDpi::GetSystemMetricsForDpi,
+    WindowsAndMessaging::{
+        IsZoomed, HTCLIENT, HTTOP, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE, SM_CXPADDEDBORDER,
+        SM_CYSIZEFRAME, WM_NCCALCSIZE, WM_NCHITTEST,
+    },
+};
 
 static ACTIVE_MAIN_WINDOW_COUNT: AtomicI32 = AtomicI32::new(0);
 static WINDOW_DRAW_PLANS: OnceLock<Mutex<Vec<WindowsWindowDrawPlanRecord>>> = OnceLock::new();

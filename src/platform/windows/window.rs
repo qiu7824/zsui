@@ -145,7 +145,8 @@ impl WindowsWin32MainWindowHost {
             style_plan.ex_style,
         );
         let class_name = wide_null(role.class_name(self.class_names));
-        let create_params = WindowsWindowCreateParams::new(role, options.min_size);
+        let create_params = WindowsWindowCreateParams::new(role, options.min_size)
+            .with_custom_title_bar(options.custom_title_bar && options.decorations);
         CreateWindowExW(
             style_plan.ex_style,
             class_name.as_ptr(),

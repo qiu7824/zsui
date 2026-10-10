@@ -381,6 +381,67 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(feature = "window-chrome", feature = "button"))]
+    fn window_drag_regions_leave_interactive_targets_to_the_view() {
+        let close = WidgetId::new(751);
+        let mut view: ViewNode<Msg> = column([
+            row([button("Close / 关闭")
+                .id(close)
+                .width(Dp::new(46.0))
+                .height(Dp::new(32.0))
+                .on_click(Msg::SaveClicked)])
+            .width(Dp::new(400.0))
+            .height(Dp::new(32.0))
+            .window_drag_region(),
+            spacer().height(Dp::new(100.0)),
+        ]);
+        view.layout(&mut ViewLayoutCx::new(
+            Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+            },
+            Dpi::standard(),
+        ));
+        let plan = view.interaction_plan();
+        assert_eq!(plan.window_drag_regions.len(), 1);
+        let region = plan.window_drag_regions[0];
+        let button = plan
+            .hit_target_for_widget(close)
+            .expect("caption button should stay interactive")
+            .bounds;
+        let on_button = Point {
+            x: button.x + button.width / 2,
+            y: button.y + button.height / 2,
+        };
+        let empty_caption = Point {
+            x: region.x + region.width - 8,
+            y: region.y + region.height / 2,
+        };
+        let body = Point {
+            x: empty_caption.x,
+            y: region.y + region.height + 20,
+        };
+        assert!(!button.contains(empty_caption));
+        for (point, expected) in [(empty_caption, true), (on_button, false), (body, false)] {
+            assert_eq!(plan.window_drag_region_at(point), expected, "{point:?}");
+            assert_eq!(view.window_drag_region_at(point), expected, "{point:?}");
+        }
+
+        let mut cx = AppCx::new();
+        cx.window_command(crate::ZsWindowCommand::ToggleMaximize);
+        cx.window_command(crate::ZsWindowCommand::Close);
+        assert_eq!(
+            cx.window_commands(),
+            &[
+                crate::ZsWindowCommand::ToggleMaximize,
+                crate::ZsWindowCommand::Close
+            ]
+        );
+    }
+
+    #[test]
     #[cfg(feature = "canvas")]
     fn size_aware_canvas_rebuilds_its_scene_from_final_bounds() {
         let canvas_id = WidgetId::new(9);

@@ -208,6 +208,103 @@ mod tests {
     }
 
     #[test]
+    fn window_create_params_carry_the_custom_title_bar_flag() {
+        let plain = WindowsWindowCreateParams::new(WindowsWindowRole::Main, None);
+        assert!(!plain.custom_title_bar);
+        let params = plain.with_custom_title_bar(true);
+        let decoded = WindowsWindowCreateParams::from_create_param(&params as *const _ as isize);
+        assert!(decoded.custom_title_bar);
+        assert_eq!(decoded, params);
+    }
+
+    #[test]
+    #[cfg(all(feature = "window-chrome", feature = "button"))]
+    fn window_view_input_route_reports_caption_regions_and_window_commands() {
+        #[derive(Clone)]
+        enum Msg {
+            Minimize,
+            Maximize,
+        }
+
+        let minimize = crate::WidgetId::new(330);
+        let maximize = crate::WidgetId::new(331);
+        let builder = crate::native_window("Win32 custom title bar")
+            .size(320, 160)
+            .custom_title_bar(true)
+            .stateful_view(
+                (),
+                move |_| {
+                    crate::column([crate::row([
+                        crate::spacer().width(crate::Dp::new(200.0)),
+                        crate::button("-")
+                            .id(minimize)
+                            .width(crate::Dp::new(46.0))
+                            .on_click(Msg::Minimize),
+                        crate::button("[]")
+                            .id(maximize)
+                            .width(crate::Dp::new(46.0))
+                            .on_click(Msg::Maximize),
+                    ])
+                    .height(crate::Dp::new(32.0))
+                    .window_drag_region()])
+                },
+                |_, message, cx| match message {
+                    Msg::Minimize => cx.window_command(crate::ZsWindowCommand::Minimize),
+                    Msg::Maximize => cx.window_command(crate::ZsWindowCommand::ToggleMaximize),
+                },
+            );
+        assert!(builder.window_spec().custom_title_bar);
+        assert!(
+            crate::NativeWindowOptions::from_zsui_window(builder.window_spec()).custom_title_bar
+        );
+        assert!(
+            !crate::NativeWindowOptions::from_zsui_window(
+                &builder.window_spec().clone().decorations(false)
+            )
+            .custom_title_bar,
+            "an undecorated window has no frame to keep"
+        );
+
+        let runtime = builder
+            .native_live_view_runtime()
+            .expect("title bar should own a live runtime")
+            .clone();
+        let plan = runtime.interaction_plan();
+        let region = plan.window_drag_regions[0];
+        let button = plan
+            .hit_target_for_widget(minimize)
+            .expect("caption button should expose Win32 geometry")
+            .bounds;
+        let mut route = WindowsWin32ViewInputRoute::from_live_view(runtime);
+        let caption = crate::Point {
+            x: region.x + 8,
+            y: region.y + region.height / 2,
+        };
+        let on_button = crate::Point {
+            x: button.x + button.width / 2,
+            y: button.y + button.height / 2,
+        };
+        assert!(route.window_drag_region_at(caption));
+        assert!(!route.window_drag_region_at(on_button));
+        assert!(!route.window_drag_region_at(crate::Point {
+            x: caption.x,
+            y: region.y + region.height + 20,
+        }));
+
+        route.dispatch_pointer_down(on_button, false);
+        let click = route.dispatch_pointer_up(on_button);
+        assert_eq!(
+            click.window_commands,
+            vec![crate::ZsWindowCommand::Minimize]
+        );
+        assert_eq!(
+            route.take_pending_window_commands(),
+            vec![crate::ZsWindowCommand::Minimize]
+        );
+        assert!(route.take_pending_window_commands().is_empty());
+    }
+
+    #[test]
     fn min_track_size_converts_the_requested_client_floor_to_outer_pixels() {
         let style = WS_OVERLAPPED
             | WS_CAPTION

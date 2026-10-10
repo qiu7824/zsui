@@ -78,6 +78,8 @@ pub struct NativeWindowOptions {
     pub min_size: Option<Size>,
     pub resizable: bool,
     pub decorations: bool,
+    /// Decorated window whose caption area belongs to the View.
+    pub custom_title_bar: bool,
     pub always_on_top: bool,
     pub transparent: bool,
 }
@@ -88,6 +90,7 @@ impl NativeWindowOptions {
             min_size: None,
             resizable: true,
             decorations: true,
+            custom_title_bar: false,
             always_on_top: false,
             transparent: false,
         }
@@ -98,6 +101,7 @@ impl NativeWindowOptions {
             min_size: None,
             resizable: false,
             decorations: false,
+            custom_title_bar: false,
             always_on_top: true,
             transparent: false,
         }
@@ -114,6 +118,7 @@ impl NativeWindowOptions {
             min_size,
             resizable,
             decorations,
+            custom_title_bar: false,
             always_on_top,
             transparent,
         }
@@ -121,6 +126,11 @@ impl NativeWindowOptions {
 
     pub const fn with_min_size(mut self, size: Size) -> Self {
         self.min_size = Some(size);
+        self
+    }
+
+    pub const fn with_custom_title_bar(mut self, custom_title_bar: bool) -> Self {
+        self.custom_title_bar = custom_title_bar;
         self
     }
 
@@ -136,6 +146,7 @@ impl NativeWindowOptions {
             min_size,
             resizable: window.resizable,
             decorations: window.decorations,
+            custom_title_bar: window.custom_title_bar && window.decorations,
             always_on_top: window.always_on_top,
             transparent: window.transparent,
         }
