@@ -2606,6 +2606,7 @@ impl MacosAppKitDrawSink {
         if let Some(color) = command.color_override(self.palette.high_contrast) {
             style.color = color;
         }
+        command.apply_size_override(&mut style);
         let attributes = appkit_text_attributes(&style);
         let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
         let text = NSString::from_str(&command.text);

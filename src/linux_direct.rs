@@ -1866,6 +1866,7 @@ impl<'a> LinuxDirectDrawSink<'a> {
         if let Some(color) = command.color_override(self.palette.high_contrast) {
             style.color = color;
         }
+        command.apply_size_override(&mut style);
         let layout = self
             .text_layout
             .pango_layout(&command.text, &style, Some(command.bounds));

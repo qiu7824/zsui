@@ -791,8 +791,8 @@ pub use render_protocol::{
     NativeFontMetrics, NativeIconColorMode, NativeImageInterpolation, NativeStyleHostOperation,
     NativeStyleResolver, NativeTypographyProfile, Renderer, RendererHostOperation,
     SemanticTextStyle, TextLayout, TextLayoutHostOperation, TextRole, TextRun, TextStyle,
-    TextWeight, TextWrap, VerticalAlign, ZsImageFrame, ZsImageFrameId, ZsTypographyMetrics,
-    ZsTypographyPlatformStyle, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
+    TextWeight, TextWrap, VerticalAlign, ZsFontSize, ZsImageFrame, ZsImageFrameId,
+    ZsTypographyMetrics, ZsTypographyPlatformStyle, REQUIRED_NATIVE_DRAW_COMMAND_OPERATIONS,
     REQUIRED_NATIVE_STYLE_HOST_OPERATIONS, REQUIRED_RENDERER_HOST_OPERATIONS,
     REQUIRED_TEXT_LAYOUT_HOST_OPERATIONS,
 };

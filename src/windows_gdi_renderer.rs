@@ -1609,6 +1609,7 @@ impl WindowsGdiDrawSink {
         if let Some(color) = command.color_override(self.high_contrast) {
             style.color = color;
         }
+        command.apply_size_override(&mut style);
         let run = TextRun {
             text: command.text.clone(),
             bounds: command.bounds,

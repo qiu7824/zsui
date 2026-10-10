@@ -465,6 +465,12 @@ mod tests {
                 "plain",
                 cell,
                 crate::SemanticTextStyle::body(),
+            ))
+            .with(crate::ZsCanvasPrimitive::glyph(
+                '\u{E734}',
+                crate::ZsCanvasRect::new(Dp::new(0.0), Dp::new(0.0), Dp::new(22.0), Dp::new(30.0)),
+                brand,
+                crate::ColorRole::SecondaryText,
             ));
         let plan = crate::zs_canvas_native_draw_plan(
             Rect {
@@ -484,10 +490,35 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(texts.len(), 2);
+        assert_eq!(texts.len(), 3);
+        assert_eq!(texts[2].style.role, crate::TextRole::Icon);
+        assert_eq!(
+            texts[2].size.map(crate::ZsFontSize::dip),
+            Some(22.0),
+            "glyphs size to the shorter side"
+        );
+        assert_eq!(texts[1].size, None);
+        let mut resolved = crate::TextStyle {
+            font_family: "Segoe MDL2 Assets".into(),
+            size: 16.0,
+            line_height: 20.0,
+            semantic_role: Some(crate::TextRole::Icon),
+            weight: crate::TextWeight::Regular,
+            color: crate::Color::rgb(0, 0, 0),
+            horizontal_align: crate::HorizontalAlign::Center,
+            vertical_align: crate::VerticalAlign::Center,
+            wrap: crate::TextWrap::NoWrap,
+            ellipsis: false,
+        };
+        texts[2].apply_size_override(&mut resolved);
+        assert_eq!((resolved.size, resolved.line_height), (22.0, 27.5));
         assert_eq!(texts[0].text, "文件");
         assert_eq!(texts[0].color_override(false), Some(rail_text));
-        assert_eq!(texts[0].color_override(true), None, "high contrast keeps the role");
+        assert_eq!(
+            texts[0].color_override(true),
+            None,
+            "high contrast keeps the role"
+        );
         assert_eq!(texts[1].color_override(false), None);
         let icon = plan
             .commands

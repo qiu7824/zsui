@@ -338,6 +338,7 @@ impl<'a> LinuxLiteDrawSink<'a> {
         if let Some(color) = command.color_override(self.palette.high_contrast) {
             style.color = color;
         }
+        command.apply_size_override(&mut style);
         self.draw_text_style(&command.text, command.bounds, &style);
     }
 

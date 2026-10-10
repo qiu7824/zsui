@@ -143,13 +143,15 @@ pub enum ZsCanvasPrimitive {
         rect: ZsCanvasRect,
         color: ColorRole,
     },
-    /// Text in an explicit brand color, for example on a dark navigation
-    /// rail or an avatar. High-contrast mode falls back to `style.color`.
-    ColoredText {
+    /// Text with an optional brand color and explicit size, for example on
+    /// a dark navigation rail, an avatar or an icon-font glyph. High-contrast
+    /// mode falls back to `style.color`.
+    TextRun {
         text: String,
         rect: ZsCanvasRect,
         style: SemanticTextStyle,
-        color: Color,
+        color: Option<Color>,
+        size: Option<Dp>,
     },
     /// A theme-aware icon tinted with an explicit brand color. High-contrast
     /// mode falls back to `fallback`.
@@ -189,12 +191,40 @@ impl ZsCanvasPrimitive {
         style: SemanticTextStyle,
         color: Color,
     ) -> Self {
-        Self::ColoredText {
+        Self::text_run(text, rect, style, Some(color), None)
+    }
+
+    /// Text with an optional explicit color and font size in DP.
+    pub fn text_run(
+        text: impl Into<String>,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Option<Color>,
+        size: Option<Dp>,
+    ) -> Self {
+        Self::TextRun {
             text: text.into(),
             rect,
             style,
             color,
+            size,
         }
+    }
+
+    /// One glyph of the platform icon font (Segoe Fluent Icons or Segoe MDL2
+    /// Assets on Windows) centered in `rect` and sized to its shorter side.
+    pub fn glyph(glyph: char, rect: ZsCanvasRect, color: Color, fallback: ColorRole) -> Self {
+        let mut style = SemanticTextStyle::for_role(crate::TextRole::Icon);
+        style.color = fallback;
+        style.horizontal_align = crate::HorizontalAlign::Center;
+        style.ellipsis = false;
+        Self::text_run(
+            glyph.to_string(),
+            rect,
+            style,
+            Some(color),
+            Some(Dp::new(rect.width.0.min(rect.height.0).max(1.0))),
+        )
     }
 
     /// An icon tinted with `color`; `fallback` is used in high contrast.
@@ -572,19 +602,22 @@ fn canvas_primitive_to_native(
             )
             .with_color(*color),
         ),
-        ZsCanvasPrimitive::ColoredText {
+        ZsCanvasPrimitive::TextRun {
             text,
             rect,
             style,
             color,
-        } => NativeDrawCommand::Text(
-            crate::NativeDrawTextCommand::new(
+            size,
+        } => {
+            let mut command = crate::NativeDrawTextCommand::new(
                 text,
                 canvas_rect_to_native(bounds, *rect, dpi),
                 *style,
-            )
-            .with_color(*color),
-        ),
+            );
+            command.color = *color;
+            command.size = size.map(|size| crate::ZsFontSize::from_dip(size.0));
+            NativeDrawCommand::Text(command)
+        }
         ZsCanvasPrimitive::ColoredIcon {
             icon,
             rect,

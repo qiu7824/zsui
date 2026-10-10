@@ -611,6 +611,29 @@ pub struct NativeDrawTextCommand {
     /// while the system high-contrast appearance is active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Color>,
+    /// Explicit font size in DIPs that replaces the role size, keeping the
+    /// role's line-height ratio; used for icon-font glyphs and badges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<ZsFontSize>,
+}
+
+/// A font size in DIPs kept at 1/100 precision so draw commands stay `Eq`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsFontSize(u32);
+
+impl ZsFontSize {
+    pub fn from_dip(dip: f32) -> Self {
+        let dip = if dip.is_finite() {
+            dip.clamp(0.0, 4096.0)
+        } else {
+            0.0
+        };
+        Self((dip * 100.0).round() as u32)
+    }
+
+    pub fn dip(self) -> f32 {
+        self.0 as f32 / 100.0
+    }
 }
 
 #[cfg(feature = "password-box")]
@@ -664,6 +687,27 @@ impl NativeDrawTextCommand {
             bounds,
             style,
             color: None,
+            size: None,
+        }
+    }
+
+    /// Draws the text at an explicit DIP font size.
+    pub fn with_size(mut self, size: f32) -> Self {
+        self.size = Some(ZsFontSize::from_dip(size));
+        self
+    }
+
+    /// Applies the explicit font size to a resolved style, keeping the
+    /// role's line-height ratio. Non-finite or non-positive sizes are ignored.
+    pub fn apply_size_override(&self, style: &mut TextStyle) {
+        if let Some(size) = self.size.map(ZsFontSize::dip).filter(|size| *size > 0.0) {
+            let ratio = if style.size > 0.0 && style.line_height > 0.0 {
+                style.line_height / style.size
+            } else {
+                1.25
+            };
+            style.size = size;
+            style.line_height = size * ratio;
         }
     }
 
