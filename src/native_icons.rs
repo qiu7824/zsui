@@ -11,6 +11,7 @@ pub enum NativeIconSourceKind {
     MacOsSystemSymbol,
     LinuxIconTheme,
     BundledFluentSvg,
+    BuiltinSymbolic,
 }
 
 impl NativeIconSourceKind {
@@ -20,11 +21,12 @@ impl NativeIconSourceKind {
             Self::MacOsSystemSymbol => "macos_system_symbol",
             Self::LinuxIconTheme => "linux_icon_theme",
             Self::BundledFluentSvg => "bundled_fluent_svg",
+            Self::BuiltinSymbolic => "builtin_symbolic",
         }
     }
 
     pub const fn is_platform_native(self) -> bool {
-        !matches!(self, Self::BundledFluentSvg)
+        !matches!(self, Self::BundledFluentSvg | Self::BuiltinSymbolic)
     }
 }
 
@@ -37,6 +39,14 @@ pub struct NativeIconSource {
 }
 
 impl NativeIconSource {
+    pub fn builtin_symbolic(icon: ZsIcon) -> Self {
+        Self {
+            icon,
+            kind: NativeIconSourceKind::BuiltinSymbolic,
+            identifier: "zsui.symbolic.16".to_owned(),
+            glyph: None,
+        }
+    }
     pub fn windows_font(icon: ZsIcon, family: &'static str, glyph: &'static str) -> Self {
         Self {
             icon,
@@ -96,7 +106,7 @@ where
 }
 
 pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<NativeIconSource> {
-    let candidates = match platform {
+    let mut candidates = match platform {
         PlatformName::Windows => vec![
             NativeIconSource::windows_font(
                 icon,
@@ -113,6 +123,7 @@ pub fn native_icon_candidates(platform: &PlatformName, icon: ZsIcon) -> Vec<Nati
         PlatformName::Linux => vec![NativeIconSource::linux_theme(icon)],
         PlatformName::Android | PlatformName::Unknown | PlatformName::Other(_) => Vec::new(),
     };
+    candidates.push(NativeIconSource::builtin_symbolic(icon));
     #[cfg(any(
         feature = "fluent-icons",
         all(target_os = "macos", feature = "macos-appkit"),

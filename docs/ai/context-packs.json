@@ -129,7 +129,14 @@
         "src/component_catalog.rs",
         "examples/rust_first_view.rs",
         "examples/list_selection.rs",
-        "examples/scroll_view.rs"
+        "examples/scroll_view.rs",
+        "src/resize.rs",
+        "src/view/resize.rs",
+        "src/native_resize.rs",
+        "src/stable_controls.rs",
+        "docs/resizable-layout.md",
+        "src/dispatch_queue.rs",
+        "src/native_dispatch_tests.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -199,24 +206,6 @@
       ]
     },
     {
-      "id": "workbench",
-      "purpose": "Conversation/task workbench, composer and inspector shell",
-      "required": [
-        "src/workbench.rs",
-        "examples/workbench_shell.rs"
-      ],
-      "optional": [
-        "src/style.rs",
-        "src/icon.rs",
-        "src/component_catalog.rs",
-        "src/platform/windows/mod.rs"
-      ],
-      "verify": [
-        "cargo test --features full --quiet",
-        "cargo run --example workbench_shell --features full -- --smoke"
-      ]
-    },
-    {
       "id": "document-shell",
       "purpose": "Shared document lifecycle, self-drawn editor acceptance and notepad measurement",
       "required": [
@@ -254,7 +243,7 @@
         ".github/workflows/ui-performance-matrix.yml",
         "examples/ui_performance_minimal.rs",
         "examples/ui-documents/performance-viewer.json",
-        "examples/invoice_workbench.rs",
+        "examples/invoice_tool.rs",
         "examples/component_gallery.rs",
         "src/bin/zsui-viewer.rs",
         "comparisons/egui_notepad",
@@ -266,7 +255,7 @@
         "[void][scriptblock]::Create((Get-Content -Raw scripts/measure-ui-performance-matrix.ps1))",
         "python -c \"import ast,pathlib; ast.parse(pathlib.Path('comparisons/scripts/measure_unix_performance_matrix.py').read_text(encoding='utf-8'))\"",
         "cargo check --example ui_performance_minimal --no-default-features --features window,button,label",
-        "cargo check --example invoice_workbench --no-default-features --features window,workbench,list,dialog",
+        "cargo check --example invoice_tool --no-default-features --features window,shell,list,dialog",
         "cargo check --example component_gallery --no-default-features --features component-gallery-demo",
         "cargo check --bin zsui-viewer --no-default-features --features ui-viewer"
       ]
@@ -334,7 +323,12 @@
         "src/windows_gdi_renderer.rs",
         "src/desktop_services.rs",
         "Cargo.toml",
-        "THIRD_PARTY_NOTICES.md"
+        "THIRD_PARTY_NOTICES.md",
+        "src/symbolic_icons.rs",
+        "src/windows_symbolic_icons.rs",
+        "src/macos_symbolic_icons.rs",
+        "src/stable_controls.rs",
+        "examples/resizable_layout.rs"
       ],
       "verify": [
         "cargo test --no-default-features --features fluent-icons --quiet",
@@ -382,12 +376,17 @@
         "src/platform/menu_accelerator.rs",
         "src/render_protocol.rs",
         "Cargo.toml",
-      "docs/native-host-smoke.md",
-      "docs/v0.3-native-proof-ci.md",
-      "docs/v0.2-desktop-native.md",
-      ".github/workflows/native-proof.yml",
-      "examples/native_dialog_smoke.rs",
-      "examples/desktop_native_showcase.rs"
+        "docs/native-host-smoke.md",
+        "docs/v0.3-native-proof-ci.md",
+        "docs/v0.2-desktop-native.md",
+        ".github/workflows/native-proof.yml",
+        "examples/native_dialog_smoke.rs",
+        "examples/desktop_native_showcase.rs",
+        "src/app_effect.rs",
+        "src/dispatch_queue.rs",
+        "src/native_dispatch_tests.rs",
+        "docs/app-effects.md",
+        "examples/desktop_reliability.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -421,6 +420,7 @@
         "examples/product_adapter.rs"
       ],
       "optional": [
+        "src/app_effect.rs",
         "examples/product_adapter_smoke.rs",
         "examples/product_adapter_view.rs",
         "examples/product_adapter_native_driver.rs"

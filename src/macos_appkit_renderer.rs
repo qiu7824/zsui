@@ -5,6 +5,9 @@ use std::{
     ptr::NonNull,
 };
 
+#[path = "macos_symbolic_icons.rs"]
+mod symbolic_icons;
+
 use objc2::rc::Retained;
 #[cfg(feature = "accessibility")]
 use objc2::rc::Weak;
@@ -106,6 +109,8 @@ unsafe extern "C" {
     fn CGImageRelease(image: *mut c_void);
     fn CGContextSaveGState(context: *mut c_void);
     fn CGContextRestoreGState(context: *mut c_void);
+    fn CGContextBeginTransparencyLayer(context: *mut c_void, auxiliary_info: *const c_void);
+    fn CGContextEndTransparencyLayer(context: *mut c_void);
     fn CGContextTranslateCTM(context: *mut c_void, tx: f64, ty: f64);
     fn CGContextScaleCTM(context: *mut c_void, sx: f64, sy: f64);
     fn CGContextSetInterpolationQuality(context: *mut c_void, quality: i32);
@@ -563,6 +568,8 @@ define_class!(
                     .then(appkit_semantic_high_contrast_palette)
                     .flatten(),
             );
+            appkit_color(palette.surface).set();
+            NSBezierPath::bezierPathWithRect(bounds).fill();
             let mut sink = MacosAppKitDrawSink::new(palette, plan.typography_scale());
             sink.draw_plan(&plan);
         }
@@ -963,7 +970,7 @@ define_class!(
                 feature = "text-input-core"
             )))]
             let _ = value;
-            #[cfg(any(feature = "slider", feature = "number-box"))]
+            #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
             if self
                 .ivars()
                 .node
@@ -1098,7 +1105,7 @@ fn appkit_accessibility_string(value: &str) -> Retained<AnyObject> {
 #[cfg(feature = "accessibility")]
 impl ZsuiAppKitSemanticAccessibilityElement {
     fn adjust_accessibility_range(&self, steps: i32) -> bool {
-        #[cfg(any(feature = "slider", feature = "number-box"))]
+        #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
         {
             if self
                 .ivars()
@@ -1118,7 +1125,7 @@ impl ZsuiAppKitSemanticAccessibilityElement {
                 .dispatch_accessibility_adjust_numeric_value(self.ivars().node.widget, steps);
             return view.apply_input_report(report).handled;
         }
-        #[cfg(not(any(feature = "slider", feature = "number-box")))]
+        #[cfg(not(any(feature = "slider", feature = "number-box", feature = "resize")))]
         {
             let _ = steps;
             false
@@ -1186,6 +1193,7 @@ fn appkit_semantic_accessibility_role(role: crate::ZsAccessibilityRole) -> Retai
             crate::ZsAccessibilityRole::ListItem => NSAccessibilityRowRole,
             crate::ZsAccessibilityRole::ProgressBar => NSAccessibilityProgressIndicatorRole,
             crate::ZsAccessibilityRole::Slider => NSAccessibilitySliderRole,
+            crate::ZsAccessibilityRole::Splitter => objc2_app_kit::NSAccessibilitySplitterRole,
             crate::ZsAccessibilityRole::SpinButton => NSAccessibilityIncrementorRole,
             crate::ZsAccessibilityRole::Tab => NSAccessibilityRadioButtonRole,
             crate::ZsAccessibilityRole::TabList => NSAccessibilityTabGroupRole,
@@ -1579,6 +1587,25 @@ impl ZsuiAppKitDrawView {
                 appkit_pointer_modifiers(event),
             );
         self.apply_input_report(report);
+        #[cfg(feature = "resize")]
+        {
+            #[allow(deprecated)] // Supports macOS versions before directional resize cursors.
+            let cursor = match self
+                .ivars()
+                .runtime
+                .borrow()
+                .resize_cursor_at(self.pointer_point(event))
+            {
+                Some(crate::ZsResizeAxis::Horizontal) => {
+                    objc2_app_kit::NSCursor::resizeLeftRightCursor()
+                }
+                Some(crate::ZsResizeAxis::Vertical) => {
+                    objc2_app_kit::NSCursor::resizeUpDownCursor()
+                }
+                None => objc2_app_kit::NSCursor::arrowCursor(),
+            };
+            cursor.set();
+        }
     }
 
     fn dispatch_pointer_up_event(&self, event: &NSEvent, button: crate::ZsPointerButton) {
@@ -1603,22 +1630,66 @@ impl ZsuiAppKitDrawView {
         &self,
         mut report: crate::native::NativeViewInputDispatchReport,
     ) -> crate::native::NativeViewInputDispatchReport {
-        let (executor, commands) = self
-            .ivars()
-            .runtime
-            .borrow_mut()
-            .take_pending_app_command_dispatch();
-        let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
-            &mut report,
-            executor,
-            commands,
-        );
-        if effect_executed {
-            self.ivars()
+        let dispatch_turn = self.ivars().runtime.borrow_mut().begin_deferred_dispatch();
+        if dispatch_turn.is_some() {
+            let (executor, commands) = self
+                .ivars()
                 .runtime
                 .borrow_mut()
-                .refresh_live_view_after_app_effect(&mut report);
+                .take_pending_app_command_dispatch();
+            let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
+                &mut report,
+                executor,
+                commands,
+                dispatch_turn.as_ref(),
+            );
+            if effect_executed {
+                self.ivars()
+                    .runtime
+                    .borrow_mut()
+                    .refresh_live_view_after_app_effect(&mut report);
+            }
+            let (ui_executor, ui_commands) = self
+                .ivars()
+                .runtime
+                .borrow_mut()
+                .take_pending_ui_command_dispatch();
+            if let Some(executor) = ui_executor {
+                for command in ui_commands {
+                    if dispatch_turn.as_ref().is_none_or(|turn| !turn.is_alive()) {
+                        break;
+                    }
+                    if let Err(error) = executor.dispatch(command) {
+                        report.errors.push(error.to_string());
+                    }
+                }
+            }
+            let mut budget = crate::dispatch_queue::DispatchTurnBudget::new();
+            while budget.take() {
+                let request = self.ivars().runtime.borrow_mut().pop_pending_app_effect();
+                let Some(request) = request else {
+                    break;
+                };
+                if !request.try_begin() {
+                    continue;
+                }
+                let outcome = crate::app_effect::execute_native_app_effect(request.effect());
+                let effect_report = self
+                    .ivars()
+                    .runtime
+                    .borrow_mut()
+                    .dispatch_app_effect_outcome(request, outcome);
+                report.handled |= effect_report.handled;
+                report.message_count += effect_report.message_count;
+                report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
+                report.quit_requested |= effect_report.quit_requested;
+                report.errors.extend(effect_report.errors);
+                if let Some(plan) = effect_report.redraw_plan {
+                    report.redraw_plan = Some(plan);
+                }
+            }
         }
+        drop(dispatch_turn);
         if let Some(plan) = report.redraw_plan.clone() {
             *self.ivars().plan.borrow_mut() = plan;
             self.setNeedsDisplay(true);
@@ -1688,6 +1759,7 @@ impl ZsuiAppKitDrawView {
         mut runtime: crate::native::NativeViewInputRuntime,
     ) -> Retained<Self> {
         runtime.defer_app_command_execution();
+        runtime.defer_ui_command_execution();
         let this = Self::alloc(mtm).set_ivars(ZsuiAppKitDrawViewIvars {
             plan: RefCell::new(plan),
             runtime: RefCell::new(runtime),
@@ -2325,6 +2397,10 @@ impl MacosAppKitDrawViewHost {
         self.view.apply_input_report(report);
     }
 
+    pub(crate) fn shutdown_dispatch(&self) {
+        self.view.ivars().runtime.borrow_mut().shutdown_dispatch();
+    }
+
     pub(crate) fn dispatch_window_close_requested(&self) -> bool {
         let report = self
             .view
@@ -2652,24 +2728,62 @@ impl MacosAppKitDrawSink {
     }
 
     fn draw_icon(&self, command: &NativeDrawIconCommand) {
+        if command.bounds.width <= 0 || command.bounds.height <= 0 {
+            return;
+        }
         let Some(image) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
             &NSString::from_str(command.icon.sf_symbol_name()),
             None,
         ) else {
+            symbolic_icons::draw(command, self.palette.resolve(command.color));
             return;
         };
-        if command.color_mode == NativeIconColorMode::ThemeAware {
-            image.setTemplate(true);
-            appkit_color(self.palette.resolve(command.color)).set();
+        let configuration =
+            objc2_app_kit::NSImageSymbolConfiguration::configurationWithPointSize_weight(
+                f64::from(command.bounds.width.min(command.bounds.height)),
+                unsafe { NSFontWeightRegular },
+            );
+        let image = image
+            .imageWithSymbolConfiguration(&configuration)
+            .unwrap_or(image);
+        let size = image.size();
+        let bounds = command.fitted_bounds(crate::Size {
+            width: size.width.ceil() as i32,
+            height: size.height.ceil() as i32,
+        });
+        if command.color_mode == NativeIconColorMode::Original {
+            image.drawInRect(appkit_rect(bounds));
+            return;
         }
-        image.drawInRect(appkit_rect(command.bounds));
+        let Some(graphics) = NSGraphicsContext::currentContext() else {
+            return;
+        };
+        let cg_context = graphics.CGContext();
+        let context = std::ptr::from_ref(&*cg_context).cast_mut().cast::<c_void>();
+        if context.is_null() {
+            return;
+        }
+        unsafe {
+            CGContextSaveGState(context);
+            NSBezierPath::bezierPathWithRect(appkit_rect(bounds)).addClip();
+            CGContextBeginTransparencyLayer(context, std::ptr::null());
+            image.drawInRect(appkit_rect(bounds));
+            appkit_color(self.palette.resolve(command.color)).set();
+            objc2_app_kit::NSRectFillUsingOperation(
+                appkit_rect(bounds),
+                objc2_app_kit::NSCompositingOperation::SourceIn,
+            );
+            CGContextEndTransparencyLayer(context);
+            CGContextRestoreGState(context);
+        }
     }
 
     fn draw_image(&self, command: &NativeDrawImageCommand) {
         let Some(graphics_context) = NSGraphicsContext::currentContext() else {
             return;
         };
-        let context: *mut c_void = unsafe { msg_send![&*graphics_context, CGContext] };
+        let cg_context = graphics_context.CGContext();
+        let context = std::ptr::from_ref(&*cg_context).cast_mut().cast::<c_void>();
         if context.is_null()
             || command.bounds.width <= 0
             || command.bounds.height <= 0

@@ -320,6 +320,7 @@ impl LinuxDirectApp {
                 text_context.clone(),
             ));
             runtime.defer_app_command_execution();
+            runtime.defer_ui_command_execution();
             let mut direct = LinuxDirectWindow::new(
                 event_loop,
                 title,
@@ -596,6 +597,7 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
             }
             WindowEvent::ThemeChanged(theme) => {
                 window.theme = theme;
+                window.icon_cache.clear();
                 window.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -624,6 +626,18 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                         linux_pointer_modifiers(window.modifiers),
                     );
                     window.apply_report(report, event_loop);
+                    #[cfg(feature = "resize")]
+                    window.window.set_cursor(
+                        match window.runtime.resize_cursor_at(window.content_point(point)) {
+                            Some(crate::ZsResizeAxis::Horizontal) => {
+                                winit::window::CursorIcon::ColResize
+                            }
+                            Some(crate::ZsResizeAxis::Vertical) => {
+                                winit::window::CursorIcon::RowResize
+                            }
+                            None => winit::window::CursorIcon::Default,
+                        },
+                    );
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -822,7 +836,7 @@ struct LinuxDirectWindow {
     theme: WinitTheme,
     retain_frame: bool,
     last_frame: Vec<u32>,
-    icon_cache: HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    icon_cache: HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
     next_tick: Option<Instant>,
     _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
     menu_surface: Option<crate::linux_direct_menu::LinuxDirectMenuSurface>,
@@ -1187,17 +1201,55 @@ impl LinuxDirectWindow {
         mut report: crate::native::NativeViewInputDispatchReport,
         event_loop: &ActiveEventLoop,
     ) -> crate::native::NativeViewInputDispatchReport {
-        let (executor, commands) = self.runtime.take_pending_app_command_dispatch();
-        let effect_executed = with_linux_direct_file_dialog_parent(&self.window, || {
-            crate::native::dispatch_deferred_native_view_app_commands(
-                &mut report,
-                executor,
-                commands,
-            )
-        });
-        if effect_executed {
-            self.runtime.refresh_live_view_after_app_effect(&mut report);
+        let dispatch_turn = self.runtime.begin_deferred_dispatch();
+        if dispatch_turn.is_some() {
+            let (executor, commands) = self.runtime.take_pending_app_command_dispatch();
+            let effect_executed = with_linux_direct_file_dialog_parent(&self.window, || {
+                crate::native::dispatch_deferred_native_view_app_commands(
+                    &mut report,
+                    executor,
+                    commands,
+                    dispatch_turn.as_ref(),
+                )
+            });
+            if effect_executed {
+                self.runtime.refresh_live_view_after_app_effect(&mut report);
+            }
+            let (ui_executor, ui_commands) = self.runtime.take_pending_ui_command_dispatch();
+            if let Some(executor) = ui_executor {
+                for command in ui_commands {
+                    if dispatch_turn.as_ref().is_none_or(|turn| !turn.is_alive()) {
+                        break;
+                    }
+                    if let Err(error) = executor.dispatch(command) {
+                        report.errors.push(error.to_string());
+                    }
+                }
+            }
+            let mut budget = crate::dispatch_queue::DispatchTurnBudget::new();
+            while budget.take() {
+                let request = self.runtime.pop_pending_app_effect();
+                let Some(request) = request else {
+                    break;
+                };
+                if !request.try_begin() {
+                    continue;
+                }
+                let outcome = with_linux_direct_file_dialog_parent(&self.window, || {
+                    crate::app_effect::execute_native_app_effect(request.effect())
+                });
+                let effect_report = self.runtime.dispatch_app_effect_outcome(request, outcome);
+                report.handled |= effect_report.handled;
+                report.message_count += effect_report.message_count;
+                report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
+                report.quit_requested |= effect_report.quit_requested;
+                report.errors.extend(effect_report.errors);
+                if let Some(plan) = effect_report.redraw_plan {
+                    report.redraw_plan = Some(plan);
+                }
+            }
         }
+        drop(dispatch_turn);
         if let Some(plan) = report.redraw_plan.take() {
             self.plan = plan;
             self.window.request_redraw();
@@ -1277,15 +1329,15 @@ impl LinuxDirectWindow {
                         (Action::SetValue, Some(ActionData::Value(value))) => vec![self
                             .runtime
                             .dispatch_accessibility_set_value(target.widget, value)],
-                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
                         (Action::SetValue, Some(ActionData::NumericValue(value))) => vec![self
                             .runtime
                             .dispatch_accessibility_set_numeric_value(target.widget, *value)],
-                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
                         (Action::Increment, _) => vec![self
                             .runtime
                             .dispatch_accessibility_adjust_numeric_value(target.widget, 1)],
-                        #[cfg(any(feature = "slider", feature = "number-box"))]
+                        #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
                         (Action::Decrement, _) => vec![self
                             .runtime
                             .dispatch_accessibility_adjust_numeric_value(target.widget, -1)],
@@ -1615,7 +1667,7 @@ fn render_linux_direct_frame(
     scale_factor: f64,
     theme: WinitTheme,
     text_context: &LinuxDirectTextContext,
-    _icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    _icon_cache: &mut HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
 ) -> Result<(), String> {
     crate::linux_direct_lite::render_linux_direct_lite_frame(
         frame,
@@ -1639,7 +1691,7 @@ fn render_linux_direct_frame(
     scale_factor: f64,
     theme: WinitTheme,
     pango_context: &pango::Context,
-    icon_cache: &mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    icon_cache: &mut HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
 ) -> Result<(), String> {
     let width_i32 = i32::try_from(width).map_err(|_| "frame width exceeds i32".to_string())?;
     let height_i32 = i32::try_from(height).map_err(|_| "frame height exceeds i32".to_string())?;
@@ -1786,7 +1838,7 @@ struct LinuxDirectDrawSink<'a> {
     style_resolver: NativeDrawTextStyleResolver,
     text_layout: LinuxDirectTextLayout,
     scale_factor: f64,
-    icon_cache: &'a mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+    icon_cache: &'a mut HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
     clip_depth: usize,
 }
 
@@ -1798,7 +1850,7 @@ impl<'a> LinuxDirectDrawSink<'a> {
         palette: NativeDrawPalette,
         typography_scale: f32,
         scale_factor: f64,
-        icon_cache: &'a mut HashMap<(ZsIcon, u32, bool), LinuxIconRaster>,
+        icon_cache: &'a mut HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
     ) -> Self {
         Self {
             context,
@@ -1909,20 +1961,33 @@ impl<'a> LinuxDirectDrawSink<'a> {
     }
 
     fn draw_icon(&mut self, command: &NativeDrawIconCommand) {
+        if command.bounds.width <= 0 || command.bounds.height <= 0 {
+            return;
+        }
         #[cfg(feature = "linux-system-icons")]
         {
             let logical_size = command.bounds.width.min(command.bounds.height).max(1) as u32;
             let physical_size = (f64::from(logical_size) * self.scale_factor)
                 .ceil()
-                .clamp(1.0, f64::from(u16::MAX)) as u32;
+                .clamp(1.0, 512.0) as u32;
             let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
-            let key = (command.icon, physical_size, theme_aware);
+            let tint = theme_aware.then(|| self.palette.resolve(command.color));
+            let key = (
+                command.icon,
+                physical_size,
+                tint.map(|color| u32::from_be_bytes([color.r, color.g, color.b, color.a])),
+            );
             if !self.icon_cache.contains_key(&key) {
-                if let Some(raster) = load_linux_icon_raster(
-                    command.icon,
-                    physical_size,
-                    theme_aware.then(|| self.palette.resolve(command.color)),
-                ) {
+                if let Some(raster) = load_linux_icon_raster(command.icon, physical_size, tint) {
+                    const ICON_CACHE_BYTES: usize = 4 * 1024 * 1024;
+                    let retained = self
+                        .icon_cache
+                        .values()
+                        .map(|entry| entry.premultiplied_bgra.len())
+                        .sum::<usize>();
+                    if retained.saturating_add(raster.premultiplied_bgra.len()) > ICON_CACHE_BYTES {
+                        self.icon_cache.clear();
+                    }
                     self.icon_cache.insert(key, raster);
                 }
             }
@@ -1939,13 +2004,17 @@ impl<'a> LinuxDirectDrawSink<'a> {
                 if self.context.save().is_err() {
                     return;
                 }
+                let bounds = command.fitted_bounds(crate::Size {
+                    width: raster.width,
+                    height: raster.height,
+                });
                 self.add_rect(command.bounds);
                 self.context.clip();
                 self.context
-                    .translate(f64::from(command.bounds.x), f64::from(command.bounds.y));
+                    .translate(f64::from(bounds.x), f64::from(bounds.y));
                 self.context.scale(
-                    f64::from(command.bounds.width.max(1)) / f64::from(raster.width.max(1)),
-                    f64::from(command.bounds.height.max(1)) / f64::from(raster.height.max(1)),
+                    f64::from(bounds.width.max(1)) / f64::from(raster.width.max(1)),
+                    f64::from(bounds.height.max(1)) / f64::from(raster.height.max(1)),
                 );
                 if self.context.set_source_surface(&surface, 0.0, 0.0).is_ok() {
                     let _ = self.context.paint();
@@ -1955,7 +2024,7 @@ impl<'a> LinuxDirectDrawSink<'a> {
             }
         }
 
-        crate::linux_direct_icons::draw_symbolic_icon(
+        crate::symbolic_icons::draw_symbolic_icon(
             self.context,
             command,
             self.palette.resolve(command.color),
@@ -2626,6 +2695,20 @@ pub(crate) fn linux_direct_open_file_dialog(
         }
     }
     Ok(crate::native_file_dialog::normalize_open_file_dialog_selection(dialog.pick_files()))
+}
+
+pub(crate) fn linux_direct_pick_directory_dialog(
+    spec: &crate::DirectoryDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    spec.validate()?;
+    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
+    if let Some(parent) = linux_direct_file_dialog_parent() {
+        dialog = dialog.set_parent(parent.as_ref());
+    }
+    if let Some(path) = &spec.current_path {
+        dialog = dialog.set_directory(path);
+    }
+    Ok(dialog.pick_folder())
 }
 
 pub(crate) fn linux_direct_save_file_dialog(

@@ -843,6 +843,85 @@ impl NativeDrawImageCommand {
 }
 
 impl NativeDrawIconCommand {
+    /// Resolves a glyph inside an independently sized layout or hit-test slot.
+    pub fn in_slot(
+        icon: ZsIcon,
+        slot: Rect,
+        role: crate::ZsIconRole,
+        dpi: crate::Dpi,
+        color_mode: NativeIconColorMode,
+    ) -> Self {
+        Self::in_slot_for_platform(
+            icon,
+            slot,
+            role,
+            crate::ZsPlatformStyle::current(),
+            dpi,
+            color_mode,
+        )
+    }
+
+    pub(crate) fn in_slot_for_platform(
+        icon: ZsIcon,
+        slot: Rect,
+        role: crate::ZsIconRole,
+        platform: crate::ZsPlatformStyle,
+        dpi: crate::Dpi,
+        color_mode: NativeIconColorMode,
+    ) -> Self {
+        let size = role
+            .logical_size(platform)
+            .to_px(dpi)
+            .round_i32()
+            .max(0)
+            .min(slot.width.max(0))
+            .min(slot.height.max(0));
+        Self::new(
+            icon,
+            Rect {
+                x: slot.x.saturating_add((slot.width.max(0) - size) / 2),
+                y: slot.y.saturating_add((slot.height.max(0) - size) / 2),
+                width: size,
+                height: size,
+            },
+            color_mode,
+        )
+    }
+
+    /// Fits a native image's aspect ratio without stretching its glyph.
+    pub fn fitted_bounds(&self, source: crate::Size) -> Rect {
+        let b = self.bounds;
+        if b.width <= 0 || b.height <= 0 || source.width <= 0 || source.height <= 0 {
+            return Rect {
+                x: b.x,
+                y: b.y,
+                width: 0,
+                height: 0,
+            };
+        }
+        let (width, height) = if i64::from(b.width) * i64::from(source.height)
+            <= i64::from(b.height) * i64::from(source.width)
+        {
+            (
+                b.width,
+                (i64::from(source.height) * i64::from(b.width) / i64::from(source.width)).max(1)
+                    as i32,
+            )
+        } else {
+            (
+                (i64::from(source.width) * i64::from(b.height) / i64::from(source.height)).max(1)
+                    as i32,
+                b.height,
+            )
+        };
+        Rect {
+            x: b.x.saturating_add((b.width - width) / 2),
+            y: b.y.saturating_add((b.height - height) / 2),
+            width,
+            height,
+        }
+    }
+
     pub const fn new(icon: ZsIcon, bounds: Rect, color_mode: NativeIconColorMode) -> Self {
         Self {
             icon,
@@ -1324,5 +1403,81 @@ mod draw_command_tests {
         assert_eq!(plan.typography_scale(), 1.375);
         plan.set_typography_scale(f32::NAN);
         assert_eq!(plan.typography_scale(), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod icon_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn icon_glyph_size_does_not_resize_the_interactive_slot() {
+        let slot = Rect {
+            x: 10,
+            y: 20,
+            width: 80,
+            height: 64,
+        };
+        for (dpi, expected) in [(96.0, 20), (144.0, 30), (192.0, 40)] {
+            let icon = NativeDrawIconCommand::in_slot_for_platform(
+                ZsIcon::Save,
+                slot,
+                crate::ZsIconRole::Toolbar,
+                crate::ZsPlatformStyle::Windows,
+                crate::Dpi::new(dpi),
+                NativeIconColorMode::ThemeAware,
+            );
+            assert_eq!(icon.bounds.width, expected);
+            assert_eq!(icon.bounds.height, expected);
+            assert_eq!(icon.bounds.x, slot.x + (slot.width - expected) / 2);
+            assert_eq!(icon.bounds.y, slot.y + (slot.height - expected) / 2);
+        }
+    }
+
+    #[test]
+    fn icon_native_images_preserve_aspect_and_center_in_existing_commands() {
+        let icon = NativeDrawIconCommand {
+            icon: ZsIcon::ChevronRight,
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 40,
+                height: 40,
+            },
+            color_mode: NativeIconColorMode::ThemeAware,
+            color: ColorRole::PrimaryText,
+        };
+        assert_eq!(
+            icon.fitted_bounds(crate::Size {
+                width: 20,
+                height: 10
+            }),
+            Rect {
+                x: 0,
+                y: 10,
+                width: 40,
+                height: 20
+            }
+        );
+        assert_eq!(
+            icon.fitted_bounds(crate::Size {
+                width: 10,
+                height: 20
+            }),
+            Rect {
+                x: 10,
+                y: 0,
+                width: 20,
+                height: 40
+            }
+        );
+        assert_eq!(
+            icon.fitted_bounds(crate::Size {
+                width: 0,
+                height: 20
+            })
+            .width,
+            0
+        );
     }
 }

@@ -538,7 +538,9 @@ pub(crate) fn handle_get_object(
     wparam: windows_sys::Win32::Foundation::WPARAM,
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> Option<windows_sys::Win32::Foundation::LRESULT> {
-    if lparam != UiaRootObjectId as isize {
+    // WM_GETOBJECT object IDs occupy the low DWORD even on 64-bit Windows.
+    // https://learn.microsoft.com/windows/win32/winauto/wm-getobject
+    if lparam as u32 != UiaRootObjectId as u32 {
         return None;
     }
     let snapshot =

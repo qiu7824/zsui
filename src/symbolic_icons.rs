@@ -1,11 +1,20 @@
-#[cfg(feature = "linux-direct")]
+#[cfg(all(target_os = "linux", feature = "linux-direct"))]
 use cairo::{Context as CairoContext, LineCap, LineJoin};
+#[cfg(all(
+    target_os = "linux",
+    feature = "linux-gtk",
+    not(feature = "linux-direct")
+))]
+use gtk4::cairo::{Context as CairoContext, LineCap, LineJoin};
 
 use crate::ZsIcon;
-#[cfg(feature = "linux-direct")]
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "linux-direct", feature = "linux-gtk")
+))]
 use crate::{Color, NativeDrawIconCommand};
 
-pub(crate) trait LinuxIconCanvas {
+pub(crate) trait SymbolicIconCanvas {
     fn new_sub_path(&mut self);
     fn move_to(&mut self, x: f64, y: f64);
     fn line_to(&mut self, x: f64, y: f64);
@@ -18,13 +27,48 @@ pub(crate) trait LinuxIconCanvas {
     fn fill(&mut self);
 }
 
-#[cfg(feature = "linux-direct")]
+/// Emits circular arcs as cubic segments for backends without a matching arc API.
+pub(crate) fn trace_arc(
+    canvas: &mut impl SymbolicIconCanvas,
+    x: f64,
+    y: f64,
+    radius: f64,
+    start: f64,
+    end: f64,
+) {
+    let segments = ((end - start).abs() / std::f64::consts::FRAC_PI_2)
+        .ceil()
+        .max(1.0) as usize;
+    let delta = (end - start) / segments as f64;
+    canvas.line_to(x + radius * start.cos(), y + radius * start.sin());
+    for index in 0..segments {
+        let a = start + delta * index as f64;
+        let b = a + delta;
+        let k = (4.0 / 3.0) * (delta / 4.0).tan() * radius;
+        canvas.curve_to(
+            x + radius * a.cos() - k * a.sin(),
+            y + radius * a.sin() + k * a.cos(),
+            x + radius * b.cos() + k * b.sin(),
+            y + radius * b.sin() - k * b.cos(),
+            x + radius * b.cos(),
+            y + radius * b.sin(),
+        );
+    }
+}
+
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "linux-direct", feature = "linux-gtk")
+))]
 pub(crate) fn draw_symbolic_icon(
     context: &CairoContext,
     command: &NativeDrawIconCommand,
     color: Color,
 ) {
-    let rect = command.bounds;
+    let rect = command.fitted_bounds(crate::Size {
+        width: 16,
+        height: 16,
+    });
     if rect.width <= 0 || rect.height <= 0 || context.save().is_err() {
         return;
     }
@@ -53,7 +97,7 @@ pub(crate) fn draw_symbolic_icon(
     let _ = context.restore();
 }
 
-pub(crate) fn draw_normalized_icon(context: &mut impl LinuxIconCanvas, icon: ZsIcon) {
+pub(crate) fn draw_normalized_icon(context: &mut impl SymbolicIconCanvas, icon: ZsIcon) {
     match icon {
         ZsIcon::App => {
             for (x, y) in [(2.0, 2.0), (9.0, 2.0), (2.0, 9.0), (9.0, 9.0)] {
@@ -404,12 +448,12 @@ pub(crate) fn draw_normalized_icon(context: &mut impl LinuxIconCanvas, icon: ZsI
     }
 }
 
-fn draw_check(context: &mut impl LinuxIconCanvas, left: f64, middle: f64, right: f64) {
+fn draw_check(context: &mut impl SymbolicIconCanvas, left: f64, middle: f64, right: f64) {
     path(context, &[(left, 8.0), (middle, 11.0), (right, 4.5)]);
     stroke(context);
 }
 
-fn draw_file(context: &mut impl LinuxIconCanvas) {
+fn draw_file(context: &mut impl SymbolicIconCanvas) {
     path(
         context,
         &[
@@ -426,18 +470,18 @@ fn draw_file(context: &mut impl LinuxIconCanvas) {
     stroke(context);
 }
 
-fn circle_outline(context: &mut impl LinuxIconCanvas) {
+fn circle_outline(context: &mut impl SymbolicIconCanvas) {
     context.arc(8.0, 8.0, 6.0, 0.0, std::f64::consts::TAU);
     stroke(context);
 }
 
-fn draw_chevron(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
+fn draw_chevron(context: &mut impl SymbolicIconCanvas, points: &[(f64, f64)]) {
     context.set_line_width(1.7);
     path(context, points);
     stroke(context);
 }
 
-fn path(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
+fn path(context: &mut impl SymbolicIconCanvas, points: &[(f64, f64)]) {
     if let Some((first, rest)) = points.split_first() {
         context.move_to(first.0, first.1);
         for point in rest {
@@ -446,12 +490,12 @@ fn path(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
     }
 }
 
-fn polygon(context: &mut impl LinuxIconCanvas, points: &[(f64, f64)]) {
+fn polygon(context: &mut impl SymbolicIconCanvas, points: &[(f64, f64)]) {
     path(context, points);
     context.close_path();
 }
 
-fn rounded_rect(context: &mut impl LinuxIconCanvas, rect: RectF, radius: f64) {
+fn rounded_rect(context: &mut impl SymbolicIconCanvas, rect: RectF, radius: f64) {
     let radius = radius.min(rect.width / 2.0).min(rect.height / 2.0);
     context.new_sub_path();
     context.arc(
@@ -485,19 +529,25 @@ fn rounded_rect(context: &mut impl LinuxIconCanvas, rect: RectF, radius: f64) {
     context.close_path();
 }
 
-fn stroke(context: &mut impl LinuxIconCanvas) {
+fn stroke(context: &mut impl SymbolicIconCanvas) {
     context.stroke();
 }
 
-fn fill(context: &mut impl LinuxIconCanvas) {
+fn fill(context: &mut impl SymbolicIconCanvas) {
     context.fill();
 }
 
-#[cfg(feature = "linux-direct")]
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "linux-direct", feature = "linux-gtk")
+))]
 struct CairoIconCanvas<'a>(&'a CairoContext);
 
-#[cfg(feature = "linux-direct")]
-impl LinuxIconCanvas for CairoIconCanvas<'_> {
+#[cfg(all(
+    target_os = "linux",
+    any(feature = "linux-direct", feature = "linux-gtk")
+))]
+impl SymbolicIconCanvas for CairoIconCanvas<'_> {
     fn new_sub_path(&mut self) {
         self.0.new_sub_path();
     }
@@ -563,5 +613,69 @@ impl RectF {
 
     fn bottom(self) -> f64 {
         self.y + self.height
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingCanvas {
+        points: usize,
+        paints: usize,
+        path_points: usize,
+    }
+    impl RecordingCanvas {
+        fn point(&mut self, x: f64, y: f64) {
+            assert!(x.is_finite() && y.is_finite());
+            assert!((-2.0..=18.0).contains(&x) && (-2.0..=18.0).contains(&y));
+            self.points += 1;
+            self.path_points += 1;
+        }
+        fn paint(&mut self) {
+            assert!(self.path_points > 0);
+            self.paints += 1;
+            self.path_points = 0;
+        }
+    }
+    impl SymbolicIconCanvas for RecordingCanvas {
+        fn new_sub_path(&mut self) {}
+        fn move_to(&mut self, x: f64, y: f64) {
+            self.point(x, y);
+        }
+        fn line_to(&mut self, x: f64, y: f64) {
+            self.point(x, y);
+        }
+        fn curve_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64) {
+            self.point(x1, y1);
+            self.point(x2, y2);
+            self.point(x, y);
+        }
+        fn arc(&mut self, x: f64, y: f64, radius: f64, start: f64, end: f64) {
+            trace_arc(self, x, y, radius, start, end);
+        }
+        fn rectangle(&mut self, x: f64, y: f64, width: f64, height: f64) {
+            self.point(x, y);
+            self.point(x + width, y + height);
+        }
+        fn set_line_width(&mut self, width: f64) {
+            assert!(width.is_finite() && width > 0.0);
+        }
+        fn close_path(&mut self) {}
+        fn stroke(&mut self) {
+            self.paint();
+        }
+        fn fill(&mut self) {
+            self.paint();
+        }
+    }
+    #[test]
+    fn every_semantic_icon_has_bounded_drawable_fallback_geometry() {
+        for icon in crate::ZsIcon::ALL {
+            let mut canvas = RecordingCanvas::default();
+            draw_normalized_icon(&mut canvas, icon);
+            assert!(canvas.points > 0 && canvas.paints > 0, "{icon:?}");
+        }
     }
 }

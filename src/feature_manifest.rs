@@ -116,8 +116,12 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-base"],
+            vec!["widgets-base", "resize"],
             "two-pane adaptive/inline/overlay composition with explicit open state and platform-owned metrics",
+        ),
+        ZsuiCargoFeature::new(
+            "resize", Core, false, Vec::new(), Vec::new(),
+            "typed divider geometry, bounded pointer resizing and controlled extent changes",
         ),
         ZsuiCargoFeature::new(
             "label",
@@ -404,7 +408,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Widget,
             false,
             Vec::new(),
-            vec!["widgets-list"],
+            vec!["widgets-list", "resize"],
             "typed read-only data grid with strong row and column IDs, sorting and platform-adaptive self-drawn metrics",
         ),
         ZsuiCargoFeature::new(
@@ -436,16 +440,8 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             Shell,
             false,
             Vec::new(),
-            Vec::new(),
+            vec!["button", "label", "resize"],
             "desktop shell integration boundary",
-        ),
-        ZsuiCargoFeature::new(
-            "workbench",
-            Shell,
-            false,
-            Vec::new(),
-            vec!["button", "label", "scroll", "textbox", "style"],
-            "conversation and task workbench shell with navigation, timeline, composer and inspector",
         ),
         ZsuiCargoFeature::new(
             "document-shell",
@@ -562,7 +558,6 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "context-menu",
                 "scroll",
                 "shell",
-                "workbench",
                 "document-shell",
                 "native-smoke",
             ],
@@ -776,7 +771,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "macos-appkit",
             Backend,
             false,
-            vec!["objc2", "objc2-app-kit", "objc2-foundation"],
+            vec!["objc2", "objc2-app-kit", "objc2-foundation", "objc2-core-graphics"],
             Vec::new(),
             "macOS AppKit backend boundary with native window, clipboard, file-dialog and typed menu services",
         ),
@@ -885,7 +880,6 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
                 "color-picker",
                 "tabs",
                 "table",
-                "workbench",
             ],
             "explicit opt-in profile for all current widget feature gates",
         ),
@@ -1149,7 +1143,6 @@ mod tests {
         assert!(ui_viewer.enables.contains(&"grid-view"));
         assert!(ui_viewer.enables.contains(&"virtual-list"));
         assert!(ui_viewer.enables.contains(&"image-preview"));
-        assert!(ui_viewer.enables.contains(&"workbench"));
         assert!(full.enables.contains(&"ui-viewer"));
     }
 
@@ -1205,7 +1198,7 @@ mod tests {
         assert_eq!(menu_flyout.enables, vec!["widgets-base"]);
         assert_eq!(context_menu.enables, vec!["menu-flyout"]);
         assert_eq!(accordion.enables, vec!["button", "label"]);
-        assert_eq!(table.enables, vec!["widgets-list"]);
+        assert_eq!(table.enables, vec!["widgets-list", "resize"]);
         assert_eq!(image_preview.enables, vec!["image", "widgets-base"]);
         assert_eq!(video.enables, vec!["widgets-base"]);
         assert!(!table.enables.contains(&"list"));
@@ -1239,6 +1232,5 @@ mod tests {
         assert!(all_widgets.enables.contains(&"color-picker"));
         assert!(all_widgets.enables.contains(&"tabs"));
         assert!(all_widgets.enables.contains(&"table"));
-        assert!(all_widgets.enables.contains(&"workbench"));
     }
 }

@@ -41,7 +41,8 @@
         "action_bindings": {
           "select": "inventory_selected_changed",
           "sort": "inventory_sort_changed",
-          "invoke": "inventory_invoked"
+          "invoke": "inventory_invoked",
+          "columns_change": "inventory_columns_changed"
         },
         "layout": {
           "width": 660,

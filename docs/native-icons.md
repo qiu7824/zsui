@@ -9,16 +9,17 @@ the backend.
 
 | Platform | Primary source | Secondary source | Portable fallback |
 | --- | --- | --- | --- |
-| Windows 11 | Segoe Fluent Icons installed by Windows | Segoe MDL2 Assets | MIT Fluent System Icons SVG |
-| Windows 10 | Segoe Fluent Icons when installed | Segoe MDL2 Assets installed by Windows | MIT Fluent System Icons SVG |
-| macOS | SF Symbols through AppKit | - | MIT Fluent System Icons SVG |
-| Linux `linux-direct` | Built-in Cairo symbolic vectors | Optional freedesktop theme through `linux-system-icons` | MIT Fluent System Icons SVG |
-| Linux `linux-gtk` | Current GTK icon theme symbolic icon | - | MIT Fluent System Icons SVG |
+| Windows 11 | Segoe Fluent Icons installed by Windows | Segoe MDL2 Assets | Built-in symbolic vectors; optional MIT SVG catalog |
+| Windows 10 | Segoe Fluent Icons when installed | Segoe MDL2 Assets installed by Windows | Built-in symbolic vectors; optional MIT SVG catalog |
+| macOS | SF Symbols through AppKit | - | Built-in symbolic vectors; optional MIT SVG catalog |
+| Linux `linux-direct` | Built-in Cairo symbolic vectors | Optional freedesktop theme through `linux-system-icons` | Built-in symbolic vectors; optional MIT SVG catalog |
+| Linux `linux-gtk` | Current GTK icon theme symbolic icon | - | Built-in symbolic vectors; optional MIT SVG catalog |
 
-No Microsoft or Apple icon font is distributed with ZSUI. Windows checks the
-font selected by GDI instead of assuming that a requested family exists. The
+No Microsoft or Apple icon font is distributed with ZSUI. Windows checks both the selected GDI font and the requested glyph instead of
+assuming that a font family contains every semantic symbol. The
 live Windows renderer uses Segoe Fluent Icons first and Segoe MDL2 Assets when
-the Fluent family is unavailable. The default Win32 Rust text compositor
+the Fluent family or glyph is unavailable; complete symbolic vectors cover
+missing native glyphs without a replacement-character box. The default Win32 Rust text compositor
 rasterizes semantic icon glyphs with grayscale coverage, independently from
 subpixel UI text, so 16–20 epx icons do not inherit colored ClearType fringes.
 
@@ -80,18 +81,35 @@ Segoe Fluent Icons code points on Windows, `info.circle`, `checkmark.circle`,
 the corresponding GTK `dialog-*`/`emblem-ok-symbolic` names on Linux, or four
 selected MIT Fluent System Icons SVG fallbacks.
 
-## Runtime status
+## Metrics and rendering
 
-- Windows: font detection and semantic glyph drawing are connected to the GDI
-  renderer.
-- macOS: SF Symbol names and safe resolver contracts are complete; the AppKit
-  `NSImage` lookup remains part of the unfinished AppKit host.
-- Linux: the built-in symbolic vectors are connected to the lightweight
-  `linux-direct` renderer; exact freedesktop theme-file lookup is available
-  through `linux-system-icons`. Both paths require target visual proof.
+`ZsIconRole` selects small/standard/large, navigation, toolbar, status, disclosure
+and tree metrics from the current platform profile. `NativeDrawIconCommand::in_slot`
+centers the glyph in its independent layout slot. Aspect fitting never stretches
+an icon to fill a non-square slot, and role changes do not move its hit target.
+View builders support `icon_role`; UI documents accept `icon_role` or `size`,
+with mutually exclusive validation. The stable facade exposes `Icon`, `IconRole`,
+`IconSize`, `icon`, `icon_button` and `toolbar_button` without native font details.
 
-The capability report therefore marks Windows native icons as supported and
-macOS/Linux native icons as partial. A name catalog is not runtime proof.
+Windows composites original RGBA icons with premultiplied alpha. AppKit requests
+SF Symbols at the resolved point size and applies semantic tint in an isolated
+compositing layer. GTK checks theme availability, loads at physical DPI and
+applies symbolic alpha tint. The Linux Direct cache includes the resolved RGBA
+color, invalidates on theme changes and is limited to 4 MiB and 512-pixel rasters.
+All native renderers have the complete built-in vector fallback.
+
+## Runtime evidence
+
+The Windows fallback paint test checks all 45 semantic icons for nonempty GDI+
+pixels; the native layout example exercises light, dark and high-contrast
+rendering, including differently tinted instances of one icon. Native target
+captures cover all 45 icons in light, dark and high-contrast scenes on
+[Win32, AppKit, Linux Direct, Direct Lite and GTK](https://github.com/qiu7824/zsui/actions/runs/39750838016)
+at `45f2c6b0d34bcff2d362119a5a26fb4666a11ac5`. AppKit and GTK paint the
+framework background behind semantic glyphs, and every scene rejects blank RGB
+captures, including transparent glyph-only images. These fixed scenes establish
+target rendering evidence; they do not replace manual optical review at every
+OS font setting or display scale.
 
 ## Licensing
 

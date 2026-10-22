@@ -19,8 +19,8 @@ history remain authoritative for implementation status.
 - Preserve one shared Rust application shape across Win32, AppKit and Linux:
   `native_window(...).stateful_view(...).run()`.
 - AI-authored product UI starts from `zsui::stable` and the smallest component
-  tree that satisfies explicit regions, actions and data. Composite navigation,
-  workbench and document shells are opt-in workflow contracts, never templates
+  tree that satisfies explicit regions, actions and data. Composite navigation
+  and document shells are opt-in workflow contracts, never templates
   inferred from words such as manager, console, service, task, status or log.
   Examples prove capabilities and must not donate unspecified regions, sample
   data, copy or window dimensions to an application.
@@ -346,6 +346,20 @@ history remain authoritative for implementation status.
   `owner_window_supplied=false` keeps parent/sheet modality as a separate gate.
   Local Win32 release proof passes, while fixed AppKit/Linux target steps must
   pass before the service slice advances beyond first pass.
+- Applications request modal native effects from `update` through `AppCx`
+  (`open_file_dialog`, `save_file_dialog`, `pick_directory`, `show_dialog`,
+  `effect`/`effect_with`). Each call queues an `AppEffectRequest` carrying a
+  platform-neutral `AppEffect` plus a responder that maps the typed
+  `AppEffectOutcome` back into the window's `Msg`. Effects have no in-lock
+  execution path: the runtime always defers them into `pending_app_effects`,
+  hosts execute them after releasing the route lock via
+  `execute_native_app_effect` (which goes through the `NativeFileDialogService`
+  /`NativeDesktopDialogService` facades), and deliver each outcome through
+  `dispatch_app_effect_outcome` at most once. Cancellation is `Ok(None)`;
+  backend failures arrive as `Err(ZsuiError)`; outcomes are dropped when the
+  window is destroyed first. Directory picking uses `DirectoryDialogSpec` and
+  `FileDialogService::pick_directory_dialog`, which stays `Unsupported` until a
+  backend implements it (`DesktopCapability::DirectoryDialog` tracks this).
 - Menu accelerators use the strong `ZsAccelerator` / `ZsAcceleratorKey`
   contract rather than application-parsed strings. `Primary` means Control on
   Windows and Linux and Command on macOS; Win32 `HACCEL`, AppKit key-equivalent
@@ -1012,38 +1026,6 @@ history remain authoritative for implementation status.
   serialize live raster data. Windows Viewer proof at 960x640 retained three
   target-rendered fit modes with no source error and measured 16,125,952 bytes
   RSS plus 5,283,840 private before teardown.
-- UiDocument covers all 49 catalog families. `workbench_shell` is the sole
-  parent for ordered `message_timeline`, `composer` and optional
-  `inspector_panel` children; those child components are typed configuration
-  regions rather than independent look-alike stacks. The release compiler
-  builds one retained `ViewNodeKind::Workbench` and reuses the authoritative
-  `ZsWorkbenchSpec` layout and native draw plan. Stable synthetic region IDs
-  route conversation, toolbar, message, composer, inspector and scrolling
-  events without a global registry. Message arrays, sidebar metadata and
-  action arrays have bounded typed document shapes; composer draft and
-  timeline offset use explicit property/action loops. Windows Viewer proof at
-  1280x800 routed four real clicks plus one real scroll into five typed
-  messages with zero unhandled clicks or scrolls; the observed pre-teardown
-  process sample was 24,809,472 bytes RSS and 7,696,384 private.
-- The retained Workbench View caches one authoritative measured layout per
-  surface/DPI/typography context and reuses it for paint, hit testing, text
-  input and accessibility. Paragraphs, code, notices and dynamic action labels
-  consume backend text measurements; multiline text aligns to the top. Sidebar
-  history, the message timeline and inspector bodies own clipped wheel-scroll
-  viewports and share target shell overlay-scrollbar metrics; narrow windows
-  auto-collapse without disabling explicit expansion, and Composer
-  height grows within platform-profile bounds while preserving both mode and
-  model labels. The message timeline materializes the viewport plus one
-  viewport of overscan on each side while retaining the total scroll extent.
-  `NativeWindowBuilder::workbench(...)` installs this retained runtime rather
-  than freezing a one-frame draw plan.
-- Rust applications use the same named component layer as UiDocument:
-  `items_repeater`, `image`, `settings_card`, `message_timeline`, `composer`,
-  `inspector_panel` and `workbench_shell`. `ZsWorkbenchShellSpec` retains the
-  child contracts and converts into `ZsWorkbenchSpec` only at the established
-  retained runtime boundary. WinUI, AppKit and GTK workbench sidebar, top-bar,
-  composer, inspector, content and radius metrics live in their separate
-  component profiles; application code contains no platform selector.
 - Viewer reload compatibility covers both stable nodes and typed property
   bindings. A binding value survives only when its name, `UiValueType` and
   ordinary/secure storage class remain compatible. Removed, retyped or
@@ -1055,17 +1037,6 @@ history remain authoritative for implementation status.
   all three stable nodes, reported `window_title` as `binding_removed`, drew the
   replacement bilingual title and captured the final `WM_PRINTCLIENT` surface
   with no runtime errors.
-- The fixed `windows-2025` Native UI Proof job owns a deterministic Workbench
-  reload fixture rather than mutating a repository example in place. It starts
-  revision 1 with controlled `timeline_offset` and `composer_draft`, injects
-  revision 2 into the same Win32 Viewer process, requires an explicit binding
-  reset, and validates the final platform capture. Run `30069326871`, job
-  `89406615062`, passed at 960x640: all four Workbench nodes and
-  `timeline_offset` were preserved, removed `composer_draft` was reported as
-  `binding_removed`, the live View rebuilt, process memory was sampled and the
-  final PNG came from `win32_wm_printclient_dib_png` using the Win32 system UI
-  font. Use a fixed size that fits the hosted desktop; Windows otherwise clamps
-  oversized top-level windows to the Runner work area.
 - Windows Button defaults come from current WinUI resources and guidance:
   32 epx standard control height, 120 epx minimum width for short labels,
   `11,5,11,6` content padding, 4 epx control radius, centered content and a
@@ -1645,6 +1616,23 @@ history remain authoritative for implementation status.
   preedit content replaces it. UiDocument uses the same `placeholder` string
   property for textbox, password_box and number_box, and accessibility projects
   the basic input hint as a description rather than inventing a value.
+
+## Desktop interaction contracts
+
+- Icon roles and user-adjustable NavigationView, SplitView and DataGrid extents
+  are priorities alongside the original desktop-hardening slice A. Preserve A's
+  reliable input, effect lifecycle, error reporting and queue-budget scope.
+- Resizing uses shared DP limits, pointer capture, stable owner/column IDs and
+  typed messages; application state owns persisted extents. Keyboard and native
+  accessibility actions use the same constraints as pointer input.
+- Native effects use bounded source admission and window-owned lifetime tokens.
+  Accepted work remains queued across event-loop budgets; modal services execute
+  outside View/route locks. Destruction terminates delivery, while hiding alone
+  does not terminate application state updates.
+- AppKit synchronous file sheets use the panel's native modal session. Native
+  proof sends keyboard input through WindowServer because modern file-panel
+  controls are hosted by a remote service; composited captures include all
+  on-screen layers within the panel bounds, rather than only its local proxy.
 
 ## Acceptance applications
 

@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy)]
 enum WindowsSharedInputKind {
     PointerDown(Option<crate::ViewHitTarget>),
@@ -25,6 +24,7 @@ enum WindowsSharedInputKind {
     Blur,
     Background,
     AppCommand,
+    AppEffect,
     WindowClose,
     #[cfg(feature = "accessibility")]
     Accessibility,
@@ -50,6 +50,7 @@ impl WindowsSharedInputKind {
             Self::Blur => "blur",
             Self::Background => "background",
             Self::AppCommand => "app_command",
+            Self::AppEffect => "app_effect",
             Self::WindowClose => "window_close",
             #[cfg(feature = "accessibility")]
             Self::Accessibility => "accessibility",
@@ -94,7 +95,6 @@ impl WindowsWin32ViewInputRoute {
         self.shared_focused_target()
             .is_some_and(|target| self.shared_runtime.target_accepts_text_input(target))
     }
-
 
     fn suspend_view_when_hidden(&mut self) -> bool {
         let changed = self.shared_runtime.suspend_view_when_hidden();
@@ -142,6 +142,24 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
     ) -> (Option<SharedUiCommandExecutor>, Vec<UiCommand>) {
         self.shared_runtime.take_pending_ui_command_dispatch()
+    }
+
+    fn pop_pending_app_effect(&mut self) -> Option<crate::AppEffectRequest> {
+        self.shared_runtime.pop_pending_app_effect()
+    }
+    fn begin_deferred_dispatch(&self) -> Option<crate::app_effect::EffectTurn> {
+        self.shared_runtime.begin_deferred_dispatch()
+    }
+
+    fn dispatch_app_effect_outcome(
+        &mut self,
+        request: crate::AppEffectRequest,
+        outcome: crate::AppEffectOutcome,
+    ) -> WindowsWin32ViewInputDispatchReport {
+        let report = self
+            .shared_runtime
+            .dispatch_app_effect_outcome(request, outcome);
+        self.adapt_shared_report(report, WindowsSharedInputKind::AppEffect)
     }
 
     fn background_poll_interval_ms(&self) -> Option<u64> {
@@ -205,10 +223,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     #[cfg(all(test, feature = "slider"))]
-    fn widget_slider_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(f32, crate::SliderRange)> {
+    fn widget_slider_state(&self, widget: crate::WidgetId) -> Option<(f32, crate::SliderRange)> {
         self.shared_runtime.widget_slider_state(widget)
     }
 
@@ -221,10 +236,7 @@ impl WindowsWin32ViewInputRoute {
     }
 
     #[cfg(all(test, feature = "combo"))]
-    fn widget_combo_state(
-        &self,
-        widget: crate::WidgetId,
-    ) -> Option<(Option<usize>, usize, bool)> {
+    fn widget_combo_state(&self, widget: crate::WidgetId) -> Option<(Option<usize>, usize, bool)> {
         self.shared_runtime.widget_combo_state(widget)
     }
 
@@ -340,7 +352,6 @@ impl WindowsWin32ViewInputRoute {
         self.shared_runtime.widget_tab_view_state(widget)
     }
 
-
     fn sync_shared_host_state(&mut self) {
         self.view_suspended = self.shared_runtime.is_view_suspended();
     }
@@ -399,8 +410,7 @@ impl WindowsWin32ViewInputRoute {
             self.shared_scrollbar_drag_active = shared.scrollbar_drag_active;
         }
         #[cfg(feature = "virtual-list")]
-        let items_repeater_scrollbar_drag_ended = self
-            .shared_items_repeater_scrollbar_drag_active
+        let items_repeater_scrollbar_drag_ended = self.shared_items_repeater_scrollbar_drag_active
             && !shared.items_repeater_scrollbar_drag_active;
         #[cfg(feature = "virtual-list")]
         {
@@ -443,9 +453,7 @@ impl WindowsWin32ViewInputRoute {
             ime_cancel_count: usize::from(shared.ime_cancelled),
             ime_caret_rect_observation_count: usize::from(
                 shared.ime_caret_rect.is_some()
-                    && (shared.ime_preedit_updated
-                        || shared.ime_committed
-                        || shared.ime_cancelled),
+                    && (shared.ime_preedit_updated || shared.ime_committed || shared.ime_cancelled),
             ),
             ime_preedit_active: shared.ime_preedit_text.is_some(),
             ime_selection: shared.ime_selection,
@@ -456,7 +464,11 @@ impl WindowsWin32ViewInputRoute {
             events: vec![format!(
                 "win32_shared_input:{}:{}",
                 kind.name(),
-                if shared.handled { "handled" } else { "unhandled" }
+                if shared.handled {
+                    "handled"
+                } else {
+                    "unhandled"
+                }
             )],
             ..WindowsWin32ViewInputDispatchReport::default()
         };
@@ -473,9 +485,12 @@ impl WindowsWin32ViewInputRoute {
                 report.live_view_revision
             ));
         }
-        report
-            .events
-            .extend(shared.errors.iter().map(|error| format!("win32_shared_input_error:{error}")));
+        report.events.extend(
+            shared
+                .errors
+                .iter()
+                .map(|error| format!("win32_shared_input_error:{error}")),
+        );
         #[cfg(feature = "text-input-core")]
         {
             report.text_edit_command_count = shared.text_edit_command_count;
@@ -535,15 +550,15 @@ impl WindowsWin32ViewInputRoute {
                         | crate::native::NativeViewKey::PageUp
                         | crate::native::NativeViewKey::PageDown
                 ) {
-                    report.text_navigation_evidence.push(
-                        crate::NativeTextNavigationEvidence {
+                    report
+                        .text_navigation_evidence
+                        .push(crate::NativeTextNavigationEvidence {
                             backend: "win32_wm_keydown".to_string(),
                             key,
                             handled: shared.handled,
                             caret: shared.text_caret,
                             selection: shared.text_selection,
-                        },
-                    );
+                        });
                 }
                 if target.is_some_and(|target| target.kind == crate::ViewHitTargetKind::Unknown)
                     && shared.message_count > 0
@@ -627,8 +642,7 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(feature = "color-picker")]
         {
-            report.color_picker_value_change_count =
-                usize::from(shared.color_picker_value_changed);
+            report.color_picker_value_change_count = usize::from(shared.color_picker_value_changed);
             report.color_picker_channel_change_count =
                 usize::from(shared.color_picker_channel_changed);
             report.color_picker_expanded_change_count =
@@ -641,8 +655,7 @@ impl WindowsWin32ViewInputRoute {
             report.radio_selection_count = usize::from(shared.radio_selection_changed);
             report.radio_keyboard_selection_count =
                 usize::from(shared.radio_keyboard_selection_changed);
-            report.radio_keyboard_focus_only_count =
-                usize::from(shared.radio_keyboard_focus_only);
+            report.radio_keyboard_focus_only_count = usize::from(shared.radio_keyboard_focus_only);
         }
         #[cfg(feature = "auto-suggest")]
         {
@@ -674,8 +687,7 @@ impl WindowsWin32ViewInputRoute {
         {
             report.content_dialog_focus_change_count =
                 usize::from(shared.content_dialog_focus_changed);
-            report.content_dialog_response_count =
-                usize::from(shared.content_dialog_responded);
+            report.content_dialog_response_count = usize::from(shared.content_dialog_responded);
         }
         #[cfg(feature = "command-palette")]
         {
@@ -683,12 +695,10 @@ impl WindowsWin32ViewInputRoute {
                 usize::from(shared.command_palette_query_changed);
             report.command_palette_highlight_change_count =
                 usize::from(shared.command_palette_highlight_changed);
-            report.command_palette_invoke_count =
-                usize::from(shared.command_palette_invoked);
+            report.command_palette_invoke_count = usize::from(shared.command_palette_invoked);
             report.command_palette_open_change_count =
                 usize::from(shared.command_palette_open_changed);
-            report.command_palette_clear_count =
-                usize::from(shared.command_palette_cleared);
+            report.command_palette_clear_count = usize::from(shared.command_palette_cleared);
         }
         #[cfg(feature = "menu-flyout")]
         {
@@ -714,19 +724,16 @@ impl WindowsWin32ViewInputRoute {
         }
         #[cfg(feature = "teaching-tip")]
         {
-            report.teaching_tip_focus_change_count =
-                usize::from(shared.teaching_tip_focus_changed);
+            report.teaching_tip_focus_change_count = usize::from(shared.teaching_tip_focus_changed);
             report.teaching_tip_response_count =
                 usize::from(shared.teaching_tip_response.is_some());
         }
         #[cfg(feature = "breadcrumb")]
         {
-            report.breadcrumb_focus_change_count =
-                usize::from(shared.breadcrumb_focus_changed);
+            report.breadcrumb_focus_change_count = usize::from(shared.breadcrumb_focus_changed);
             report.breadcrumb_expanded_change_count =
                 usize::from(shared.breadcrumb_expanded_changed);
-            report.breadcrumb_selection_count =
-                usize::from(shared.breadcrumb_selection.is_some());
+            report.breadcrumb_selection_count = usize::from(shared.breadcrumb_selection.is_some());
         }
         #[cfg(feature = "combo")]
         {
@@ -734,8 +741,7 @@ impl WindowsWin32ViewInputRoute {
             report.combo_selection_count = usize::from(shared.combo_selection_changed);
             report.combo_keyboard_selection_count =
                 usize::from(shared.combo_keyboard_selection_changed);
-            report.combo_type_ahead_match_count =
-                usize::from(shared.combo_type_ahead_matched);
+            report.combo_type_ahead_match_count = usize::from(shared.combo_type_ahead_matched);
             report.combo_scroll_count = usize::from(shared.combo_scrolled);
         }
         #[cfg(feature = "tabs")]
@@ -743,8 +749,7 @@ impl WindowsWin32ViewInputRoute {
             report.tab_selection_count = usize::from(shared.tab_selection_changed);
             report.tab_keyboard_selection_count =
                 usize::from(shared.tab_keyboard_selection_changed);
-            report.tab_keyboard_focus_only_count =
-                usize::from(shared.tab_keyboard_focus_only);
+            report.tab_keyboard_focus_only_count = usize::from(shared.tab_keyboard_focus_only);
         }
         report
     }

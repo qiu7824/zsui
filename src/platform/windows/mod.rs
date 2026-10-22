@@ -49,6 +49,7 @@ use windows_sys::Win32::{
             PAINTSTRUCT,
         },
     },
+    System::Com::CoTaskMemFree,
     System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD},
     System::{LibraryLoader::GetModuleHandleW, Threading::GetCurrentThreadId},
     UI::{
@@ -72,7 +73,8 @@ use windows_sys::Win32::{
             },
         },
         Shell::{
-            Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+            SHBrowseForFolderW, Shell_NotifyIconW, BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS,
+            BROWSEINFOW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
             NOTIFYICONDATAW,
         },
         WindowsAndMessaging::{

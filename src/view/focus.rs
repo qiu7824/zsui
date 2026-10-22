@@ -4,6 +4,10 @@ pub struct LiveViewUpdate {
     pub message_count: usize,
     pub commands: Vec<Command>,
     pub ui_commands: Vec<UiCommand>,
+    /// Native effects queued by `update` through [`AppCx`]. The native runtime
+    /// always defers them; hosts execute each request outside the view lock
+    /// and deliver its outcome back through `dispatch_app_effect`.
+    pub effects: Vec<AppEffectRequest>,
     #[cfg(feature = "text-input-core")]
     pub text_edit_commands: Vec<ZsTextEditCommandRequest>,
     pub quit_requested: bool,
@@ -11,6 +15,8 @@ pub struct LiveViewUpdate {
 }
 
 trait LiveViewDriver: Send {
+    fn set_dispatch_allowance(&mut self, allowance: crate::dispatch_queue::DispatchAllowance);
+    fn take_queue_rejections(&mut self) -> usize;
     #[allow(dead_code)]
     fn surface(&self) -> (Rect, Dpi);
     fn set_surface(&mut self, bounds: Rect, dpi: Dpi) -> bool;
@@ -25,6 +31,11 @@ trait LiveViewDriver: Send {
     fn interaction_plan(&self) -> ViewInteractionPlan;
     fn dispatch_event(&mut self, event: &ViewEvent) -> LiveViewUpdate;
     fn dispatch_app_command(&mut self, command: &Command) -> LiveViewUpdate;
+    fn dispatch_app_effect(
+        &mut self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate;
     fn widget_text_value(&self, widget: WidgetId) -> Option<String>;
     #[cfg(feature = "text-input-core")]
     fn widget_editable_text_descriptor(
@@ -153,10 +164,7 @@ impl SharedLiveViewRuntime {
         self.lock().set_typography_scale(scale)
     }
 
-    pub(crate) fn set_text_measurements(
-        &self,
-        measurements: Arc<ViewTextMeasurements>,
-    ) -> bool {
+    pub(crate) fn set_text_measurements(&self, measurements: Arc<ViewTextMeasurements>) -> bool {
         self.lock().set_text_measurements(measurements)
     }
 
@@ -191,12 +199,56 @@ impl SharedLiveViewRuntime {
         self.lock().interaction_plan()
     }
 
+    /// Rejected queue admissions since the previous call. Native hosts consume
+    /// this counter into their structured dispatch error report.
+    pub fn take_queue_rejections(&self) -> usize {
+        self.lock().take_queue_rejections()
+    }
+    pub(crate) fn dispatch_event_with_allowance(
+        &self,
+        event: &ViewEvent,
+        allowance: crate::dispatch_queue::DispatchAllowance,
+    ) -> LiveViewUpdate {
+        let mut driver = self.lock();
+        driver.set_dispatch_allowance(allowance);
+        driver.dispatch_event(event)
+    }
+    pub(crate) fn dispatch_command_with_allowance(
+        &self,
+        command: &Command,
+        allowance: crate::dispatch_queue::DispatchAllowance,
+    ) -> LiveViewUpdate {
+        let mut driver = self.lock();
+        driver.set_dispatch_allowance(allowance);
+        driver.dispatch_app_command(command)
+    }
+    pub(crate) fn dispatch_effect_with_allowance(
+        &self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+        allowance: crate::dispatch_queue::DispatchAllowance,
+    ) -> LiveViewUpdate {
+        let mut driver = self.lock();
+        driver.set_dispatch_allowance(allowance);
+        driver.dispatch_app_effect(request, outcome)
+    }
     pub fn dispatch_event(&self, event: &ViewEvent) -> LiveViewUpdate {
         self.lock().dispatch_event(event)
     }
 
     pub fn dispatch_app_command(&self, command: &Command) -> LiveViewUpdate {
         self.lock().dispatch_app_command(command)
+    }
+
+    /// Delivers one executed [`AppEffect`](crate::AppEffect) outcome back to
+    /// the typed update. Desktop hosts call this once per dispatched request,
+    /// after the effect finished outside the live-view lock.
+    pub fn dispatch_app_effect(
+        &self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate {
+        self.lock().dispatch_app_effect(request, outcome)
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<String> {
@@ -446,6 +498,8 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg>,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx),
 {
+    dispatch_allowance: crate::dispatch_queue::DispatchAllowance,
+    queue_rejections: usize,
     state: State,
     view_fn: ViewFn,
     update_fn: UpdateFn,
@@ -478,6 +532,8 @@ where
     ) -> Self {
         let view = view_fn(&state);
         let mut driver = Self {
+            dispatch_allowance: Default::default(),
+            queue_rejections: 0,
             state,
             view_fn,
             update_fn,
@@ -485,8 +541,8 @@ where
             view,
             bounds,
             dpi,
-            typography_scale_per_mille:
-                crate::render_protocol::default_typography_scale_per_mille(),
+            typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
+            ),
             text_measurements: Arc::new(ViewTextMeasurements::default()),
             revision: 0,
             animation_epoch: std::time::Instant::now(),
@@ -522,10 +578,12 @@ where
                 .collect_context_menu_states(&mut context_menu_states);
             next_view.restore_context_menu_states(&context_menu_states);
         }
-        #[cfg(feature = "scroll")]
+        #[cfg(any(feature = "scroll", feature = "label"))]
         let mut next_view = next_view;
-        #[cfg(feature = "scroll")]
+        #[cfg(any(feature = "scroll", feature = "label"))]
         next_view.assign_automatic_ids();
+        #[cfg(feature = "label")]
+        next_view.restore_navigation_state(&self.view);
         #[cfg(feature = "scroll")]
         next_view.restore_adaptive_scroll_state(&self.view);
         self.view = next_view;
@@ -545,10 +603,13 @@ where
 
     fn apply_messages(&mut self, messages: Vec<Msg>) -> LiveViewUpdate {
         let message_count = messages.len();
-        let mut app_cx = AppCx::new();
+        let mut app_cx = AppCx::with_allowance(std::mem::take(&mut self.dispatch_allowance));
         for message in messages {
             (self.update_fn)(&mut self.state, message, &mut app_cx);
         }
+        self.queue_rejections = self
+            .queue_rejections
+            .saturating_add(app_cx.rejected_count());
         self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
@@ -556,6 +617,7 @@ where
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),
+            effects: app_cx.effects().to_vec(),
             #[cfg(feature = "text-input-core")]
             text_edit_commands: app_cx.text_edit_commands().to_vec(),
             quit_requested: app_cx.quit_requested(),
@@ -572,6 +634,12 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
 {
+    fn set_dispatch_allowance(&mut self, allowance: crate::dispatch_queue::DispatchAllowance) {
+        self.dispatch_allowance = allowance;
+    }
+    fn take_queue_rejections(&mut self) -> usize {
+        std::mem::take(&mut self.queue_rejections)
+    }
     fn surface(&self) -> (Rect, Dpi) {
         (self.bounds, self.dpi)
     }
@@ -708,6 +776,8 @@ where
         let messages = event_cx.into_messages();
         if messages.is_empty() {
             let retained_geometry_changed = match event {
+                #[cfg(feature = "label")]
+                ViewEvent::Click { widget } => self.view.widget_navigation_open(*widget).is_some(),
                 #[cfg(feature = "scroll")]
                 ViewEvent::ScrollBy { .. } | ViewEvent::ScrollToRatio { .. } => true,
                 #[cfg(feature = "virtual-list")]
@@ -743,6 +813,29 @@ where
                 ..LiveViewUpdate::default()
             };
         };
+        self.apply_messages(vec![message])
+    }
+
+    fn dispatch_app_effect(
+        &mut self,
+        request: AppEffectRequest,
+        outcome: AppEffectOutcome,
+    ) -> LiveViewUpdate {
+        // The responder was written inside `update`, so its boxed message is
+        // always this driver's `Msg`; a `None` result means the request had no
+        // responder or the host produced a mismatched outcome kind.
+        let Some(message) = request
+            .respond(outcome)
+            .and_then(|message| message.downcast::<Msg>().ok())
+            .map(|message| *message)
+        else {
+            return LiveViewUpdate {
+                revision: self.revision,
+                ..LiveViewUpdate::default()
+            };
+        };
+        // A suspended (hidden) view still applies the outcome to application
+        // state; `apply_messages` reports `redraw: false` while suspended.
         self.apply_messages(vec![message])
     }
 

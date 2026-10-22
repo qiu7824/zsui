@@ -22,7 +22,7 @@ if (
 }
 
 $targetDir = Join-Path $support "target"
-$outputDir = Join-Path $support "results\invoice-workbench\latest"
+$outputDir = Join-Path $support "results\invoice-tool\latest"
 New-Item -ItemType Directory -Force -Path $targetDir, $outputDir | Out-Null
 
 $manifests = [ordered]@{
@@ -49,7 +49,7 @@ $env:CARGO_TARGET_DIR = $targetDir
 try {
     if (-not $SkipBuild) {
         $builds = @(
-            [pscustomobject]@{ Name = "ZSUI"; Arguments = @("build", "--release", "--locked", "--example", "invoice_workbench") },
+            [pscustomobject]@{ Name = "ZSUI"; Arguments = @("build", "--release", "--locked", "--example", "invoice_tool", "--no-default-features", "--features", "window,shell") },
             [pscustomobject]@{ Name = "egui"; Arguments = @("build", "--release", "--locked", "--manifest-path", $manifests.egui, "--bin", "egui-invoice-tool") },
             [pscustomobject]@{ Name = "Iced"; Arguments = @("build", "--release", "--locked", "--manifest-path", $manifests.iced, "--bin", "iced-invoice-tool") },
             [pscustomobject]@{ Name = "Slint"; Arguments = @("build", "--release", "--locked", "--manifest-path", $manifests.slint, "--bin", "slint-invoice-tool") },
@@ -68,7 +68,7 @@ finally {
 }
 
 $executables = [ordered]@{
-    zsui = Join-Path $targetDir "release\examples\invoice_workbench.exe"
+    zsui = Join-Path $targetDir "release\examples\invoice_tool.exe"
     egui = Join-Path $targetDir "release\egui-invoice-tool.exe"
     iced = Join-Path $targetDir "release\iced-invoice-tool.exe"
     slint = Join-Path $targetDir "release\slint-invoice-tool.exe"
@@ -256,7 +256,7 @@ $labels = [ordered]@{
     tauri = "Tauri 2"
 }
 $sources = [ordered]@{
-    zsui = @((Join-Path $workspace "examples\invoice_workbench.rs"))
+    zsui = @((Join-Path $workspace "examples\invoice_tool.rs"))
     egui = @((Join-Path $workspace "comparisons\egui_notepad\src\bin\invoice_tool.rs"))
     iced = @((Join-Path $workspace "comparisons\iced_notepad\src\bin\invoice_tool.rs"))
     slint = @((Join-Path $workspace "comparisons\slint_notepad\src\bin\invoice_tool.rs"))
@@ -318,7 +318,7 @@ $rows = foreach ($key in $labels.Keys) {
     "| $($labels[$key]) | $($item.development.elapsed_seconds) s | $($item.runtime.startup_to_window_ms) ms | $($item.source.nonblank_lines) | $($item.cargo_package_count) | $(MiB $item.binary_bytes) MiB | $(MiB $item.runtime.private_working_set_bytes) MiB | $(MiB $item.runtime.working_set_bytes) MiB |"
 }
 $markdown = @"
-# Invoice workbench UI comparison
+# Invoice tool UI comparison
 
 | Framework | Prototype to first compile | Startup to window | App lines | Cargo packages | Binary | Private working set | Working set |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

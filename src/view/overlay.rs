@@ -1,124 +1,35 @@
-#[cfg(all(feature = "accessibility", feature = "workbench"))]
-fn workbench_message_accessibility_label(message: &crate::ZsWorkbenchMessageSpec) -> String {
-    let mut parts = Vec::with_capacity(message.blocks.len().saturating_add(1));
-    parts.push(message.author.clone().unwrap_or_else(|| {
-        match message.role {
-            crate::ZsWorkbenchMessageRole::User => "User",
-            crate::ZsWorkbenchMessageRole::Assistant => "Assistant",
-            crate::ZsWorkbenchMessageRole::System => "System",
-            crate::ZsWorkbenchMessageRole::Tool => "Tool",
-        }
-        .to_string()
-    }));
-    for block in &message.blocks {
-        match block {
-            crate::ZsWorkbenchContentBlock::Paragraph { text }
-            | crate::ZsWorkbenchContentBlock::Notice { text, .. } => parts.push(text.clone()),
-            crate::ZsWorkbenchContentBlock::Code { language, code } => {
-                parts.push(format!("{language} code: {code}"));
-            }
-            crate::ZsWorkbenchContentBlock::Tool { title, summary, .. } => {
-                parts.push(format!("{title}: {summary}"));
-            }
-        }
-    }
-    let mut label = parts.join(". ");
-    if label.chars().count() > 4096 {
-        label = label.chars().take(4095).collect::<String>();
-        label.push('…');
-    }
-    label
-}
-
-#[cfg(all(feature = "accessibility", feature = "workbench"))]
-fn workbench_region_accessibility(
-    spec: &crate::ZsWorkbenchSpec,
-    region: &crate::ZsWorkbenchLayoutRegion,
-    sidebar_collapsed: bool,
-) -> Option<(crate::ZsAccessibilityRole, String, Option<bool>)> {
-    use crate::{ZsAccessibilityRole as Role, ZsWorkbenchRegionKind as Kind};
-
-    let result = match region.kind {
-        Kind::SidebarToggle => (
-            Role::Button,
-            if sidebar_collapsed {
-                "Show sidebar"
-            } else {
-                "Hide sidebar"
-            }
-            .to_string(),
-            None,
-        ),
-        Kind::SidebarViewport => return None,
-        Kind::SidebarAction => {
-            let action = spec
-                .sidebar
-                .primary_actions
-                .iter()
-                .chain(spec.sidebar.footer_actions.iter())
-                .find(|action| action.id == region.id)?;
-            (Role::Button, action.label.clone(), Some(action.selected))
-        }
-        Kind::Conversation => {
-            let conversation = spec
-                .sidebar
-                .groups
-                .iter()
-                .flat_map(|group| group.conversations.iter())
-                .find(|conversation| conversation.id == region.id)?;
-            let label = conversation.subtitle.as_ref().map_or_else(
-                || conversation.title.clone(),
-                |subtitle| format!("{}. {subtitle}", conversation.title),
-            );
-            (Role::ListItem, label, Some(conversation.selected))
-        }
-        Kind::ToolbarAction => {
-            let action = spec
-                .toolbar_actions
-                .iter()
-                .find(|action| action.id == region.id)?;
-            (Role::Button, action.label.clone(), Some(action.selected))
-        }
-        Kind::MessageAction => {
-            let (message_id, action_id) = region.id.split_once(':')?;
-            let action = spec
-                .messages
-                .iter()
-                .find(|message| message.id == message_id)?
-                .actions
-                .iter()
-                .find(|action| action.id == action_id)?;
-            (Role::Button, action.label.clone(), Some(action.selected))
-        }
-        Kind::ComposerInput => (Role::TextBox, spec.composer.placeholder.clone(), None),
-        Kind::ComposerAction => {
-            let action = spec
-                .composer
-                .actions
-                .iter()
-                .find(|action| action.id == region.id)?;
-            (Role::Button, action.label.clone(), Some(action.selected))
-        }
-        Kind::Submit => (Role::Button, "Send".to_string(), None),
-        Kind::Stop => (Role::Button, "Stop".to_string(), None),
-        Kind::InspectorTab => {
-            let inspector = spec.inspector.as_ref()?;
-            let tab = inspector.tabs.iter().find(|tab| tab.id == region.id)?;
-            (
-                Role::Tab,
-                tab.label.clone(),
-                Some(inspector.selected_tab_id.as_deref() == Some(tab.id.as_str())),
-            )
-        }
-        Kind::InspectorViewport => return None,
-        Kind::Timeline => return None,
-    };
-    Some(result)
-}
-
 impl<Msg> ViewNode<Msg> {
+    #[cfg(feature = "label")]
+    pub(crate) fn widget_navigation_open(&self, widget: WidgetId) -> Option<bool> {
+        if self.id == Some(widget) {
+            if let ViewNodeKind::NavigationView { pane_open, .. } = &self.kind {
+                return Some(*pane_open);
+            }
+        }
+        self.children
+            .iter()
+            .find_map(|child| child.widget_navigation_open(widget))
+    }
+
+    #[cfg(feature = "label")]
+    pub(crate) fn restore_navigation_state(&mut self, previous: &Self) {
+        if self.navigation_open_source.is_none() {
+            if let (Some(id), ViewNodeKind::NavigationView { pane_open, .. }) =
+                (self.id, &mut self.kind)
+            {
+                if let Some(old) = previous.widget_navigation_open(id) {
+                    *pane_open = old;
+                }
+            }
+        }
+        for child in &mut self.children {
+            child.restore_navigation_state(previous);
+        }
+    }
     fn event_targets_self(&self, event: &ViewEvent) -> bool {
         match (self.id, event) {
+            #[cfg(feature = "resize")]
+            (Some(id), ViewEvent::Resized { widget, .. }) => id == *widget,
             (Some(id), ViewEvent::Click { widget })
             | (Some(id), ViewEvent::TextChanged { widget, .. })
             | (Some(id), ViewEvent::Toggled { widget, .. }) => id == *widget,
@@ -269,6 +180,37 @@ impl<Msg> ViewNode<Msg> {
             feature = "toast"
         ))]
         self.collect_overlay_hit_targets(&mut hit_targets, None);
+        #[cfg(all(feature = "accessibility", feature = "resize"))]
+        for target in &hit_targets {
+            if let ViewHitTargetKind::ResizeHandle(handle) = target.kind {
+                let scale = f64::from(self.layout_dpi.scale_factor());
+                let parent = accessibility_nodes
+                    .iter()
+                    .find(|node| node.widget == handle.owner())
+                    .map(|node| node.widget);
+                accessibility_nodes.push(crate::ZsAccessibilityNode {
+                    widget: target.widget,
+                    parent,
+                    bounds: target.bounds,
+                    role: crate::ZsAccessibilityRole::Splitter,
+                    label: self.resize_handle_label(handle),
+                    description: None,
+                    live_region: None,
+                    enabled: handle.is_adjustable(),
+                    selected: None,
+                    checked: None,
+                    range_value: Some(
+                        crate::ZsAccessibilityRangeValue::new(
+                            f64::from(handle.extent_px) / scale,
+                            f64::from(handle.minimum_px) / scale,
+                            f64::from(handle.maximum_px) / scale,
+                        )
+                        .adjustable(8.0, 32.0),
+                    ),
+                    action_target: None,
+                });
+            }
+        }
         #[cfg(feature = "tooltip")]
         let mut tooltip_targets = Vec::new();
         #[cfg(feature = "tooltip")]
@@ -283,18 +225,6 @@ impl<Msg> ViewNode<Msg> {
     }
 
     pub fn widget_text_value(&self, widget: WidgetId) -> Option<&str> {
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            if layout.regions.iter().any(|region| {
-                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
-                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
-            }) {
-                return Some(&spec.composer.draft);
-            }
-        }
         if self.id == Some(widget) {
             #[cfg(feature = "textbox")]
             if let ViewNodeKind::Textbox { value, .. } = &self.kind {
@@ -324,18 +254,6 @@ impl<Msg> ViewNode<Msg> {
         &self,
         widget: WidgetId,
     ) -> Option<ViewEditableTextDescriptor> {
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            if layout.regions.iter().any(|region| {
-                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
-                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
-            }) {
-                return Some(ViewEditableTextDescriptor::textbox(true));
-            }
-        }
         if self.id == Some(widget) {
             if let Some(descriptor) = self.editable_text {
                 return Some(descriptor);
@@ -348,18 +266,6 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "text-input-core")]
     pub fn widget_text_wrap(&self, widget: WidgetId) -> Option<crate::TextWrap> {
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            if layout.regions.iter().any(|region| {
-                region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
-                    && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
-            }) {
-                return Some(crate::TextWrap::Word);
-            }
-        }
         #[cfg(feature = "textbox")]
         if self.id == Some(widget) {
             if let ViewNodeKind::Textbox { wrap, .. } = &self.kind {
@@ -1094,86 +1000,6 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "scroll")]
     pub fn widget_scroll_target(&self, widget: WidgetId) -> Option<WidgetId> {
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            if layout.regions.iter().any(|region| {
-                matches!(
-                    region.kind,
-                    crate::ZsWorkbenchRegionKind::Timeline
-                        | crate::ZsWorkbenchRegionKind::MessageAction
-                ) && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
-            }) {
-                return Some(root);
-            }
-            if layout.sidebar_scroll_max > 0 {
-                let viewport_widget = layout
-                    .regions
-                    .iter()
-                    .find(|region| {
-                        region.kind == crate::ZsWorkbenchRegionKind::SidebarViewport
-                    })
-                    .map(|region| {
-                        crate::workbench::zs_workbench_region_widget_id(root, region)
-                    });
-                let over_sidebar_scrollbar = layout.sidebar_scrollbar.is_some()
-                    && [
-                        crate::workbench::zs_workbench_named_widget_id(
-                            root,
-                            0xa11c_0201,
-                            "sidebar.scrollbar.track",
-                        ),
-                        crate::workbench::zs_workbench_named_widget_id(
-                            root,
-                            0xa11c_0202,
-                            "sidebar.scrollbar.thumb",
-                        ),
-                    ]
-                    .contains(&widget);
-                let over_sidebar_content = layout.regions.iter().any(|region| {
-                    matches!(
-                        region.kind,
-                        crate::ZsWorkbenchRegionKind::SidebarViewport
-                            | crate::ZsWorkbenchRegionKind::Conversation
-                    ) && crate::workbench::zs_workbench_region_widget_id(root, region) == widget
-                });
-                if over_sidebar_content || over_sidebar_scrollbar {
-                    return viewport_widget;
-                }
-            }
-            if layout.inspector_scroll_max > 0 {
-                if let Some(viewport_widget) = layout
-                    .regions
-                    .iter()
-                    .find(|region| {
-                        region.kind == crate::ZsWorkbenchRegionKind::InspectorViewport
-                    })
-                    .map(|region| {
-                        crate::workbench::zs_workbench_region_widget_id(root, region)
-                    })
-                {
-                    let over_inspector_scrollbar = layout.inspector_scrollbar.is_some()
-                        && [
-                            crate::workbench::zs_workbench_named_widget_id(
-                                root,
-                                0xa11c_0203,
-                                "inspector.scrollbar.track",
-                            ),
-                            crate::workbench::zs_workbench_named_widget_id(
-                                root,
-                                0xa11c_0204,
-                                "inspector.scrollbar.thumb",
-                            ),
-                        ]
-                        .contains(&widget);
-                    if viewport_widget == widget || over_inspector_scrollbar {
-                        return Some(viewport_widget);
-                    }
-                }
-            }
-        }
         if let Some(target) = self
             .children
             .iter()
@@ -1249,9 +1075,8 @@ impl<Msg> ViewNode<Msg> {
             ),
             #[cfg(feature = "textbox")]
             ViewNodeKind::Textbox { placeholder, .. } => {
-                let mut accessibility = crate::ZsAccessibilitySpec::new(
-                    crate::ZsAccessibilityRole::TextBox,
-                );
+                let mut accessibility =
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TextBox);
                 if let Some(placeholder) = placeholder {
                     accessibility = accessibility.description(placeholder.clone());
                 }
@@ -1259,9 +1084,8 @@ impl<Msg> ViewNode<Msg> {
             }
             #[cfg(feature = "password-box")]
             ViewNodeKind::PasswordBox { placeholder, .. } => {
-                let mut accessibility = crate::ZsAccessibilitySpec::new(
-                    crate::ZsAccessibilityRole::TextBox,
-                );
+                let mut accessibility =
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TextBox);
                 if let Some(placeholder) = placeholder {
                     accessibility = accessibility.description(placeholder.clone());
                 }
@@ -1290,60 +1114,50 @@ impl<Msg> ViewNode<Msg> {
                 range,
                 ..
             } => {
-                let mut accessibility = crate::ZsAccessibilitySpec::new(
-                    crate::ZsAccessibilityRole::SpinButton,
-                );
+                let mut accessibility =
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::SpinButton);
                 if let Some(placeholder) = placeholder {
                     accessibility = accessibility.description(placeholder.clone());
                 }
                 if let Some(value) = value {
                     accessibility = accessibility.range_value(
-                        crate::ZsAccessibilityRangeValue::new(
-                            *value,
-                            range.min(),
-                            range.max(),
-                        )
-                        .adjustable(range.step_size(), range.large_step_size()),
+                        crate::ZsAccessibilityRangeValue::new(*value, range.min(), range.max())
+                            .adjustable(range.step_size(), range.large_step_size()),
                     );
                 }
                 Some(accessibility)
             }
             #[cfg(feature = "progress")]
             ViewNodeKind::ProgressBar { spec } => {
-                let mut accessibility = crate::ZsAccessibilitySpec::new(
-                    crate::ZsAccessibilityRole::ProgressBar,
-                );
+                let mut accessibility =
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::ProgressBar);
                 if let crate::ZsProgressBarMode::Determinate { value, range } = spec.mode() {
-                    accessibility = accessibility.range_value(
-                        crate::ZsAccessibilityRangeValue::new(
+                    accessibility =
+                        accessibility.range_value(crate::ZsAccessibilityRangeValue::new(
                             f64::from(value),
                             f64::from(range.min()),
                             f64::from(range.max()),
-                        ),
-                    );
+                        ));
                 }
                 Some(accessibility)
             }
             #[cfg(feature = "progress-ring")]
             ViewNodeKind::ProgressRing { spec } if spec.is_active() => {
-                let mut accessibility = crate::ZsAccessibilitySpec::new(
-                    crate::ZsAccessibilityRole::ProgressBar,
-                );
+                let mut accessibility =
+                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::ProgressBar);
                 if let crate::ZsProgressRingMode::Determinate { value, range } = spec.mode() {
-                    accessibility = accessibility.range_value(
-                        crate::ZsAccessibilityRangeValue::new(
+                    accessibility =
+                        accessibility.range_value(crate::ZsAccessibilityRangeValue::new(
                             f64::from(value),
                             f64::from(range.min()),
                             f64::from(range.max()),
-                        ),
-                    );
+                        ));
                 }
                 Some(accessibility)
             }
             #[cfg(feature = "tabs")]
             ViewNodeKind::Tabs { .. } => Some(
-                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TabList)
-                    .label("Tabs"),
+                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TabList).label("Tabs"),
             ),
             _ => None,
         }
@@ -1416,9 +1230,7 @@ impl<Msg> ViewNode<Msg> {
             let mut accessibility =
                 crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Dialog);
             if let Some(title) = spec.dialog_title() {
-                accessibility = accessibility
-                    .label(title)
-                    .description(spec.content());
+                accessibility = accessibility.label(title).description(spec.content());
             } else {
                 accessibility = accessibility.label(spec.content());
             }
@@ -1470,11 +1282,8 @@ impl<Msg> ViewNode<Msg> {
                 accessibility.description = Some(tooltip.text.trim().to_owned());
             }
         }
-        if let (Some(widget), Some(bounds), Some(spec)) = (
-            self.id,
-            self.bounds,
-            resolved_accessibility.as_ref(),
-        )
+        if let (Some(widget), Some(bounds), Some(spec)) =
+            (self.id, self.bounds, resolved_accessibility.as_ref())
         {
             if let Some(bounds) = clipped_rect(bounds, clip) {
                 nodes.push(crate::ZsAccessibilityNode::from_spec(
@@ -1535,206 +1344,6 @@ impl<Msg> ViewNode<Msg> {
             }
         }
 
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            let parent = semantic_parent.or(Some(root));
-            let sidebar = crate::workbench::zs_workbench_named_widget_id(
-                root,
-                0xa11c_0001,
-                "sidebar",
-            );
-            nodes.push(crate::ZsAccessibilityNode::from_spec(
-                sidebar,
-                parent,
-                layout.metrics.sidebar,
-                &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Navigation)
-                    .label(spec.sidebar.title.clone()),
-            ));
-
-            let toolbar = crate::workbench::zs_workbench_named_widget_id(
-                root,
-                0xa11c_0002,
-                "toolbar",
-            );
-            if !spec.toolbar_actions.is_empty() {
-                nodes.push(crate::ZsAccessibilityNode::from_spec(
-                    toolbar,
-                    parent,
-                    layout.metrics.top_bar,
-                    &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
-                        .label("Toolbar"),
-                ));
-            }
-
-            let timeline = layout
-                .regions
-                .iter()
-                .find(|region| region.kind == crate::ZsWorkbenchRegionKind::Timeline)
-                .map(|region| crate::workbench::zs_workbench_region_widget_id(root, region));
-            if let Some(timeline) = timeline {
-                nodes.push(crate::ZsAccessibilityNode::from_spec(
-                    timeline,
-                    parent,
-                    layout.metrics.timeline,
-                    &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Log)
-                        .label("Messages")
-                        .live_region(crate::ZsAccessibilityLiveRegion::Polite),
-                ));
-
-                for message_layout in &layout.messages {
-                    let Some(message) = spec.messages.get(message_layout.message_index) else {
-                        continue;
-                    };
-                    let Some(message_bounds) = clipped_rect(
-                        message_layout.bounds,
-                        Some(layout.metrics.timeline),
-                    ) else {
-                        continue;
-                    };
-                    let message_widget = crate::workbench::zs_workbench_named_widget_id(
-                        root,
-                        0xa11c_0100,
-                        &message.id,
-                    );
-                    nodes.push(crate::ZsAccessibilityNode::from_spec(
-                        message_widget,
-                        Some(timeline),
-                        message_bounds,
-                        &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Article)
-                            .label(workbench_message_accessibility_label(message)),
-                    ));
-                }
-            }
-
-            let composer = crate::workbench::zs_workbench_named_widget_id(
-                root,
-                0xa11c_0003,
-                "composer",
-            );
-            nodes.push(crate::ZsAccessibilityNode::from_spec(
-                composer,
-                parent,
-                layout.metrics.composer,
-                &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
-                    .label("Composer"),
-            ));
-
-            let inspector = spec.inspector.as_ref().and_then(|inspector| {
-                let inspector_bounds = layout.metrics.inspector?;
-                let widget = crate::workbench::zs_workbench_named_widget_id(
-                    root,
-                    0xa11c_0004,
-                    "inspector",
-                );
-                nodes.push(crate::ZsAccessibilityNode::from_spec(
-                    widget,
-                    parent,
-                    inspector_bounds,
-                    &crate::ZsAccessibilitySpec::new(
-                        crate::ZsAccessibilityRole::Complementary,
-                    )
-                    .label(inspector.title.clone()),
-                ));
-                let tabs = crate::workbench::zs_workbench_named_widget_id(
-                    root,
-                    0xa11c_0005,
-                    "inspector.tabs",
-                );
-                if !inspector.tabs.is_empty() {
-                    nodes.push(crate::ZsAccessibilityNode::from_spec(
-                        tabs,
-                        Some(widget),
-                        inspector_bounds,
-                        &crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TabList)
-                            .label(inspector.title.clone()),
-                    ));
-                }
-                let panel = crate::workbench::zs_workbench_named_widget_id(
-                    root,
-                    0xa11c_0006,
-                    "inspector.panel",
-                );
-                let mut panel_spec =
-                    crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::TabPanel);
-                if let Some(label) = inspector
-                    .selected_tab_id
-                    .as_deref()
-                    .and_then(|selected| inspector.tabs.iter().find(|tab| tab.id == selected))
-                    .map(|tab| tab.label.clone())
-                {
-                    panel_spec = panel_spec.label(label);
-                }
-                if !inspector.body.trim().is_empty() {
-                    panel_spec = panel_spec.description(inspector.body.clone());
-                }
-                nodes.push(crate::ZsAccessibilityNode::from_spec(
-                    panel,
-                    Some(widget),
-                    inspector_bounds,
-                    &panel_spec,
-                ));
-                Some((widget, tabs))
-            });
-
-            for region in layout.regions.iter().filter(|region| {
-                region.kind != crate::ZsWorkbenchRegionKind::Timeline
-            }) {
-                let Some((role, label, selected)) = workbench_region_accessibility(
-                    spec,
-                    region,
-                    layout.metrics.sidebar_collapsed,
-                )
-                else {
-                    continue;
-                };
-                let region_parent = match region.kind {
-                    crate::ZsWorkbenchRegionKind::SidebarToggle
-                    | crate::ZsWorkbenchRegionKind::SidebarViewport
-                    | crate::ZsWorkbenchRegionKind::SidebarAction
-                    | crate::ZsWorkbenchRegionKind::Conversation => Some(sidebar),
-                    crate::ZsWorkbenchRegionKind::ToolbarAction => Some(toolbar),
-                    crate::ZsWorkbenchRegionKind::MessageAction => region
-                        .id
-                        .split_once(':')
-                        .map(|(message_id, _)| {
-                            crate::workbench::zs_workbench_named_widget_id(
-                                root,
-                                0xa11c_0100,
-                                message_id,
-                            )
-                        })
-                        .or(timeline),
-                    crate::ZsWorkbenchRegionKind::ComposerInput
-                    | crate::ZsWorkbenchRegionKind::ComposerAction
-                    | crate::ZsWorkbenchRegionKind::Submit
-                    | crate::ZsWorkbenchRegionKind::Stop => Some(composer),
-                    crate::ZsWorkbenchRegionKind::InspectorTab => {
-                        inspector.map(|(_, tabs)| tabs)
-                    }
-                    crate::ZsWorkbenchRegionKind::InspectorViewport => {
-                        inspector.map(|(inspector, _)| inspector)
-                    }
-                    crate::ZsWorkbenchRegionKind::Timeline => timeline,
-                };
-                let mut accessibility = crate::ZsAccessibilitySpec::new(role)
-                    .label(label)
-                    .enabled(region.enabled);
-                if let Some(selected) = selected {
-                    accessibility = accessibility.selected(selected);
-                }
-                nodes.push(crate::ZsAccessibilityNode::from_spec(
-                    crate::workbench::zs_workbench_region_widget_id(root, region),
-                    region_parent,
-                    region.bounds,
-                    &accessibility,
-                ));
-            }
-            return;
-        }
-
         #[cfg(feature = "scroll")]
         let clips_children = matches!(self.kind, ViewNodeKind::Scroll { .. })
             || self.style.overflow_y == ViewOverflow::Auto;
@@ -1775,9 +1384,8 @@ impl<Msg> ViewNode<Msg> {
                         .bounds
                         .and_then(|bounds| clipped_rect(bounds, child_clip)),
                 ) {
-                    let mut item = crate::ZsAccessibilitySpec::new(
-                        crate::ZsAccessibilityRole::ListItem,
-                    );
+                    let mut item =
+                        crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::ListItem);
                     if let Some((row_indices, selected_index)) = list_selection {
                         if let Some(global_index) = row_indices.get(child_position) {
                             item = item.selected(selected_index == Some(*global_index));
@@ -1801,73 +1409,6 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
-        #[cfg(feature = "workbench")]
-        if let (Some(root), Some(bounds), ViewNodeKind::Workbench { spec, .. }) =
-            (self.id, self.bounds, &self.kind)
-        {
-            let layout = self.resolved_workbench_layout(spec, bounds);
-            for region in layout.regions.iter().filter(|region| region.enabled) {
-                let Some(bounds) = clipped_rect(region.bounds, clip) else {
-                    continue;
-                };
-                let kind = match region.kind {
-                    crate::ZsWorkbenchRegionKind::ComposerInput => {
-                        ViewHitTargetKind::TextEditor
-                    }
-                    crate::ZsWorkbenchRegionKind::Timeline
-                    | crate::ZsWorkbenchRegionKind::SidebarViewport
-                    | crate::ZsWorkbenchRegionKind::InspectorViewport => {
-                        ViewHitTargetKind::Scroll
-                    }
-                    _ => ViewHitTargetKind::Button,
-                };
-                hit_targets.push(ViewHitTarget::with_kind(
-                    crate::workbench::zs_workbench_region_widget_id(root, region),
-                    bounds,
-                    kind,
-                ));
-            }
-            for (geometry, track_kind, thumb_kind, track_id, thumb_id) in [
-                (
-                    layout.sidebar_scrollbar,
-                    0xa11c_0201,
-                    0xa11c_0202,
-                    "sidebar.scrollbar.track",
-                    "sidebar.scrollbar.thumb",
-                ),
-                (
-                    layout.inspector_scrollbar,
-                    0xa11c_0203,
-                    0xa11c_0204,
-                    "inspector.scrollbar.track",
-                    "inspector.scrollbar.thumb",
-                ),
-            ] {
-                let Some(geometry) = geometry else {
-                    continue;
-                };
-                if let Some(bounds) = clipped_rect(geometry.track, clip) {
-                    hit_targets.push(ViewHitTarget::with_kind(
-                        crate::workbench::zs_workbench_named_widget_id(
-                            root, track_kind, track_id,
-                        ),
-                        bounds,
-                        ViewHitTargetKind::Scroll,
-                    ));
-                }
-                if let Some(bounds) = clipped_rect(geometry.thumb, clip) {
-                    hit_targets.push(ViewHitTarget::with_kind(
-                        crate::workbench::zs_workbench_named_widget_id(
-                            root, thumb_kind, thumb_id,
-                        ),
-                        bounds,
-                        ViewHitTargetKind::Scroll,
-                    ));
-                }
-            }
-            return;
-        }
-
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             #[cfg(feature = "context-menu")]
@@ -1933,6 +1474,36 @@ impl<Msg> ViewNode<Msg> {
             ) {
                 pane.collect_hit_targets(hit_targets, Some(pane_clip));
             }
+            if let (Some(pane), Some(divider)) = (layout.pane, layout.divider) {
+                let axis = spec.resize_axis();
+                let minimum_content = if layout.mode == crate::ZsSplitViewResolvedMode::Inline {
+                    spec.requested_minimum_content_width()
+                        .unwrap_or(
+                            crate::platform_component_profile::PlatformComponentProfile::for_style(
+                                self.resolved_platform_style(),
+                            )
+                            .split_view
+                            .minimum_content_width,
+                        )
+                        .to_px(self.layout_dpi)
+                        .round_i32()
+                } else {
+                    0
+                };
+                self.push_pane_resize_target(
+                    hit_targets,
+                    bounds,
+                    divider,
+                    pane,
+                    axis,
+                    axis.extent(bounds)
+                        .saturating_sub(axis.extent(divider))
+                        .saturating_sub(minimum_content)
+                        .max(0),
+                    spec.placement() == crate::ZsSplitViewPanePlacement::Trailing,
+                    clip,
+                );
+            }
             return;
         }
 
@@ -1988,6 +1559,32 @@ impl<Msg> ViewNode<Msg> {
             };
             for child in children {
                 child.collect_hit_targets(hit_targets, clip);
+            }
+            #[cfg(feature = "resize")]
+            if layout.mode == ZsNavigationViewLayoutMode::Expanded || layout.overlay_open {
+                if let Some(pane) = layout.pane_bounds {
+                    let divider = Rect {
+                        x: pane.x.saturating_add(pane.width).saturating_sub(1),
+                        y: pane.y,
+                        width: 1,
+                        height: pane.height,
+                    };
+                    let minimum_content = if layout.overlay_open {
+                        0
+                    } else {
+                        minimum_content_width.to_px(self.layout_dpi).round_i32()
+                    };
+                    self.push_pane_resize_target(
+                        hit_targets,
+                        bounds,
+                        divider,
+                        pane,
+                        crate::ZsResizeAxis::Horizontal,
+                        bounds.width.saturating_sub(minimum_content).max(0),
+                        false,
+                        clip,
+                    );
+                }
             }
             return;
         }
@@ -2208,10 +1805,7 @@ impl<Msg> ViewNode<Msg> {
         let mut accepts_input = true;
         #[cfg(feature = "button")]
         {
-            accepts_input &= !matches!(
-                self.kind,
-                ViewNodeKind::Button { enabled: false, .. }
-            );
+            accepts_input &= !matches!(self.kind, ViewNodeKind::Button { enabled: false, .. });
         }
         #[cfg(feature = "progress")]
         {
@@ -2309,7 +1903,7 @@ impl<Msg> ViewNode<Msg> {
                 self.layout_dpi,
             );
             let table_clip = clipped_rect(bounds, clip);
-            for column in plan.columns {
+            for column in &plan.columns {
                 if column.sortable {
                     if let Some(header_bounds) = clipped_rect(column.bounds, table_clip) {
                         hit_targets.push(ViewHitTarget::with_kind(
@@ -2318,6 +1912,66 @@ impl<Msg> ViewNode<Msg> {
                             ViewHitTargetKind::TableHeader {
                                 column: column.column,
                             },
+                        ));
+                    }
+                }
+            }
+            if self.on_table_column_resize.is_some() || self.on_table_columns_change.is_some() {
+                for column in &plan.columns {
+                    let Some(spec) = columns
+                        .iter()
+                        .find(|spec| spec.id() == column.column && spec.is_resizable())
+                    else {
+                        continue;
+                    };
+                    let minimum_others = columns
+                        .iter()
+                        .filter(|other| other.id() != spec.id())
+                        .map(|other| match other.width() {
+                            crate::ZsTableColumnWidth::Fixed(width) => {
+                                width.to_px(self.layout_dpi).round_i32().max(0)
+                            }
+                            crate::ZsTableColumnWidth::Fill(_) => other
+                                .column_resize_limits()
+                                .minimum()
+                                .to_px(self.layout_dpi)
+                                .round_i32(),
+                        })
+                        .fold(0_i32, i32::saturating_add);
+                    let handle = crate::ZsResizeHandle::new(
+                        widget,
+                        crate::ZsResizeTarget::TableColumn(column.column),
+                        crate::ZsResizeAxis::Horizontal,
+                        column.bounds.width,
+                        spec.column_resize_limits(),
+                        bounds.width.saturating_sub(minimum_others).max(0),
+                        false,
+                        self.layout_dpi,
+                    );
+                    if !handle.is_adjustable() || column.bounds.width <= 0 {
+                        continue;
+                    }
+                    let divider = Rect {
+                        x: column
+                            .bounds
+                            .x
+                            .saturating_add(column.bounds.width)
+                            .saturating_sub(1),
+                        y: column.bounds.y,
+                        width: 1,
+                        height: column.bounds.height,
+                    };
+                    let resize_bounds = crate::resize::resize_hit_bounds(
+                        divider,
+                        bounds,
+                        crate::ZsResizeAxis::Horizontal,
+                        self.layout_dpi,
+                    );
+                    if let Some(resize_bounds) = clipped_rect(resize_bounds, table_clip) {
+                        hit_targets.push(ViewHitTarget::with_kind(
+                            handle.widget_id(),
+                            resize_bounds,
+                            ViewHitTargetKind::ResizeHandle(handle),
                         ));
                     }
                 }
@@ -2469,9 +2123,7 @@ impl<Msg> ViewNode<Msg> {
         }
 
         #[cfg(feature = "virtual-list")]
-        if let (Some(widget), Some(scrollbar)) =
-            (self.id, items_repeater_scrollbar_layout(self))
-        {
+        if let (Some(widget), Some(scrollbar)) = (self.id, items_repeater_scrollbar_layout(self)) {
             if let Some(bounds) = clipped_rect(scrollbar.track_hit, clip) {
                 hit_targets.push(ViewHitTarget::with_kind(
                     widget,
@@ -2641,10 +2293,7 @@ impl<Msg> ViewNode<Msg> {
 
         #[cfg(feature = "flyout")]
         if let ViewNodeKind::Flyout {
-            spec,
-            open,
-            target,
-            ..
+            spec, open, target, ..
         } = &self.kind
         {
             let flyout_viewport = viewport.or(self.bounds);
@@ -3263,10 +2912,7 @@ impl<Msg> ViewNode<Msg> {
 
         #[cfg(feature = "flyout")]
         if let ViewNodeKind::Flyout {
-            spec,
-            open,
-            target,
-            ..
+            spec, open, target, ..
         } = &self.kind
         {
             let flyout_viewport = viewport.or(self.bounds);
@@ -3740,8 +3386,7 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Scroll { .. } => ViewHitTargetKind::Scroll,
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { .. } => ViewHitTargetKind::Scroll,
-            #[cfg(feature = "workbench")]
-            ViewNodeKind::Workbench { .. } => ViewHitTargetKind::Unknown,
+
             _ => ViewHitTargetKind::Unknown,
         }
     }

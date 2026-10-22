@@ -7,6 +7,9 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+#[path = "windows_symbolic_icons.rs"]
+mod symbolic_icons;
+
 use crate::{
     native_icons::{WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY},
     Color, ColorRole, Dpi, HorizontalAlign, NativeDrawCommand, NativeDrawCommandOperation,
@@ -1056,7 +1059,7 @@ pub(crate) fn windows_gdi_text_shaping_backend(
     #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
     {
         return crate::native_input_visuals::NativeTextShapingBackend::platform(
-            WindowsGdiTextShaper,
+            WindowsGdiTextShaper::default(),
         );
     }
     #[cfg(not(all(feature = "text-input-core", feature = "windows-win32")))]
@@ -1066,10 +1069,38 @@ pub(crate) fn windows_gdi_text_shaping_backend(
 }
 
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
-struct WindowsGdiTextShaper;
+struct WindowsGdiTextShaper {
+    context: std::sync::Mutex<(Dpi, f32)>,
+    #[cfg(feature = "windows-rust-text")]
+    engine: std::sync::Mutex<Option<crate::rust_text_renderer::ZsRustTextEngine>>,
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl Default for WindowsGdiTextShaper {
+    fn default() -> Self {
+        Self {
+            context: std::sync::Mutex::new((Dpi::standard(), 1.0)),
+            #[cfg(feature = "windows-rust-text")]
+            engine: std::sync::Mutex::new(None),
+        }
+    }
+}
 
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
 impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
+    fn set_context(&self, dpi: Dpi, typography_scale: f32) {
+        *self
+            .context
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = (dpi, typography_scale.max(0.5));
+    }
+    fn typography_scale(&self) -> f32 {
+        self.context
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .1
+    }
+
     fn debug_name(&self) -> &'static str {
         "WindowsGdi"
     }
@@ -1091,11 +1122,35 @@ impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        #[cfg(feature = "windows-rust-text")]
+        {
+            let (dpi, typography_scale) = *self.context.lock().ok()?;
+            let mut engine = self.engine.lock().ok()?;
+            let engine = engine.get_or_insert_with(|| {
+                crate::rust_text_renderer::ZsRustTextEngine::new().with_line_metric_policy(
+                    crate::rust_text_renderer::ZsTextLineMetricPolicy::WindowsDirectWrite,
+                )
+            });
+            let mut style =
+                WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle::body());
+            style.size *= typography_scale;
+            style.line_height *= typography_scale;
+            style.wrap = crate::TextWrap::NoWrap;
+            style.ellipsis = false;
+            let layout = engine.layout(text, &style, 0, 0, dpi.scale_factor());
+            return crate::rust_text_renderer::native_shaped_line_from_layout(
+                text,
+                &layout,
+                style.size * dpi.scale_factor(),
+            );
+        }
+        #[cfg(not(feature = "windows-rust-text"))]
         shape_windows_gdi_text_line(text)
     }
 }
 
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+#[allow(dead_code)]
 pub(crate) fn shape_windows_gdi_text_line(
     text: &str,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
@@ -1619,41 +1674,80 @@ impl WindowsGdiDrawSink {
     }
 
     fn draw_icon_command(&mut self, command: &NativeDrawIconCommand) {
-        if self.renderer.hdc().is_null() {
+        if self.renderer.hdc().is_null() || command.bounds.width <= 0 || command.bounds.height <= 0
+        {
             return;
         }
         if command.color_mode == NativeIconColorMode::Original && self.draw_original_icon(command) {
             return;
         }
-        if self.draw_system_icon(command) {
+        if self.draw_system_icon(command, self.system_icon_font) {
             return;
         }
-        let _ = self.draw_original_icon(command);
+        if self.system_icon_font == WindowsSystemIconFont::SegoeFluentIcons
+            && self.draw_system_icon(command, WindowsSystemIconFont::SegoeMdl2Assets)
+        {
+            return;
+        }
+        if !symbolic_icons::draw(
+            self.renderer.hdc(),
+            command,
+            self.palette.resolve(command.color),
+        ) {
+            eprintln!("ZSUI could not draw semantic icon {:?}", command.icon);
+        }
     }
 
     fn draw_original_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
         let Some(bytes) = command.icon.png_24_bytes() else {
             return false;
         };
-        let Some((width, height, bgra)) = decode_png_to_bgra(bytes) else {
+        let Some((width, height, mut bgra)) = decode_png_to_bgra(bytes) else {
             return false;
         };
-        stretch_top_down_32bpp(self.renderer.hdc(), command.bounds, width, height, &bgra);
-        true
+        for pixel in bgra.chunks_exact_mut(4) {
+            let alpha = u16::from(pixel[3]);
+            for channel in &mut pixel[..3] {
+                *channel = ((u16::from(*channel) * alpha + 127) / 255) as u8;
+            }
+        }
+        let Ok(frame) = crate::ZsImageFrame::from_premultiplied_bgra8(
+            crate::ZsImageFrameId::new(0),
+            width as u32,
+            height as u32,
+            bgra,
+        ) else {
+            return false;
+        };
+        let image = NativeDrawImageCommand::new(
+            frame,
+            Rect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            },
+            command.fitted_bounds(Size { width, height }),
+        );
+        unsafe { draw_image_frame_gdiplus(self.renderer.hdc(), &image) }
     }
 
-    fn draw_system_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
-        let Some(font_family) = self.system_icon_font.font_family() else {
+    fn draw_system_icon(
+        &mut self,
+        command: &NativeDrawIconCommand,
+        source: WindowsSystemIconFont,
+    ) -> bool {
+        let Some(font_family) = source.font_family() else {
             return false;
         };
-        let Some(glyph) = self.system_icon_font.glyph(command.icon) else {
+        let Some(glyph) = source.glyph(command.icon) else {
             return false;
         };
         let size = command.bounds.width.min(command.bounds.height).max(1) as f32;
         let style = TextStyle {
             font_family: font_family.to_string(),
-            size: size / self.renderer.dpi_scale.max(1.0),
-            line_height: size / self.renderer.dpi_scale.max(1.0),
+            size: size / self.renderer.dpi_scale.max(f32::EPSILON),
+            line_height: size / self.renderer.dpi_scale.max(f32::EPSILON),
             semantic_role: Some(crate::TextRole::Icon),
             weight: TextWeight::Regular,
             color: self.palette.resolve(command.color),
@@ -1662,6 +1756,41 @@ impl WindowsGdiDrawSink {
             wrap: TextWrap::NoWrap,
             ellipsis: false,
         };
+        {
+            let Some(font) = self.renderer.cached_font(&style) else {
+                return false;
+            };
+            let Some(_selected) = WindowsGdiSelectedObject::select(self.renderer.hdc(), font)
+            else {
+                return false;
+            };
+            let mut face = [0_u16; 128];
+            let count =
+                unsafe { GetTextFaceW(self.renderer.hdc(), face.len() as i32, face.as_mut_ptr()) };
+            let end = face
+                .iter()
+                .position(|value| *value == 0)
+                .unwrap_or(face.len());
+            if count <= 0
+                || !String::from_utf16_lossy(&face[..end]).eq_ignore_ascii_case(font_family)
+            {
+                return false;
+            }
+            let units = glyph.encode_utf16().collect::<Vec<_>>();
+            let mut indices = vec![0_u16; units.len()];
+            let result = unsafe {
+                windows_sys::Win32::Graphics::Gdi::GetGlyphIndicesW(
+                    self.renderer.hdc(),
+                    units.as_ptr(),
+                    units.len() as i32,
+                    indices.as_mut_ptr(),
+                    1,
+                )
+            };
+            if result == u32::MAX || indices.contains(&u16::MAX) {
+                return false;
+            }
+        }
         self.renderer.draw_text(
             &TextRun {
                 text: glyph.to_string(),
@@ -2068,22 +2197,6 @@ pub fn color_from_colorref(color: u32) -> Color {
         b: ((color >> 16) & 0xff) as u8,
         a: 255,
     }
-}
-
-fn stretch_top_down_32bpp(dc: HDC, rect: Rect, src_width: i32, src_height: i32, bgra_bits: &[u8]) {
-    stretch_top_down_32bpp_region(
-        dc,
-        rect,
-        Rect {
-            x: 0,
-            y: 0,
-            width: src_width,
-            height: src_height,
-        },
-        src_width,
-        src_height,
-        bgra_bits,
-    );
 }
 
 fn stretch_top_down_32bpp_region(
@@ -2757,5 +2870,59 @@ mod tests {
             decode_png_to_bgra(ZsIcon::Search.png_24_bytes().expect("search icon")).unwrap();
         assert_eq!((width, height), (24, 24));
         assert_eq!(bgra.len(), 24 * 24 * 4);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "text-input-core",
+    feature = "windows-win32",
+    feature = "windows-rust-text"
+))]
+mod input_raster_geometry_tests {
+    use super::*;
+    use crate::native_input_visuals::NativeTextShaper;
+    #[test]
+    fn rtl_ligature_carets_preserve_logical_character_order() {
+        let shaper = WindowsGdiTextShaper::default();
+        for (text, first) in [("لا", 0), ("AلاZ", 1)] {
+            let shaped = shaper.shape_line(text).unwrap();
+            let leading = shaped.clusters[first];
+            let trailing = shaped.clusters[first + 1];
+            assert!(leading.start_x > leading.end_x);
+            assert_eq!(leading.end_x, trailing.start_x);
+            assert!(trailing.start_x > trailing.end_x);
+        }
+    }
+
+    #[test]
+    fn long_unicode_input_caret_uses_the_raster_engines_glyph_positions() {
+        let text = format!(
+            "C:/{}document.txt中文🙂tail",
+            "工程资料/长路径🙂/".repeat(36)
+        );
+        let shaper = WindowsGdiTextShaper::default();
+        let mut engine = crate::rust_text_renderer::ZsRustTextEngine::new()
+            .with_line_metric_policy(
+                crate::rust_text_renderer::ZsTextLineMetricPolicy::WindowsDirectWrite,
+            );
+        for dpi in [96.0, 144.0, 192.0] {
+            for typography_scale in [1.0, 1.25] {
+                shaper.set_context(Dpi::new(dpi), typography_scale);
+                let shaped = shaper.shape_line(&text).unwrap();
+                let mut style = WindowsGdiStyleResolver::default()
+                    .resolve_text_style(SemanticTextStyle::body());
+                style.size *= typography_scale;
+                style.line_height *= typography_scale;
+                style.wrap = crate::TextWrap::NoWrap;
+                style.ellipsis = false;
+                let painted = engine.layout(&text, &style, 0, 0, dpi / 96.0);
+                let width = painted.lines().first().unwrap().width_px;
+                assert!((shaped.width as f32 - width).abs() <= 1.0);
+                let caret = shaped.carets.last().unwrap();
+                assert_eq!(caret.index, text.chars().count());
+                assert!((caret.primary_x as f32 - width).abs() <= 1.0);
+            }
+        }
     }
 }

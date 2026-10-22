@@ -13,7 +13,7 @@ fn main() -> iced::Result {
         InvoiceTool::update,
         InvoiceTool::view,
     )
-    .title("发票工作台 · Iced")
+    .title("发票工具 · Iced")
     .theme(InvoiceTool::theme)
     .window(window::Settings {
         size: Size::new(1000.0, 700.0),
@@ -126,7 +126,7 @@ impl InvoiceTool {
         ];
         let mut navigation = column![
             text("票据工坊").size(22),
-            text("INVOICE WORKBENCH").size(11),
+            text("INVOICE TOOL").size(11),
             space::vertical().height(20),
         ]
         .spacing(8);

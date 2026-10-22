@@ -42,11 +42,8 @@ pub fn items_repeater_viewport_with_metrics(
     } else {
         0.0
     };
-    let content_height = items_repeater_content_height_normalized(
-        total_count,
-        row_height,
-        &item_metrics,
-    );
+    let content_height =
+        items_repeater_content_height_normalized(total_count, row_height, &item_metrics);
     let max_offset = (content_height - viewport_height as f64).max(0.0) as f32;
     let offset_y = requested_offset.min(max_offset);
     if total_count == 0 || viewport_height <= 0.0 {
@@ -145,7 +142,10 @@ fn items_repeater_height_before_normalized(
     item_metrics: &[ZsItemsRepeaterItemMetric],
 ) -> f64 {
     let mut height = index as f64 * f64::from(estimated_height);
-    for metric in item_metrics.iter().take_while(|metric| metric.index < index) {
+    for metric in item_metrics
+        .iter()
+        .take_while(|metric| metric.index < index)
+    {
         height += f64::from(metric.height.0 - estimated_height);
     }
     height.max(0.0)
@@ -220,8 +220,8 @@ fn virtual_list_row_bounds(
             .to_px(dpi)
             .round_i32(),
     )
-        .saturating_sub(offset_px as i64)
-        .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+    .saturating_sub(offset_px as i64)
+    .clamp(i32::MIN as i64, i32::MAX as i64) as i32;
     Rect {
         x: bounds.x,
         y: bounds.y.saturating_add(row_top),
@@ -354,8 +354,7 @@ fn items_repeater_scrollbar_layout<Msg>(
     let content_bounds = inset_bounds(bounds, node.style.padding, node.layout_dpi);
     let content_height = items_repeater_content_height(*total_count, *row_height, item_metrics);
     let viewport_height = Dp::new(
-        content_bounds.height.max(0) as f32
-            / node.layout_dpi.scale_factor().max(f32::EPSILON),
+        content_bounds.height.max(0) as f32 / node.layout_dpi.scale_factor().max(f32::EPSILON),
     );
     let maximum_offset = Dp::new((content_height.0 - viewport_height.0).max(0.0));
     if maximum_offset.0 <= 0.0 || content_bounds.height <= 0 || content_bounds.width <= 0 {
@@ -455,14 +454,12 @@ fn split_child_bounds<Msg>(
                     );
                     let rect = Rect {
                         x: bounds.x.saturating_add(offset),
-                        y: bounds
-                            .y
-                            .saturating_add(cross_axis_offset(
-                                bounds.height,
-                                height,
-                                align,
-                                true,
-                            )),
+                        y: bounds.y.saturating_add(cross_axis_offset(
+                            bounds.height,
+                            height,
+                            align,
+                            true,
+                        )),
                         width,
                         height,
                     };
@@ -483,23 +480,18 @@ fn split_child_bounds<Msg>(
             text_measurements,
         ),
         #[cfg(feature = "list")]
-        ViewNodeKind::List { .. } => {
-            split_column_child_bounds(
-                bounds,
-                children,
-                gap,
-                justify,
-                align,
-                dpi,
-                typography_scale,
-                text_measurements,
-            )
-        }
+        ViewNodeKind::List { .. } => split_column_child_bounds(
+            bounds,
+            children,
+            gap,
+            justify,
+            align,
+            dpi,
+            typography_scale,
+            text_measurements,
+        ),
         #[cfg(feature = "scroll")]
-        ViewNodeKind::Scroll {
-            offset_y,
-            ..
-        } => {
+        ViewNodeKind::Scroll { offset_y, .. } => {
             let offset_y = offset_y.to_px(dpi).round_i32().max(0);
             let height = _resolved_scroll_content_height
                 .map(|height| height.to_px(dpi).round_i32())
@@ -578,8 +570,7 @@ fn split_grid_child_bounds<Msg>(
         text_measurements,
         HeightMeasurement::Minimum,
     );
-    let row_lengths =
-        allocate_grid_track_lengths(bounds.height, row_gap, rows, &row_minimums, dpi);
+    let row_lengths = allocate_grid_track_lengths(bounds.height, row_gap, rows, &row_minimums, dpi);
     (0..children.len())
         .map(|index| {
             placements
@@ -736,7 +727,11 @@ fn grid_row_minimums_for_columns<Msg>(
             .iter()
             .copied()
             .fold(0i32, i32::saturating_add)
-            .saturating_add(row_gap.max(0).saturating_mul(covered.saturating_sub(1) as i32));
+            .saturating_add(
+                row_gap
+                    .max(0)
+                    .saturating_mul(covered.saturating_sub(1) as i32),
+            );
         let missing = child_height.saturating_sub(current).max(0);
         if missing == 0 {
             continue;
@@ -848,10 +843,7 @@ fn allocate_grid_track_lengths(
                 .max(minimums.get(index).copied().unwrap_or(0))
         })
         .collect::<Vec<_>>();
-    let base_total = lengths
-        .iter()
-        .copied()
-        .fold(0i32, i32::saturating_add);
+    let base_total = lengths.iter().copied().fold(0i32, i32::saturating_add);
 
     if base_total >= available {
         // Grid uses the same hard-size contract as Stack: fixed tracks and
@@ -875,7 +867,9 @@ fn allocate_grid_track_lengths(
     let fixed_total = tracks
         .iter()
         .enumerate()
-        .filter_map(|(index, track)| matches!(track, ZsGridTrack::Fixed(_)).then_some(lengths[index]))
+        .filter_map(|(index, track)| {
+            matches!(track, ZsGridTrack::Fixed(_)).then_some(lengths[index])
+        })
         .fold(0i32, i32::saturating_add);
     let mut unresolved = fractional_indices;
     let mut distributable = available.saturating_sub(fixed_total).max(0);
@@ -898,9 +892,8 @@ fn allocate_grid_track_lengths(
                 let length = if position + 1 == unresolved.len() {
                     distributable.saturating_sub(assigned)
                 } else {
-                    ((distributable as u128 * u128::from(*weight))
-                        / u128::from(total_weight))
-                    .min(i32::MAX as u128) as i32
+                    ((distributable as u128 * u128::from(*weight)) / u128::from(total_weight))
+                        .min(i32::MAX as u128) as i32
                 };
                 lengths[*index] = length.max(lengths[*index]);
                 assigned = assigned.saturating_add(length);
@@ -976,15 +969,15 @@ fn constrained_child_axis_length<Msg>(
     } else {
         child.style.min_width
     }
-        .map(|value| {
-            typography_aware_length_px(
-                value,
-                dpi,
-                vertical && child.typography_scaled_height,
-                typography_scale,
-            )
-        })
-        .unwrap_or(0);
+    .map(|value| {
+        typography_aware_length_px(
+            value,
+            dpi,
+            vertical && child.typography_scaled_height,
+            typography_scale,
+        )
+    })
+    .unwrap_or(0);
     let minimum = minimum.max(if vertical {
         intrinsic_min_height_px(
             child,
@@ -1106,12 +1099,9 @@ fn split_column_child_bounds<Msg>(
                 height,
             );
             let rect = Rect {
-                x: bounds.x.saturating_add(cross_axis_offset(
-                    bounds.width,
-                    width,
-                    align,
-                    false,
-                )),
+                x: bounds
+                    .x
+                    .saturating_add(cross_axis_offset(bounds.width, width, align, false)),
                 y: bounds.y.saturating_add(offset),
                 width,
                 height,
@@ -1128,10 +1118,7 @@ fn justified_axis_offsets(
     justify: ViewJustify,
 ) -> Vec<i32> {
     let gap = gap.max(0);
-    let item_total = lengths
-        .iter()
-        .copied()
-        .fold(0i32, i32::saturating_add);
+    let item_total = lengths.iter().copied().fold(0i32, i32::saturating_add);
     let gap_total = gap.saturating_mul(lengths.len().saturating_sub(1) as i32);
     let remaining = available
         .max(0)
@@ -1166,12 +1153,7 @@ fn justified_axis_offsets(
         .collect()
 }
 
-fn cross_axis_offset(
-    available: i32,
-    length: i32,
-    align: ViewAlign,
-    auto_centers: bool,
-) -> i32 {
+fn cross_axis_offset(available: i32, length: i32, align: ViewAlign, auto_centers: bool) -> i32 {
     let remaining = available.saturating_sub(length).max(0);
     match align {
         ViewAlign::Auto if auto_centers => remaining / 2,
@@ -1187,18 +1169,9 @@ fn navigation_intrinsic_height_px<Msg>(
     dpi: Dpi,
     typography_scale: f32,
 ) -> i32 {
-    let explicit = node
-        .style
-        .height
-        .or(node.style.min_height)
-        .map(|height| {
-            typography_aware_length_px(
-                height,
-                dpi,
-                node.typography_scaled_height,
-                typography_scale,
-            )
-        });
+    let explicit = node.style.height.or(node.style.min_height).map(|height| {
+        typography_aware_length_px(height, dpi, node.typography_scaled_height, typography_scale)
+    });
     if let Some(explicit) = explicit {
         return explicit.max(1);
     }
@@ -1215,7 +1188,8 @@ fn navigation_intrinsic_height_px<Msg>(
         .saturating_mul(2);
     let content = match &node.kind {
         ViewNodeKind::Text { style, .. } => Dp::new(
-            style.role
+            style
+                .role
                 .metrics_for(crate::ZsTypographyPlatformStyle::current())
                 .line_height
                 * typography_scale,
@@ -1246,13 +1220,13 @@ fn navigation_intrinsic_height_px<Msg>(
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
         ViewNodeKind::Spacer => 0,
-        _ => crate::ZsBaseControlMetrics::for_platform(
-            crate::ZsBaseControlPlatformStyle::current(),
-        )
-        .button_height
-        .to_px(dpi)
-        .round_i32()
-        .max(1),
+        _ => {
+            crate::ZsBaseControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::current())
+                .button_height
+                .to_px(dpi)
+                .round_i32()
+                .max(1)
+        }
     };
     content.saturating_add(padding).max(1)
 }
@@ -1287,47 +1261,89 @@ fn allocate_axis_lengths<Msg>(
             })
         })
         .collect::<Vec<_>>();
-    let minimums = children
-        .iter()
-        .map(|child| {
-            let declared = minimum(&child.style)
-                .map(|value| {
-                    typography_aware_length_px(
-                        value,
-                        dpi,
-                        vertical && child.typography_scaled_height,
-                        typography_scale,
-                    )
-                })
-                .unwrap_or(0);
-            let intrinsic = if vertical {
-                intrinsic_min_height_px(
-                    child,
-                    cross_available,
+    let mut minimums = Vec::with_capacity(children.len());
+    let mut preferreds = Vec::with_capacity(children.len());
+    for child in children {
+        let declared = minimum(&child.style)
+            .map(|value| {
+                typography_aware_length_px(
+                    value,
                     dpi,
+                    vertical && child.typography_scaled_height,
                     typography_scale,
-                    text_measurements,
                 )
-            } else {
-                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
-            };
-            declared.max(intrinsic)
-        })
-        .collect::<Vec<_>>();
+            })
+            .unwrap_or(0);
+        let (intrinsic_minimum, intrinsic_preferred) = if vertical {
+            // Heights keep a single hard measurement: line boxes and native
+            // control heights never compress along the main axis.
+            let height = intrinsic_min_height_px(
+                child,
+                cross_available,
+                dpi,
+                typography_scale,
+                text_measurements,
+            );
+            (height, height)
+        } else {
+            (
+                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements),
+                intrinsic_preferred_width_px(child, dpi, typography_scale, text_measurements),
+            )
+        };
+        let floor = declared.max(intrinsic_minimum);
+        minimums.push(floor);
+        preferreds.push(declared.max(intrinsic_preferred).max(floor));
+    }
+    // Non-fixed children request their preferred (natural) length. Only
+    // ellipsizable no-wrap text reports a preferred width above its floor, so
+    // existing layouts keep their previous base lengths.
     let mut lengths = requested
         .iter()
+        .zip(&preferreds)
         .zip(&minimums)
-        .map(|(fixed, minimum)| fixed.unwrap_or(*minimum).max(*minimum))
+        .map(|((fixed, preferred), minimum)| fixed.unwrap_or(*preferred).max(*minimum))
         .collect::<Vec<_>>();
     let base_total: i32 = lengths.iter().copied().sum();
 
-    if base_total >= available {
-        // Explicit and minimum sizes are hard layout contracts. Scaling them
-        // down made buttons and line boxes narrower/shorter than their native
-        // text metrics, which produced accidental glyph clipping. An
-        // over-constrained stack now overflows its viewport; callers can use
-        // Scroll or an adaptive/overflow composition without corrupting the
-        // controls themselves.
+    if base_total > available {
+        // Explicit sizes and native control/text minimums are hard layout
+        // contracts that never scale down. Ellipsizable no-wrap text is the
+        // one soft case: it shrinks toward its truncation-marker floor so a
+        // long path label cannot push a fixed sibling out of a narrow row.
+        // Whatever still does not fit overflows the viewport as before;
+        // callers can use Scroll or an adaptive/overflow composition without
+        // corrupting the controls themselves.
+        let total_slack: i32 = requested
+            .iter()
+            .zip(&minimums)
+            .zip(&lengths)
+            .map(|((fixed, minimum), length)| *length - fixed.unwrap_or(*minimum).max(*minimum))
+            .sum();
+        let mut remaining_deficit = (base_total - available).min(total_slack);
+        let mut remaining_slack = total_slack;
+        for (index, length) in lengths.iter_mut().enumerate() {
+            if remaining_deficit <= 0 || remaining_slack <= 0 {
+                break;
+            }
+            let floor = requested[index]
+                .unwrap_or(minimums[index])
+                .max(minimums[index]);
+            let slack = (*length - floor).max(0);
+            if slack == 0 {
+                continue;
+            }
+            let reduction = if slack >= remaining_slack {
+                remaining_deficit
+            } else {
+                ((i64::from(remaining_deficit) * i64::from(slack)) / i64::from(remaining_slack))
+                    as i32
+            }
+            .min(slack);
+            *length -= reduction;
+            remaining_deficit -= reduction;
+            remaining_slack -= slack;
+        }
         return lengths;
     }
 
@@ -1335,9 +1351,7 @@ fn allocate_axis_lengths<Msg>(
     let flexible = requested
         .iter()
         .enumerate()
-        .filter(|(index, value)| {
-            value.is_none() && children[*index].style.flex > f32::EPSILON
-        })
+        .filter(|(index, value)| value.is_none() && children[*index].style.flex > f32::EPSILON)
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if flexible.is_empty() {
@@ -1407,12 +1421,26 @@ fn cross_axis_length<Msg>(
         intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
     };
     let minimum = declared_minimum.max(intrinsic);
+    // Preferred cross-axis length: identical to the floor for every
+    // non-shrinkable child, so aligned placement below keeps its previous
+    // result unless the child contains ellipsizable no-wrap text.
+    let preferred = if vertical {
+        minimum
+    } else {
+        declared_minimum
+            .max(intrinsic_preferred_width_px(
+                child,
+                dpi,
+                typography_scale,
+                text_measurements,
+            ))
+            .max(minimum)
+    };
     // A stack owns its cross-axis cell, and text fills the available width so
     // wrapping is measured against the real line box. `flex` only distributes
     // the parent's main axis; it must not collapse either case cross-axis.
     #[cfg(feature = "label")]
-    let text_stretches_width =
-        !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
+    let text_stretches_width = !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
     #[cfg(not(feature = "label"))]
     let text_stretches_width = false;
     let stretches_cross_axis =
@@ -1429,11 +1457,16 @@ fn cross_axis_length<Msg>(
         })
         .unwrap_or_else(|| match align {
             ViewAlign::Stretch => available.max(minimum),
-            ViewAlign::Start | ViewAlign::Center | ViewAlign::End => minimum,
+            // Aligned children keep their preferred width while the cross axis
+            // has room; shrinkable (ellipsizable) content clips toward its
+            // floor inside a narrower cell instead of spilling over the edge.
+            // For non-shrinkable children preferred == minimum, which
+            // preserves the previous hard-minimum result.
+            ViewAlign::Start | ViewAlign::Center | ViewAlign::End => {
+                preferred.min(available.max(minimum))
+            }
             ViewAlign::Auto
-                if child.style.flex <= f32::EPSILON
-                    && minimum > 0
-                    && !stretches_cross_axis =>
+                if child.style.flex <= f32::EPSILON && minimum > 0 && !stretches_cross_axis =>
             {
                 minimum
             }
@@ -1441,11 +1474,52 @@ fn cross_axis_length<Msg>(
         })
 }
 
+/// Width measurement mode for intrinsic sizing. `Minimum` is the hard floor a
+/// node may occupy (ellipsizable no-wrap text collapses to its truncation
+/// marker); `Preferred` is the natural content width a node requests when the
+/// parent has room.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WidthMeasurement {
+    Minimum,
+    Preferred,
+}
+
 fn intrinsic_min_width_px<Msg>(
     node: &ViewNode<Msg>,
     dpi: Dpi,
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
+) -> i32 {
+    intrinsic_width_px(
+        node,
+        dpi,
+        typography_scale,
+        text_measurements,
+        WidthMeasurement::Minimum,
+    )
+}
+
+fn intrinsic_preferred_width_px<Msg>(
+    node: &ViewNode<Msg>,
+    dpi: Dpi,
+    typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
+) -> i32 {
+    intrinsic_width_px(
+        node,
+        dpi,
+        typography_scale,
+        text_measurements,
+        WidthMeasurement::Preferred,
+    )
+}
+
+fn intrinsic_width_px<Msg>(
+    node: &ViewNode<Msg>,
+    dpi: Dpi,
+    typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
+    measurement: WidthMeasurement,
 ) -> i32 {
     let declared = node
         .style
@@ -1476,15 +1550,18 @@ fn intrinsic_min_width_px<Msg>(
 
     let content = match &node.kind {
         #[cfg(feature = "label")]
-        ViewNodeKind::Text { text, style } => {
-            measured_text_min_width_px(
+        ViewNodeKind::Text { text, style } => match measurement {
+            WidthMeasurement::Minimum => {
+                measured_text_min_width_px(text, *style, dpi, typography_scale, text_measurements)
+            }
+            WidthMeasurement::Preferred => measured_text_natural_width_px(
                 text,
                 *style,
                 dpi,
                 typography_scale,
                 text_measurements,
-            )
-        }
+            ),
+        },
         #[cfg(feature = "button")]
         ViewNodeKind::Button {
             label,
@@ -1500,7 +1577,9 @@ fn intrinsic_min_width_px<Msg>(
                 ColorRole::DisabledText
             };
             style.horizontal_align = crate::HorizontalAlign::Center;
-            let label_width = measured_text_min_width_px(
+            // A native button keeps its full label width as a hard minimum in
+            // both modes; only standalone ellipsizable labels may shrink.
+            let label_width = measured_text_natural_width_px(
                 label,
                 style,
                 dpi,
@@ -1510,21 +1589,14 @@ fn intrinsic_min_width_px<Msg>(
             let native_padding = if node.style.padding.is_some() {
                 0
             } else {
-                let metrics = crate::ZsBaseControlMetrics::for_platform(
-                    node.resolved_platform_style(),
-                );
+                let metrics =
+                    crate::ZsBaseControlMetrics::for_platform(node.resolved_platform_style());
                 metrics
                     .button_padding_left
                     .to_px(dpi)
                     .round_i32()
                     .max(0)
-                    .saturating_add(
-                        metrics
-                            .button_padding_right
-                            .to_px(dpi)
-                            .round_i32()
-                            .max(0),
-                    )
+                    .saturating_add(metrics.button_padding_right.to_px(dpi).round_i32().max(0))
             };
             label_width.saturating_add(native_padding)
         }
@@ -1540,7 +1612,7 @@ fn intrinsic_min_width_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+                intrinsic_width_px(child, dpi, typography_scale, text_measurements, measurement)
             })
             .fold(0i32, i32::saturating_add)
             .saturating_add(gap.saturating_mul(node.children.len().saturating_sub(1) as i32)),
@@ -1550,7 +1622,7 @@ fn intrinsic_min_width_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+                intrinsic_width_px(child, dpi, typography_scale, text_measurements, measurement)
             })
             .max()
             .unwrap_or(0),
@@ -1559,7 +1631,7 @@ fn intrinsic_min_width_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+                intrinsic_width_px(child, dpi, typography_scale, text_measurements, measurement)
             })
             .max()
             .unwrap_or(0),
@@ -1568,7 +1640,7 @@ fn intrinsic_min_width_px<Msg>(
             .children
             .iter()
             .map(|child| {
-                intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
+                intrinsic_width_px(child, dpi, typography_scale, text_measurements, measurement)
             })
             .max()
             .unwrap_or(0),
@@ -1627,24 +1699,14 @@ fn measured_height_px<Msg>(
     measurement: HeightMeasurement,
 ) -> i32 {
     let declared_height = |value| {
-        typography_aware_length_px(
-            value,
-            dpi,
-            node.typography_scaled_height,
-            typography_scale,
-        )
+        typography_aware_length_px(value, dpi, node.typography_scaled_height, typography_scale)
     };
     let declared = node
         .style
         .height
         .map(declared_height)
         .unwrap_or(0)
-        .max(
-            node.style
-                .min_height
-                .map(declared_height)
-                .unwrap_or(0),
-        );
+        .max(node.style.min_height.map(declared_height).unwrap_or(0));
     let padding = node
         .style
         .padding
@@ -1663,14 +1725,11 @@ fn measured_height_px<Msg>(
     }
 
     #[cfg(feature = "scroll")]
-    if measurement == HeightMeasurement::Minimum
-        && node.style.overflow_y == ViewOverflow::Auto
-    {
+    if measurement == HeightMeasurement::Minimum && node.style.overflow_y == ViewOverflow::Auto {
         #[cfg(feature = "tabs")]
         if matches!(node.kind, ViewNodeKind::Tabs { .. }) {
-            let metrics = crate::ZsTabViewMetrics::for_platform(
-                crate::ZsTabPlatformStyle::current(),
-            );
+            let metrics =
+                crate::ZsTabViewMetrics::for_platform(crate::ZsTabPlatformStyle::current());
             let chrome = metrics
                 .strip_height
                 .to_px(dpi)
@@ -1691,16 +1750,14 @@ fn measured_height_px<Msg>(
 
     let content = match &node.kind {
         #[cfg(feature = "label")]
-        ViewNodeKind::Text { text, style } => {
-            measured_text_min_height_px(
-                text,
-                *style,
-                content_width,
-                dpi,
-                typography_scale,
-                text_measurements,
-            )
-        }
+        ViewNodeKind::Text { text, style } => measured_text_min_height_px(
+            text,
+            *style,
+            content_width,
+            dpi,
+            typography_scale,
+            text_measurements,
+        ),
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
         #[cfg(feature = "badge")]
@@ -1801,9 +1858,8 @@ fn measured_height_px<Msg>(
         ),
         #[cfg(feature = "tabs")]
         ViewNodeKind::Tabs { .. } => {
-            let metrics = crate::ZsTabViewMetrics::for_platform(
-                crate::ZsTabPlatformStyle::current(),
-            );
+            let metrics =
+                crate::ZsTabViewMetrics::for_platform(crate::ZsTabPlatformStyle::current());
             let strip = metrics.strip_height.to_px(dpi).round_i32().max(0);
             let content_padding = metrics.content_padding.to_px(dpi).round_i32().max(0);
             let tab_content_width = content_width.saturating_sub(content_padding.saturating_mul(2));
@@ -1847,18 +1903,13 @@ fn measured_height_px<Msg>(
 }
 
 #[cfg(feature = "icon")]
-fn standalone_icon_size_px<Msg>(
-    node: &ViewNode<Msg>,
-    size: crate::ZsIconSize,
-    dpi: Dpi,
-) -> i32 {
-    crate::platform_component_profile::PlatformIconProfile::for_platform(
-        node.resolved_platform_style(),
-    )
-    .size(size)
-    .to_px(dpi)
-    .round_i32()
-    .max(1)
+fn standalone_icon_size_px<Msg>(node: &ViewNode<Msg>, size: crate::ZsIconSize, dpi: Dpi) -> i32 {
+    node.icon_role
+        .unwrap_or(size.role())
+        .logical_size(node.resolved_platform_style())
+        .to_px(dpi)
+        .round_i32()
+        .max(1)
 }
 
 #[cfg(feature = "badge")]
@@ -1868,19 +1919,20 @@ fn standalone_badge_size_px<Msg>(
     dpi: Dpi,
     typography_scale: f32,
 ) -> (i32, i32) {
-    let (width, height) =
-        crate::platform_component_profile::PlatformBadgeProfile::for_platform(
-            node.resolved_platform_style(),
-        )
-        .size(content, typography_scale);
+    let (width, height) = crate::platform_component_profile::PlatformBadgeProfile::for_platform(
+        node.resolved_platform_style(),
+    )
+    .size(content, typography_scale);
     (
         width.to_px(dpi).round_i32().max(1),
         height.to_px(dpi).round_i32().max(1),
     )
 }
 
+/// Natural (preferred) width of a text run: the full measured width for
+/// no-wrap text, or the longest unbreakable segment for word-wrapped text.
 #[cfg(any(feature = "button", feature = "label"))]
-fn measured_text_min_width_px(
+fn measured_text_natural_width_px(
     text: &str,
     style: SemanticTextStyle,
     dpi: Dpi,
@@ -1901,6 +1953,38 @@ fn measured_text_min_width_px(
         crate::widget_render::zs_estimated_text_width_units(text)
     };
     estimated_text_units_px(units, style, dpi, typography_scale)
+}
+
+/// Hard minimum width of a text node. Ellipsizable no-wrap text may collapse
+/// to its truncation marker because the renderer clips and ellipsizes glyphs
+/// inside the allocated line box; every other text keeps its natural width as
+/// the floor so non-ellipsis layouts are unchanged.
+#[cfg(feature = "label")]
+fn measured_text_min_width_px(
+    text: &str,
+    style: SemanticTextStyle,
+    dpi: Dpi,
+    typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
+) -> i32 {
+    if style.wrap == crate::TextWrap::Word || !style.ellipsis {
+        return measured_text_natural_width_px(
+            text,
+            style,
+            dpi,
+            typography_scale,
+            text_measurements,
+        );
+    }
+    if let Some(measured) = text_measurements.measure("…", style, 0) {
+        return measured.width.max(1);
+    }
+    estimated_text_units_px(
+        crate::widget_render::zs_estimated_text_width_units("…"),
+        style,
+        dpi,
+        typography_scale,
+    )
 }
 
 #[cfg(feature = "label")]
@@ -2059,9 +2143,8 @@ fn button_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
     if padding.is_some() {
         return padded_bounds(bounds, padding, dpi);
     }
-    let metrics = crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let metrics =
+        crate::ZsBaseControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::current());
     side_inset_bounds(
         bounds,
         metrics.button_padding_left,
@@ -2077,9 +2160,8 @@ fn text_input_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rec
     if padding.is_some() {
         return padded_bounds(bounds, padding, dpi);
     }
-    let metrics = crate::ZsBaseControlMetrics::for_platform(
-        crate::ZsBaseControlPlatformStyle::current(),
-    );
+    let metrics =
+        crate::ZsBaseControlMetrics::for_platform(crate::ZsBaseControlPlatformStyle::current());
     side_inset_bounds(
         bounds,
         metrics.text_input_padding_left,
@@ -2091,14 +2173,7 @@ fn text_input_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rec
 }
 
 #[cfg(any(feature = "button", feature = "textbox"))]
-fn side_inset_bounds(
-    bounds: Rect,
-    left: Dp,
-    top: Dp,
-    right: Dp,
-    bottom: Dp,
-    dpi: Dpi,
-) -> Rect {
+fn side_inset_bounds(bounds: Rect, left: Dp, top: Dp, right: Dp, bottom: Dp, dpi: Dpi) -> Rect {
     let left = left.to_px(dpi).round_i32().max(0);
     let top = top.to_px(dpi).round_i32().max(0);
     let right = right.to_px(dpi).round_i32().max(0);
@@ -2106,7 +2181,10 @@ fn side_inset_bounds(
     Rect {
         x: bounds.x.saturating_add(left),
         y: bounds.y.saturating_add(top),
-        width: bounds.width.saturating_sub(left.saturating_add(right)).max(0),
+        width: bounds
+            .width
+            .saturating_sub(left.saturating_add(right))
+            .max(0),
         height: bounds
             .height
             .saturating_sub(top.saturating_add(bottom))
@@ -2186,8 +2264,7 @@ struct ViewTextMeasurementValue {
 pub(crate) struct ViewTextMeasurements {
     fingerprint_a: std::collections::hash_map::RandomState,
     fingerprint_b: std::collections::hash_map::RandomState,
-    entries:
-        std::collections::BTreeMap<ViewTextMeasurementKey, ViewTextMeasurementValue>,
+    entries: std::collections::BTreeMap<ViewTextMeasurementKey, ViewTextMeasurementValue>,
     next_use: u64,
 }
 
@@ -2296,4 +2373,412 @@ fn semantic_text_style_fingerprint(style: crate::SemanticTextStyle) -> u64 {
     fingerprint = (fingerprint << 8) | style.vertical_align as u64;
     fingerprint = (fingerprint << 8) | style.wrap as u64;
     (fingerprint << 1) | u64::from(style.ellipsis)
+}
+
+#[cfg(all(test, feature = "label"))]
+mod ellipsis_layout_tests {
+    use super::*;
+
+    fn child_bounds(output: &LayoutOutput, id: WidgetId) -> Rect {
+        output
+            .children
+            .iter()
+            .find(|node| node.component == id.into())
+            .expect("layout child should expose bounds")
+            .bounds
+    }
+
+    fn measured_layout(
+        view: &mut ViewNode<()>,
+        width: i32,
+        measurements: ViewTextMeasurements,
+    ) -> LayoutOutput {
+        view.layout(
+            &mut ViewLayoutCx::new(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height: 200,
+                },
+                Dpi::standard(),
+            )
+            .with_text_measurements(Arc::new(measurements)),
+        )
+    }
+
+    #[cfg(feature = "button")]
+    fn button_label_style() -> SemanticTextStyle {
+        let mut style = SemanticTextStyle::body();
+        style.role = TextRole::Button;
+        style.horizontal_align = crate::HorizontalAlign::Center;
+        style
+    }
+
+    #[cfg(feature = "button")]
+    fn button_floor(label: &str) -> i32 {
+        crate::ZsBaseControlMetrics::current()
+            .button_minimum_width_for_label(label)
+            .to_px(Dpi::standard())
+            .round_i32()
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn ellipsis_label_shrinks_inside_narrow_row_and_keeps_button_visible() {
+        let label = WidgetId::new(9_401);
+        let action = WidgetId::new(9_402);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(path, style).id(label),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 200, measurements);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert!(label_bounds.width < 480);
+        assert!(label_bounds.width >= 1);
+        assert!(button_bounds.width >= button_floor("打开"));
+        assert!(button_bounds.x >= label_bounds.x + label_bounds.width + 8);
+        assert!(button_bounds.x + button_bounds.width <= 200);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn ellipsis_label_keeps_preferred_width_when_row_has_room() {
+        let label = WidgetId::new(9_403);
+        let action = WidgetId::new(9_404);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(path, style).id(label),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 800, measurements);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert_eq!(label_bounds.width, 480);
+        assert_eq!(button_bounds.x, 488);
+    }
+
+    #[test]
+    fn explicit_width_stays_a_hard_constraint_for_ellipsis_text() {
+        let label = WidgetId::new(9_405);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> =
+            row([styled_text(path, style).id(label).width(Dp::new(300.0))]);
+
+        let output = measured_layout(&mut view, 200, measurements);
+
+        assert_eq!(child_bounds(&output, label).width, 300);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn explicit_min_width_bounds_ellipsis_shrinkage() {
+        let label = WidgetId::new(9_406);
+        let action = WidgetId::new(9_407);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(path, style).id(label).min_width(Dp::new(60.0)),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 260, measurements);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert!(label_bounds.width >= 60);
+        assert!(label_bounds.width < 480);
+        assert!(button_bounds.x + button_bounds.width <= 260);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn non_ellipsis_no_wrap_text_keeps_full_width_in_narrow_row() {
+        let label = WidgetId::new(9_408);
+        let action = WidgetId::new(9_409);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let mut style = SemanticTextStyle::body();
+        style.ellipsis = false;
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(path, style).id(label),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 200, measurements);
+
+        // Non-ellipsis text keeps its natural width as a hard minimum: the row
+        // overflows exactly as before instead of clipping the label.
+        assert_eq!(child_bounds(&output, label).width, 480);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn cjk_and_emoji_ellipsis_label_shrinks_without_covering_button() {
+        let label = WidgetId::new(9_410);
+        let action = WidgetId::new(9_411);
+        let path = "存档/非常/长/的/目录/层级/没有/空格/🔥📁/最终文件.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 520,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text(path, style).id(label),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 220, measurements);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert!(label_bounds.width < 520);
+        assert!(button_bounds.width >= button_floor("打开"));
+        assert!(button_bounds.x >= label_bounds.x + label_bounds.width + 8);
+        assert!(button_bounds.x + button_bounds.width <= 220);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn ellipsis_label_inside_nested_column_shrinks_in_narrow_row() {
+        let label = WidgetId::new(9_412);
+        let column_id = WidgetId::new(9_413);
+        let action = WidgetId::new(9_414);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            column([styled_text(path, style).id(label)]).id(column_id),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0));
+
+        let output = measured_layout(&mut view, 200, measurements);
+        let column_bounds = child_bounds(&output, column_id);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert!(column_bounds.width < 480);
+        assert!(label_bounds.width <= column_bounds.width);
+        assert!(button_bounds.width >= button_floor("打开"));
+        assert!(button_bounds.x + button_bounds.width <= 200);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn ellipsis_row_inside_aligned_column_clamps_to_cross_axis() {
+        let label = WidgetId::new(9_415);
+        let inner = WidgetId::new(9_416);
+        let action = WidgetId::new(9_417);
+        let path = "C:/very/long/path/without-any-spaces/that/keeps/going/segment/file.txt";
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            path,
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = column([row([
+            styled_text(path, style).id(label),
+            button("打开").id(action),
+        ])
+        .gap(Dp::new(8.0))
+        .id(inner)])
+        .align(ViewAlign::Start);
+
+        let output = measured_layout(&mut view, 200, measurements);
+        let inner_bounds = child_bounds(&output, inner);
+        let label_bounds = child_bounds(&output, label);
+        let button_bounds = child_bounds(&output, action);
+
+        assert_eq!(inner_bounds.width, 200);
+        assert!(label_bounds.width < 480);
+        assert!(button_bounds.width >= button_floor("打开"));
+        assert!(button_bounds.x + button_bounds.width <= 200);
+    }
+
+    #[test]
+    fn two_ellipsis_labels_share_the_narrow_row_deficit() {
+        let first = WidgetId::new(9_418);
+        let second = WidgetId::new(9_419);
+        let style = SemanticTextStyle::body();
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            "a/very/long/path/segment/without/spaces/alpha.txt",
+            style,
+            0,
+            crate::Size {
+                width: 480,
+                height: 20,
+            },
+        );
+        measurements.insert(
+            "b/shorter/path/beta.txt",
+            style,
+            0,
+            crate::Size {
+                width: 240,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = row([
+            styled_text("a/very/long/path/segment/without/spaces/alpha.txt", style).id(first),
+            styled_text("b/shorter/path/beta.txt", style).id(second),
+        ]);
+
+        let output = measured_layout(&mut view, 300, measurements);
+        let first_bounds = child_bounds(&output, first);
+        let second_bounds = child_bounds(&output, second);
+
+        assert_eq!(first_bounds.width + second_bounds.width, 300);
+        assert!(first_bounds.width < 480);
+        assert!(second_bounds.width < 240);
+        assert!(first_bounds.width > second_bounds.width);
+        assert!(second_bounds.x >= first_bounds.x + first_bounds.width);
+    }
 }

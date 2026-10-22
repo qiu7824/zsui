@@ -98,6 +98,105 @@ pub fn windows_win32_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<O
         .map(PathBuf::from))
 }
 
+/// Shows the Win32 folder picker (`SHBrowseForFolderW`) on the calling UI
+/// thread. `Ok(None)` means the user cancelled; the returned PIDL is released
+/// with `CoTaskMemFree` after the path is resolved.
+pub fn windows_win32_pick_directory_dialog(
+    spec: &crate::DirectoryDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    spec.validate()?;
+    let _apartment = WindowsDirectoryDialogApartment::new()?;
+    let initial_path = spec.current_path.as_ref().map(|path| {
+        path.as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>()
+    });
+    let title = wide_null(&spec.title);
+    let mut display_name = vec![0u16; 260];
+    let mut info: BROWSEINFOW = unsafe { zeroed() };
+    info.hwndOwner = unsafe { GetActiveWindow() };
+    info.lpszTitle = title.as_ptr();
+    info.pszDisplayName = display_name.as_mut_ptr();
+    info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    info.lpfn = Some(windows_directory_picker_callback);
+    info.lParam = initial_path
+        .as_ref()
+        .map_or(0, |path| path.as_ptr() as isize);
+    let pidl = unsafe { SHBrowseForFolderW(&mut info) };
+    if pidl.is_null() {
+        return Ok(None);
+    }
+    let mut path_buffer = vec![0u16; 32_768];
+    let resolved = unsafe {
+        windows_sys::Win32::UI::Shell::SHGetPathFromIDListEx(
+            pidl,
+            path_buffer.as_mut_ptr(),
+            path_buffer.len() as u32,
+            0,
+        )
+    };
+    unsafe { CoTaskMemFree(pidl as *const _) };
+    if resolved == 0 {
+        return Err(ZsuiError::host(
+            "windows_pick_directory_dialog",
+            "SHGetPathFromIDListEx could not resolve the selected folder",
+        ));
+    }
+    let end = path_buffer
+        .iter()
+        .position(|unit| *unit == 0)
+        .unwrap_or(path_buffer.len());
+    Ok(Some(PathBuf::from(OsString::from_wide(
+        &path_buffer[..end],
+    ))))
+}
+
+unsafe extern "system" fn windows_directory_picker_callback(
+    hwnd: HWND,
+    message: u32,
+    _param: isize,
+    initial: isize,
+) -> i32 {
+    if message == windows_sys::Win32::UI::Shell::BFFM_INITIALIZED && initial != 0 {
+        unsafe {
+            SendMessageW(
+                hwnd,
+                windows_sys::Win32::UI::Shell::BFFM_SETSELECTIONW,
+                1,
+                initial,
+            );
+        }
+    }
+    0
+}
+
+struct WindowsDirectoryDialogApartment;
+impl WindowsDirectoryDialogApartment {
+    fn new() -> ZsuiResult<Self> {
+        let result = unsafe {
+            windows_sys::Win32::System::Com::CoInitializeEx(
+                null(),
+                windows_sys::Win32::System::Com::COINIT_APARTMENTTHREADED as u32,
+            )
+        };
+        if result < 0 {
+            return Err(ZsuiError::host(
+                "windows_directory_apartment",
+                format!("COM apartment initialization failed: {result:#x}"),
+            ));
+        }
+        Ok(Self)
+    }
+}
+impl Drop for WindowsDirectoryDialogApartment {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Com::CoUninitialize();
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct WindowsWin32DialogService;
 
@@ -107,9 +206,7 @@ impl NativeDialogService for WindowsWin32DialogService {
     }
 }
 
-pub fn windows_win32_show_native_dialog(
-    spec: &NativeDialogSpec,
-) -> ZsuiResult<DialogResponse> {
+pub fn windows_win32_show_native_dialog(spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {
     spec.validate()?;
     if let Some(labels) = &spec.button_labels {
         return windows_win32_show_custom_native_dialog(spec, labels);
@@ -171,8 +268,7 @@ struct WindowsMessageBoxButtonLabels {
 
 impl WindowsMessageBoxButtonLabels {
     fn install(buttons: DialogButtons, labels: &DialogButtonLabels) -> ZsuiResult<Self> {
-        let already_active =
-            WINDOWS_MESSAGE_BOX_LABELS.with(|stored| !stored.borrow().is_empty());
+        let already_active = WINDOWS_MESSAGE_BOX_LABELS.with(|stored| !stored.borrow().is_empty());
         if already_active {
             return Err(ZsuiError::host(
                 "windows_native_dialog_labels",
@@ -183,7 +279,10 @@ impl WindowsMessageBoxButtonLabels {
             *stored.borrow_mut() = windows_native_dialog_custom_button_order(buttons, labels)
                 .into_iter()
                 .map(|(response, label)| {
-                    (windows_native_dialog_response_id(response), wide_null(label))
+                    (
+                        windows_native_dialog_response_id(response),
+                        wide_null(label),
+                    )
                 })
                 .collect();
         });

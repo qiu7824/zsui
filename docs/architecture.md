@@ -269,25 +269,6 @@ accessory/action events, then replaces the buffered draw plan and invalidates
 the window. This closes the first visible input-state-paint loop while keeping
 application settings outside the framework.
 
-`src/workbench.rs` defines the higher-level desktop workbench family. Its
-declaration separates navigation history, message content blocks, composer
-actions and inspector content from application commands and persistence. The
-layout produces stable DPI-aware regions and a product-neutral
-`NativeDrawPlan`; the retained View caches backend text measurements so layout,
-paint, input and accessibility consume identical geometry. `ZsWorkbenchRuntime`
-adds hit testing, bounded timeline/sidebar/inspector scrolling, conversation
-selection, adaptive sidebar collapse and inspector-tab state. Composer height
-grows within the selected platform profile rather than relying on one fixed
-text box height.
-`ZsWorkbenchShellSpec`, `ZsMessageTimelineSpec`, `ZsComposerSpec` and
-`ZsInspectorPanelSpec` expose those regions as explicit reusable child
-contracts; `workbench_shell(...)` builds the retained View while
-`NativeWindowBuilder::workbench(...)` accepts either the structured shell or
-the flattened compatibility spec and installs the same live retained runtime.
-The internal platform profile owns distinct
-WinUI, AppKit and GTK shell geometry instead of sharing Windows dimensions.
-Direct target interaction proof remains a separate completion gate.
-
 `src/document_shell.rs` defines a smaller document-editor composite. It owns
 the DPI-aware tab strip, command bar, editor-frame inset, status surface,
 semantic icon commands and pointer hit regions. A host can place a native text
@@ -315,11 +296,11 @@ it does not place Windows dimensions in the application-facing View path.
 Scientific, programmer, graphing and conversion modes remain separate future
 surfaces.
 
-The workbench does not own private glyph strings or an independent visual
+Built-in components do not own private glyph strings or an independent visual
 palette. The internal component profile supplies the active platform's spacing,
 control/card radii, control metrics and semantic type ramp; the public Fluent
 constants in `src/style.rs` remain compatibility exports only. `src/icon.rs`
-defines semantic `ZsIcon` values and platform symbol names. A workbench draw plan emits
+defines semantic `ZsIcon` values and platform symbol names. A component draw plan emits
 `NativeDrawCommand::Icon`; the Windows GDI sink resolves that command with
 Segoe Fluent Icons and uses a raster asset only when `Original` color mode is
 requested. This mirrors the IconElement/IconSource boundary without exposing a
@@ -452,9 +433,7 @@ Advanced controls should be gated by
 widget features or moved into separate crates as they become real
 implementations. Avoid global widget registries that instantiate every control
 type at startup; public examples should import and build only the controls they
-use. Composite conversation/task surfaces remain behind the `workbench`
-feature, document-editor chrome remains behind `document-shell`, and the
-decimal calculator slice remains behind `calculator`. The
+use. The decimal calculator slice remains behind `calculator`. The
 default `window` umbrella enables both desktop backend features while
 target-specific dependency sections ensure only the current platform library is
 compiled. Cargo features are unified across the dependency graph, so the long-term
@@ -608,7 +587,7 @@ compatibility surfaces have dedicated feature-gated profiles as well.
 Production `widget_render.rs`, `password_box.rs`, `tooltip.rs`, `progress.rs`,
 `style.rs`, `render_protocol.rs` and the native input focus decorator therefore
 consume resolved profiles rather than direct Windows, macOS or GTK variant
-branches. The reusable Workbench shell also resolves control heights, icon
+branches. Shared component profiles also resolve control heights, icon
 sizes and surface radii through the same token profile; it does not depend on
 Fluent compatibility constants.
 `src/platform/backend_profile.rs` describes Host, Text, Raster, Presenter and
@@ -661,7 +640,7 @@ projects AppKit key equivalents and GTK accelerator strings for their native
 menu adapters.
 
 Regression tests scan the
-Gallery, Notepad, Calculator, Workbench and other ordinary desktop application
+Gallery, Notepad, Calculator and other ordinary desktop application
 sources so target `cfg`, platform enums and raw native handles cannot silently
 return to application authoring or smoke setup.
 

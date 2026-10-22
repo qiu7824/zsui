@@ -2370,3 +2370,89 @@ mod tests {
         }
     }
 }
+
+/// Converts retained raster geometry into grapheme-safe native input positions.
+#[cfg(feature = "text-input-core")]
+#[allow(dead_code)] // Shared by the optional Windows and Linux Lite input hosts.
+pub(crate) fn native_shaped_line_from_layout(
+    text: &str,
+    layout: &ZsRustTextLayout,
+    font_size: f32,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    use crate::native_input_visuals::{
+        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
+    };
+    let line = layout.lines().first()?;
+    let glyphs = layout.glyphs_for_line(line.line_index)?;
+    let boundaries = crate::native_text_edit::grapheme_boundaries(text);
+    let byte_offsets = boundaries
+        .iter()
+        .map(|index| crate::native_text_edit::char_to_byte_index(text, *index))
+        .collect::<Vec<_>>();
+    let mut clusters = Vec::with_capacity(boundaries.len().saturating_sub(1));
+    for (logical, bytes) in boundaries.windows(2).zip(byte_offsets.windows(2)) {
+        let mut left = f32::INFINITY;
+        let mut right = f32::NEG_INFINITY;
+        let mut rtl = false;
+        for glyph in glyphs
+            .iter()
+            .filter(|glyph| glyph.cluster_end > bytes[0] && glyph.cluster_start < bytes[1])
+        {
+            let cluster_boundaries = byte_offsets
+                .iter()
+                .copied()
+                .filter(|offset| *offset >= glyph.cluster_start && *offset <= glyph.cluster_end)
+                .collect::<Vec<_>>();
+            let part_count = cluster_boundaries.len().saturating_sub(1).max(1) as f32;
+            let part = cluster_boundaries
+                .windows(2)
+                .position(|pair| pair[0] <= bytes[0] && pair[1] >= bytes[1])
+                .unwrap_or(0) as f32;
+            let part = if glyph.rtl {
+                part_count - part - 1.0
+            } else {
+                part
+            };
+            let glyph_left = glyph.origin_x_px + glyph.advance_px * part / part_count;
+            let glyph_right = glyph.origin_x_px + glyph.advance_px * (part + 1.0) / part_count;
+            left = left.min(glyph_left.min(glyph_right));
+            right = right.max(glyph_left.max(glyph_right));
+            rtl = glyph.rtl;
+        }
+        if !left.is_finite() || !right.is_finite() {
+            let fallback = clusters
+                .last()
+                .map(|cluster: &NativeShapedTextCluster| cluster.end_x)
+                .unwrap_or(0);
+            left = fallback as f32;
+            right = left + font_size.max(1.0) * 0.5;
+        }
+        let (start_x, end_x) = if rtl {
+            (right.round() as i32, left.round() as i32)
+        } else {
+            (left.round() as i32, right.round() as i32)
+        };
+        clusters.push(NativeShapedTextCluster {
+            start: logical[0],
+            end: logical[1],
+            start_x,
+            end_x,
+        });
+    }
+    let mut carets = Vec::with_capacity(boundaries.len());
+    for (position, index) in boundaries.iter().copied().enumerate() {
+        let previous = position
+            .checked_sub(1)
+            .and_then(|previous| clusters.get(previous))
+            .map(|cluster| cluster.end_x);
+        let next = clusters.get(position).map(|cluster| cluster.start_x);
+        let primary = previous.or(next).unwrap_or(0);
+        let secondary = next.or(previous).unwrap_or(primary);
+        carets.push(NativeShapedTextCaret {
+            index,
+            primary_x: primary,
+            secondary_x: secondary,
+        });
+    }
+    NativeShapedTextLine::new(line.width_px.ceil() as i32, clusters, carets)
+}

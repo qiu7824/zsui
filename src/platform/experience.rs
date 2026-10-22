@@ -331,10 +331,9 @@ mod tests {
                 "zsui_calculator",
                 include_str!("../../examples/zsui_calculator.rs"),
             ),
-            ("codex_zsui", include_str!("../../examples/codex_zsui.rs")),
             (
-                "invoice_workbench",
-                include_str!("../../examples/invoice_workbench.rs"),
+                "invoice_tool",
+                include_str!("../../examples/invoice_tool.rs"),
             ),
             (
                 "navigation_shell_layout",
@@ -343,10 +342,6 @@ mod tests {
             (
                 "rust_first_view",
                 include_str!("../../examples/rust_first_view.rs"),
-            ),
-            (
-                "workbench_shell",
-                include_str!("../../examples/workbench_shell.rs"),
             ),
         ];
 
@@ -1065,20 +1060,6 @@ mod tests {
                 "shared widget renderer contains a desktop branch outside profiles: {forbidden}"
             );
         }
-    }
-
-    #[test]
-    fn workbench_consumes_platform_tokens_without_fluent_constants() {
-        let workbench = include_str!("../workbench.rs");
-        let production = workbench
-            .split_once("#[cfg(test)]")
-            .map_or(workbench, |(production, _)| production);
-
-        assert!(production.contains("PlatformComponentProfile::current().style_tokens"));
-        assert!(production.contains("PlatformWorkbenchProfile::for_platform"));
-        assert!(!production.contains("ZSUI_FLUENT_"));
-        assert!(!production.contains("cfg!(target_os"));
-        assert!(!production.contains("#[cfg(target_os"));
     }
 
     #[test]

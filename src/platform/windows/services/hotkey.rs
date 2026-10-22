@@ -116,9 +116,16 @@ impl Drop for WindowsWin32OwnedAcceleratorTable {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             unsafe {
-                DestroyAcceleratorTable(self.handle);
+                if DestroyAcceleratorTable(self.handle) == 0 {
+                    {
+                        use std::io::Write as _;
+                        let _ = writeln!(
+                            std::io::stderr(),
+                            "ZSUI accelerator cleanup failed: DestroyAcceleratorTable"
+                        );
+                    }
+                }
             }
         }
     }
 }
-

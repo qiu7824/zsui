@@ -26,6 +26,10 @@ pub mod android_activity_host;
 pub mod app;
 #[doc(hidden)]
 pub mod app_command;
+#[doc(hidden)]
+pub mod app_effect;
+mod dispatch_queue;
+pub use dispatch_queue::{QueueFull, DEFAULT_DISPATCH_QUEUE_CAPACITY, DISPATCH_BATCH_SIZE};
 #[cfg(feature = "auto-suggest")]
 #[doc(hidden)]
 pub mod auto_suggest;
@@ -119,12 +123,6 @@ mod linux_direct;
     feature = "linux-direct-accessibility"
 ))]
 mod linux_direct_accessibility;
-#[cfg(all(
-    target_os = "linux",
-    not(target_env = "ohos"),
-    feature = "linux-direct-host"
-))]
-mod linux_direct_icons;
 #[cfg(all(
     target_os = "linux",
     not(target_env = "ohos"),
@@ -255,6 +253,20 @@ pub mod product_adapter;
 pub mod progress;
 #[doc(hidden)]
 pub mod render_protocol;
+#[cfg(feature = "resize")]
+#[doc(hidden)]
+pub mod resize;
+#[cfg(any(
+    test,
+    feature = "windows-gdi",
+    feature = "macos-appkit",
+    feature = "linux-direct-host",
+    feature = "linux-gtk"
+))]
+mod symbolic_icons;
+#[cfg(feature = "resize")]
+#[doc(hidden)]
+pub use resize::{ZsResizeAxis, ZsResizeHandle, ZsResizeLimits, ZsResizeTarget};
 #[cfg(feature = "rust-text")]
 #[doc(hidden)]
 pub mod rust_text_renderer;
@@ -365,9 +377,6 @@ pub mod windows_win32_host;
 #[path = "platform/windows/text/edit_host.rs"]
 #[doc(hidden)]
 pub mod windows_win32_text_editor;
-#[cfg(feature = "workbench")]
-#[doc(hidden)]
-pub mod workbench;
 
 #[doc(hidden)]
 pub use accessibility::{
@@ -404,6 +413,8 @@ pub use app::{
 pub use app_command::{
     app_command_name, AppCommandDispatchReport, AppCommandExecutor, SharedAppCommandExecutor,
 };
+#[doc(hidden)]
+pub use app_effect::{AppEffect, AppEffectCancellation, AppEffectOutcome, AppEffectRequest};
 #[cfg(feature = "auto-suggest")]
 #[doc(hidden)]
 pub use auto_suggest::{
@@ -485,10 +496,10 @@ pub use date::{days_in_month, is_leap_year, ZsDate};
 #[doc(hidden)]
 pub use desktop_services::{
     ClipboardService, DesktopCapabilities, DesktopCapability, DesktopCapabilityEntry, DesktopEvent,
-    DesktopHost, DesktopKey, DesktopTheme, FileDialogService, IconService, KeyModifiers,
-    MenuService, NativeClipboardService, NativeDesktopDialogService, NativeDialogService,
-    NativeFileDialogService, SaveFileDialogSpec, TextInputRequest, TextInputService,
-    ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
+    DesktopHost, DesktopKey, DesktopTheme, DirectoryDialogSpec, FileDialogService, IconService,
+    KeyModifiers, MenuService, NativeClipboardService, NativeDesktopDialogService,
+    NativeDialogService, NativeFileDialogService, SaveFileDialogSpec, TextInputRequest,
+    TextInputService, ThemePreference, ThemeService, WindowService, REQUIRED_DESKTOP_CAPABILITIES,
 };
 #[cfg(feature = "document-shell")]
 #[doc(hidden)]
@@ -555,11 +566,11 @@ pub use host_protocol::{
 };
 #[doc(hidden)]
 pub use hotkey::HotkeySpec;
-#[doc(hidden)]
-pub use icon::ZsIcon;
 #[cfg(feature = "icon")]
 #[doc(hidden)]
 pub use icon::ZsIconSize;
+#[doc(hidden)]
+pub use icon::{ZsIcon, ZsIconRole};
 #[cfg(feature = "image-preview")]
 #[doc(hidden)]
 pub use image_preview::{
@@ -830,8 +841,8 @@ pub use style::{
 #[cfg(feature = "table")]
 #[doc(hidden)]
 pub use table::{
-    ZsTableColumn, ZsTableColumnId, ZsTableColumnWidth, ZsTableRow, ZsTableRowId, ZsTableSort,
-    ZsTableSortDirection, ZsTableViewState,
+    ZsTableColumn, ZsTableColumnId, ZsTableColumnResize, ZsTableColumnWidth, ZsTableRow,
+    ZsTableRowId, ZsTableSort, ZsTableSortDirection, ZsTableViewState,
 };
 #[cfg(feature = "teaching-tip")]
 #[doc(hidden)]
@@ -1017,9 +1028,7 @@ pub use view::{
 #[cfg(feature = "button")]
 #[doc(hidden)]
 pub use view::{command_bar, ZsCommandBarSpec};
-#[cfg(feature = "workbench")]
-#[doc(hidden)]
-pub use view::{composer, inspector_panel, message_timeline, workbench, workbench_shell};
+
 #[cfg(feature = "image-preview")]
 #[doc(hidden)]
 pub use view::{image, image_preview};
@@ -1252,13 +1261,13 @@ pub use windows_win32_host::{
     run_windows_win32_native_window_event_loop_with_status_items,
     set_windows_win32_window_draw_plan, set_windows_win32_window_view_input_route,
     windows_system_theme_mode, windows_win32_main_window_style_plan,
-    windows_win32_open_file_dialog, windows_win32_save_file_dialog,
-    windows_win32_window_view_input_report, zsui_win32_default_window_proc, WindowsWin32ClassNames,
-    WindowsWin32FileDialogService, WindowsWin32MainWindowHost, WindowsWin32MessageLoop,
-    WindowsWin32MessageLoopResult, WindowsWin32OwnedAcceleratorTable,
-    WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon, WindowsWin32OwnedMainWindowHandles,
-    WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon, WindowsWin32OwnedWindowMenu,
-    WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
+    windows_win32_open_file_dialog, windows_win32_pick_directory_dialog,
+    windows_win32_save_file_dialog, windows_win32_window_view_input_report,
+    zsui_win32_default_window_proc, WindowsWin32ClassNames, WindowsWin32FileDialogService,
+    WindowsWin32MainWindowHost, WindowsWin32MessageLoop, WindowsWin32MessageLoopResult,
+    WindowsWin32OwnedAcceleratorTable, WindowsWin32OwnedAppIconResource, WindowsWin32OwnedIcon,
+    WindowsWin32OwnedMainWindowHandles, WindowsWin32OwnedPopupMenu, WindowsWin32OwnedTrayIcon,
+    WindowsWin32OwnedWindowMenu, WindowsWin32StatusItemHost, WindowsWin32StatusMenuCommandEntry,
     WindowsWin32StatusMenuCommandTable, WindowsWin32TransientWindowHost,
     WindowsWin32ViewInputDispatchReport, WindowsWin32ViewInputRoute, WindowsWin32WindowStylePlan,
     WindowsWindowCreateParams, WindowsWindowRole, ZSUI_WIN32_STATUS_MENU_FIRST_COMMAND_ID,
@@ -1267,22 +1276,6 @@ pub use windows_win32_host::{
 #[cfg(all(windows, feature = "windows-win32", feature = "document-shell"))]
 #[doc(hidden)]
 pub use windows_win32_text_editor::WindowsWin32OwnedTextEditor;
-#[cfg(feature = "workbench")]
-#[doc(hidden)]
-pub use workbench::{
-    zs_workbench_event_for_region, zs_workbench_layout, zs_workbench_native_draw_plan,
-    ZsComposerSpec, ZsInspectorPanelSpec, ZsMessageTimelineSpec, ZsWorkbenchActionSpec,
-    ZsWorkbenchBlockLayout, ZsWorkbenchComposerSpec, ZsWorkbenchContentBlock,
-    ZsWorkbenchConversationGroupSpec, ZsWorkbenchConversationSpec, ZsWorkbenchIcon,
-    ZsWorkbenchInspectorSpec, ZsWorkbenchInteractionEvent, ZsWorkbenchInteractionUpdate,
-    ZsWorkbenchLayoutMetrics, ZsWorkbenchLayoutPlan, ZsWorkbenchLayoutRegion,
-    ZsWorkbenchMessageLayout, ZsWorkbenchMessageRole, ZsWorkbenchMessageSpec,
-    ZsWorkbenchNoticeLevel, ZsWorkbenchRegionKind, ZsWorkbenchRuntime,
-    ZsWorkbenchScrollbarGeometry, ZsWorkbenchShellSpec, ZsWorkbenchSidebarSpec, ZsWorkbenchSpec,
-    ZsWorkbenchToolStatus, ZS_WORKBENCH_BASE_SIDEBAR_WIDTH, ZS_WORKBENCH_COLLAPSED_SIDEBAR_WIDTH,
-    ZS_WORKBENCH_COMPOSER_HEIGHT, ZS_WORKBENCH_CONTENT_MAX_WIDTH, ZS_WORKBENCH_INSPECTOR_WIDTH,
-    ZS_WORKBENCH_TOP_BAR_HEIGHT,
-};
 
 #[cfg(test)]
 mod tests {

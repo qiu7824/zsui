@@ -56,6 +56,8 @@ impl WindowsWin32ViewInputRoute {
         let report = self
             .shared_runtime
             .dispatch_pointer_move_with_modifiers(point, modifiers);
+        #[cfg(feature = "resize")]
+        self.update_resize_cursor(point);
         self.adapt_shared_report(report, WindowsSharedInputKind::PointerMove)
     }
 
@@ -91,6 +93,17 @@ impl WindowsWin32ViewInputRoute {
             .shared_runtime
             .dispatch_pointer_up_with_button(point, button, modifiers);
         self.adapt_shared_report(report, WindowsSharedInputKind::PointerUp(target))
+    }
+
+    #[cfg(feature = "resize")]
+    fn update_resize_cursor(&self, point: crate::Point) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SetCursor, IDC_SIZENS, IDC_SIZEWE};
+        let cursor = match self.shared_runtime.resize_cursor_at(point) {
+            Some(crate::ZsResizeAxis::Horizontal) => IDC_SIZEWE,
+            Some(crate::ZsResizeAxis::Vertical) => IDC_SIZENS,
+            None => IDC_ARROW,
+        };
+        unsafe { SetCursor(LoadCursorW(std::ptr::null_mut(), cursor)); }
     }
 
     fn cancel_pointer_drag(&mut self) -> WindowsWin32ViewInputDispatchReport {

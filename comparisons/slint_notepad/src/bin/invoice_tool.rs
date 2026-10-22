@@ -72,7 +72,7 @@ slint::slint! {
     }
 
     export component InvoiceWindow inherits Window {
-        title: "发票工作台 · Slint";
+        title: "发票工具 · Slint";
         preferred-width: 1000px;
         preferred-height: 700px;
         min-width: 820px;
@@ -99,7 +99,7 @@ slint::slint! {
                     padding: 20px;
                     spacing: 8px;
                     Text { text: "票据工坊"; font-size: 22px; font-weight: 700; color: #20242b; }
-                    Text { text: "INVOICE WORKBENCH"; font-size: 10px; color: #8a919c; }
+                    Text { text: "INVOICE TOOL"; font-size: 10px; color: #8a919c; }
                     Rectangle { height: 18px; }
                     NavItem { label: "发票合并打印"; selected: root.selected == 0; activated => { root.select(0); } }
                     NavItem { label: "发票信息提取"; selected: root.selected == 1; activated => { root.select(1); } }

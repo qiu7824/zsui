@@ -60,8 +60,8 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "Measure progress by standalone input-state-paint loops on real hosts, not by declaration or contract count.",
             "a ZSUI-only control gallery with native interaction, repaint and target smoke proof",
             "raising overall completion from manifests, AI metadata or mobile scaffolds that do not run on a target",
-            "examples/navigation_shell_layout.rs, examples/workbench_shell.rs, examples/zsui_notepad.rs, examples/zsui_calculator.rs, src/shell_layout.rs, src/workbench.rs, src/document_shell.rs, src/calculator.rs, src/native.rs",
-            "attach the calculator runtime to the generic native builder, turn the notepad's native editor/file-dialog/lifecycle plumbing into reusable services, connect the workbench composer loop, then apply the same runtime gate to AppKit, GTK and Android",
+            "examples/navigation_shell_layout.rs, examples/zsui_notepad.rs, examples/zsui_calculator.rs, src/shell_layout.rs, src/document_shell.rs, src/calculator.rs, src/native.rs",
+            "attach the calculator runtime to the generic native builder, turn the notepad's native editor/file-dialog/lifecycle plumbing into reusable services, then apply the same runtime gate to AppKit, GTK and Android",
         ),
         ZsuiRustFirstGoal::new(
             "one_line_native_entrypoints",
@@ -106,7 +106,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
         ZsuiRustFirstGoal::new(
             "production_native_foundation",
             "Use proven native host and rendering behavior as the framework baseline while keeping product behavior outside ZSUI.",
-            "NativeDrawPlan, buffered no-flicker Win32/GDI painting, reusable document/workbench/calculator shells, status/menu/settings contracts and owned native resources",
+            "NativeDrawPlan, buffered no-flicker Win32/GDI painting, reusable document/calculator shells, status/menu/settings contracts and owned native resources",
             "duplicating established host behavior or placing application storage and sync logic inside ZSUI",
             "src/render_protocol.rs, src/native_host_actions.rs, src/windows_gdi_renderer.rs, src/platform/windows/mod.rs",
             "finish tray/menu/input host routes and keep buffered no-flicker self-draw as the Windows baseline",
@@ -173,7 +173,7 @@ pub fn zsui_rust_first_goals() -> Vec<ZsuiRustFirstGoal> {
             "a versioned semantic UiDocument, explicit typed binding manifest, schema validator, prebuilt native Viewer, stable-ID patches and release-time embedding",
             "a global string event bus, arbitrary reflection, browser pixels presented as native proof, development watchers in release builds or a mandatory two-process application runtime",
             "src/ui_document.rs, src/ui_document_runtime.rs, src/ui_viewer.rs, src/bin/zsui-uic.rs, src/bin/zsui-viewer.rs, docs/ui-document.md",
-            "keep all 51 catalog families, typed binding compatibility, stable-ID state retention, three-platform Viewer proof and release embedding aligned as components evolve; defer the full drag-and-drop editor",
+            "keep all 47 catalog families, typed binding compatibility, stable-ID state retention, three-platform Viewer proof and release embedding aligned as components evolve; defer the full drag-and-drop editor",
         ),
         ZsuiRustFirstGoal::new(
             "result_error_handling",

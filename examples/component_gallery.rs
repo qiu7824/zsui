@@ -142,6 +142,8 @@ struct GalleryState {
     grid_selection: Option<ZsGridViewItemId>,
     tree_selection: Option<ZsTreeNodeId>,
     tree_expanded: BTreeSet<ZsTreeNodeId>,
+    sidebar_width: Option<Dp>,
+    table_columns: Vec<ZsTableColumn>,
     table_selection: Option<ZsTableRowId>,
     table_sort: Option<ZsTableSort>,
     tab: ZsTabId,
@@ -189,6 +191,18 @@ impl Default for GalleryState {
             grid_selection: Some(ZsGridViewItemId::new(1)),
             tree_selection: Some(ZsTreeNodeId::new(2)),
             tree_expanded: BTreeSet::from([ZsTreeNodeId::new(1)]),
+            sidebar_width: None,
+            table_columns: vec![
+                ZsTableColumn::new(1, "名称 / Name")
+                    .fill_width(1)
+                    .sortable(true),
+                ZsTableColumn::new(2, "类型 / Type")
+                    .fill_width(1)
+                    .sortable(true),
+                ZsTableColumn::new(3, "大小 / Size")
+                    .fill_width(1)
+                    .alignment(HorizontalAlign::End),
+            ],
             table_selection: Some(ZsTableRowId::new(2)),
             table_sort: None,
             tab: ZsTabId::new(1),
@@ -237,6 +251,8 @@ enum Msg {
     TreeSelected(ZsTreeNodeId),
     TreeExpanded(ZsTreeExpansionChange),
     TreeInvoked(ZsTreeNodeId),
+    SidebarResized(Dp),
+    TableColumnResized(ZsTableColumnResize),
     TableSelected(ZsTableRowId),
     TableSorted(ZsTableSort),
     TableInvoked(ZsTableRowId),
@@ -357,15 +373,14 @@ fn component_label(name: &str) -> String {
         "content_dialog" => "内容对话框",
         "flyout" => "浮出层",
         "menu_flyout" => "菜单浮出层",
+        "context_menu" => "上下文菜单",
+        "accordion" => "折叠面板",
         "teaching_tip" => "教学提示",
         "command_palette" => "命令面板",
         "image" => "图像",
+        "video" => "视频",
         "icon" => "图标",
         "settings_card" => "设置卡片",
-        "workbench_shell" => "工作台外壳",
-        "message_timeline" => "消息时间线",
-        "composer" => "撰写器",
-        "inspector_panel" => "检查器面板",
         _ => return name.to_string(),
     };
     format!("{chinese} / {name}")
@@ -436,6 +451,7 @@ fn inputs_page(state: &GalleryState) -> ViewNode<Msg> {
         vec![
             textbox(&state.text)
                 .id(TEXT_INPUT)
+                .width(Dp::new(300.0))
                 .placeholder("名称 / Name")
                 .on_change(Msg::Text),
             password_box(&state.password)
@@ -559,17 +575,7 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
     .on_grid_view_invoke(Msg::GridInvoked);
 
     let table = data_grid(
-        [
-            ZsTableColumn::new(1, "名称 / Name")
-                .fill_width(1)
-                .sortable(true),
-            ZsTableColumn::new(2, "类型 / Type")
-                .fill_width(1)
-                .sortable(true),
-            ZsTableColumn::new(3, "大小 / Size")
-                .fill_width(1)
-                .alignment(HorizontalAlign::End),
-        ],
+        state.table_columns.clone(),
         [
             ZsTableRow::new(1, ["Cargo.toml", "清单 / TOML", "4 KB"]),
             ZsTableRow::new(2, ["src", "文件夹 / Dir", "—"]),
@@ -581,6 +587,7 @@ fn collections_page(state: &GalleryState) -> ViewNode<Msg> {
     .height(Dp::new(250.0))
     .selected_table_row(state.table_selection)
     .table_sort(state.table_sort)
+    .on_table_column_resize(Msg::TableColumnResized)
     .on_table_select(Msg::TableSelected)
     .on_table_sort(Msg::TableSorted)
     .on_table_invoke(Msg::TableInvoked);
@@ -1032,37 +1039,43 @@ fn view(state: &GalleryState) -> ViewNode<Msg> {
             .id(id)
             .on_click(Msg::Navigate(page))
     });
-    navigation_view(
-        ZsNavigationViewSpec::new(
-            "ZSUI 组件库 / Gallery",
-            format!(
-                "{} 个运行界面 / {} runtime surfaces",
-                summary.runtime_surface_count, summary.runtime_surface_count
-            ),
-        )
-        .items(navigation_items)
-        .footer_items([
-            row([
-                text(if state.dark {
-                    "深色 / Dark"
-                } else {
-                    "浅色 / Light"
-                }),
-                spacer(),
-                toggle(state.dark).on_toggle(Msg::Dark),
-            ])
-            .gap(Dp::new(8.0)),
-            status_text(&state.status),
-        ])
-        .minimum_content_width(Dp::new(560.0))
-        .content(NAVIGATION_VIEW, content),
+    let mut navigation = ZsNavigationViewSpec::new(
+        "ZSUI 组件库 / Gallery",
+        format!(
+            "{} 个运行界面 / {} runtime surfaces",
+            summary.runtime_surface_count, summary.runtime_surface_count
+        ),
     )
-    .bg(ThemeColorToken::Surface)
-    .theme_mode(if state.dark {
-        ZsuiThemeMode::Dark
-    } else {
-        ZsuiThemeMode::Light
-    })
+    .items(navigation_items)
+    .footer_items([
+        row([
+            text(if state.dark {
+                "深色 / Dark"
+            } else {
+                "浅色 / Light"
+            }),
+            spacer(),
+            toggle(state.dark).on_toggle(Msg::Dark),
+        ])
+        .gap(Dp::new(8.0)),
+        status_text(&state.status),
+    ])
+    .minimum_content_width(Dp::new(560.0))
+    .content(NAVIGATION_VIEW, content);
+    if let Some(width) = state.sidebar_width {
+        navigation = navigation.pane_width(width);
+    }
+    navigation_view(navigation)
+        .pane_resize_limits(
+            ZsResizeLimits::new(Dp::new(180.0), Dp::new(420.0)).expect("constant sidebar limits"),
+        )
+        .on_pane_resize(Msg::SidebarResized)
+        .bg(ThemeColorToken::Surface)
+        .theme_mode(if state.dark {
+            ZsuiThemeMode::Dark
+        } else {
+            ZsuiThemeMode::Light
+        })
 }
 
 fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
@@ -1162,6 +1175,16 @@ fn update(state: &mut GalleryState, message: Msg, _cx: &mut AppCx) {
                 value.get(),
                 value.get()
             )
+        }
+        Msg::SidebarResized(width) => state.sidebar_width = Some(width),
+        Msg::TableColumnResized(change) => {
+            if let Some(column) = state
+                .table_columns
+                .iter_mut()
+                .find(|column| column.id() == change.column)
+            {
+                column.resize_to(change.width);
+            }
         }
         Msg::TableSelected(value) => state.table_selection = Some(value),
         Msg::TableSorted(value) => state.table_sort = Some(value),
@@ -1617,8 +1640,8 @@ mod tests {
     #[test]
     fn gallery_declares_every_catalog_family_and_keeps_contracts_explicit() {
         let summary = zsui_component_catalog_summary();
-        assert_eq!(summary.total_count, 48);
-        assert_eq!(summary.runtime_surface_count, 48);
+        assert_eq!(summary.total_count, 47);
+        assert_eq!(summary.runtime_surface_count, 47);
         assert_eq!(summary.contract_only_count, 0);
     }
 

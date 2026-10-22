@@ -1,5 +1,16 @@
 use super::*;
 
+pub(super) const fn icon_role_size(role: crate::ZsIconRole) -> Dp {
+    use crate::ZsIconRole::*;
+    Dp::new(match role {
+        Small | Navigation | Status => 16.0,
+        Standard | Toolbar => 20.0,
+        Large => 32.0,
+        Disclosure => 12.0,
+        TreeDisclosure => 8.0,
+    })
+}
+
 pub(super) const fn profile() -> PlatformComponentProfile {
     PlatformComponentProfile {
         style: ZsPlatformStyle::Windows,
@@ -76,12 +87,6 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             scrim_alpha: 72,
             pane_color: ColorRole::SurfaceRaised,
             divider_color: ColorRole::Border,
-        },
-        #[cfg(feature = "icon")]
-        icon: PlatformIconProfile {
-            small: Dp::new(16.0),
-            standard: Dp::new(20.0),
-            large: Dp::new(32.0),
         },
         base_control: PlatformBaseControlProfile {
             metrics: ZsBaseControlMetrics {
@@ -630,21 +635,7 @@ pub(super) const fn profile() -> PlatformComponentProfile {
             display_weight: TextWeight::Semibold,
             accent_weight: TextWeight::Semibold,
         },
-        #[cfg(feature = "workbench")]
-        workbench: PlatformWorkbenchProfile {
-            sidebar_width: Dp::new(272.0),
-            collapsed_sidebar_width: Dp::new(56.0),
-            top_bar_height: Dp::new(64.0),
-            composer_height: Dp::new(120.0),
-            inspector_width: Dp::new(336.0),
-            inspector_breakpoint: Dp::new(980.0),
-            content_max_width: Dp::new(760.0),
-            content_horizontal_inset: Dp::new(20.0),
-            composer_vertical_inset: Dp::new(12.0),
-            message_gap: Dp::new(16.0),
-            message_vertical_inset: Dp::new(20.0),
-            floating_radius: Dp::new(8.0),
-        },
+
         shell: PlatformShellProfile {
             style: ZsPlatformStyle::Windows,
             navigation: PlatformShellNavigationComposition::FluentPane,

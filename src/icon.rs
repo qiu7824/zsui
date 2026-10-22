@@ -57,10 +57,54 @@ pub enum ZsIcon {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ZsIconSize {
+    /// Compact standalone glyph.
     Small,
+    /// Normal standalone glyph.
     #[default]
     Standard,
+    /// Large standalone glyph.
     Large,
+}
+
+#[cfg(feature = "icon")]
+impl ZsIconSize {
+    pub(crate) const fn role(self) -> ZsIconRole {
+        match self {
+            Self::Small => ZsIconRole::Small,
+            Self::Standard => ZsIconRole::Standard,
+            Self::Large => ZsIconRole::Large,
+        }
+    }
+}
+
+/// Semantic placement of a glyph, independent of the surrounding hit target.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum ZsIconRole {
+    /// Compact standalone glyph.
+    Small,
+    /// Normal standalone glyph.
+    #[default]
+    Standard,
+    /// Large standalone glyph.
+    Large,
+    /// Glyph inside a navigation row.
+    Navigation,
+    /// Primary toolbar action glyph.
+    Toolbar,
+    /// Inline status indicator.
+    Status,
+    /// Expander or drop-down indicator.
+    Disclosure,
+    /// Compact tree disclosure indicator.
+    TreeDisclosure,
+}
+
+impl ZsIconRole {
+    pub(crate) const fn logical_size(self, platform: crate::ZsPlatformStyle) -> crate::Dp {
+        crate::platform_component_profile::icon_role_size(platform, self)
+    }
 }
 
 impl ZsIcon {

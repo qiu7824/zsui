@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "scroll_offset": "number"
+  },
+  "actions": {
+    "scrolled": "number"
+  }
+}

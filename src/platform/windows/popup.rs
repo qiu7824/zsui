@@ -65,8 +65,20 @@ impl WindowsWin32OwnedPopupMenu {
         destroyed
     }
 
+    /// Destroys the menu once, reporting an explicit native failure.
+    pub fn try_destroy(mut self) -> ZsuiResult<()> {
+        if self.destroy_active() {
+            Ok(())
+        } else {
+            Err(ZsuiError::host(
+                "windows_popup_menu_destroy",
+                "DestroyMenu failed",
+            ))
+        }
+    }
+
     fn destroy_active(&mut self) -> bool {
-        if !self.active {
+        if !std::mem::replace(&mut self.active, false) {
             return true;
         }
         let destroyed = unsafe { DestroyMenu(self.menu) != 0 };
@@ -79,7 +91,15 @@ impl WindowsWin32OwnedPopupMenu {
 
 impl Drop for WindowsWin32OwnedPopupMenu {
     fn drop(&mut self) {
-        let _ = self.destroy_active();
+        if !self.destroy_active() {
+            {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "ZSUI popup menu cleanup failed: DestroyMenu"
+                );
+            }
+        }
     }
 }
 

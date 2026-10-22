@@ -35,6 +35,8 @@ pub struct ZsSplitViewSpec {
     pane_placement: ZsSplitViewPanePlacement,
     pane_width: Option<Dp>,
     minimum_content_width: Option<Dp>,
+    #[serde(default, skip_serializing_if = "crate::ZsResizeAxis::is_horizontal")]
+    axis: crate::ZsResizeAxis,
 }
 
 impl ZsSplitViewSpec {
@@ -45,6 +47,7 @@ impl ZsSplitViewSpec {
             pane_placement: ZsSplitViewPanePlacement::Leading,
             pane_width: None,
             minimum_content_width: None,
+            axis: crate::ZsResizeAxis::Horizontal,
         }
     }
 
@@ -69,6 +72,25 @@ impl ZsSplitViewSpec {
     pub fn pane_width(mut self, width: Dp) -> Self {
         self.pane_width = width.0.is_finite().then(|| Dp::new(width.0.max(1.0)));
         self
+    }
+
+    /// Selects side-by-side panes or vertically stacked panels.
+    pub const fn axis(mut self, axis: crate::ZsResizeAxis) -> Self {
+        self.axis = axis;
+        self
+    }
+
+    pub const fn resize_axis(self) -> crate::ZsResizeAxis {
+        self.axis
+    }
+
+    /// Sets width on the horizontal axis and height on the vertical axis.
+    pub fn pane_extent(self, extent: Dp) -> Self {
+        self.pane_width(extent)
+    }
+
+    pub fn minimum_content_extent(self, extent: Dp) -> Self {
+        self.minimum_content_width(extent)
     }
 
     pub fn minimum_content_width(mut self, width: Dp) -> Self {
@@ -121,6 +143,26 @@ pub fn zs_split_view_layout(
     platform: ZsPlatformStyle,
     dpi: Dpi,
 ) -> ZsSplitViewLayout {
+    if spec.resize_axis() == crate::ZsResizeAxis::Vertical {
+        let transpose = |r: Rect| Rect {
+            x: r.y,
+            y: r.x,
+            width: r.height,
+            height: r.width,
+        };
+        let mut layout = zs_split_view_layout(
+            transpose(bounds),
+            spec.axis(crate::ZsResizeAxis::Horizontal),
+            platform,
+            dpi,
+        );
+        layout.bounds = bounds;
+        layout.pane = layout.pane.map(transpose);
+        layout.content = transpose(layout.content);
+        layout.divider = layout.divider.map(transpose);
+        layout.scrim = layout.scrim.map(transpose);
+        return layout;
+    }
     let profile =
         crate::platform_component_profile::PlatformComponentProfile::for_style(platform).split_view;
     let pane_width = spec

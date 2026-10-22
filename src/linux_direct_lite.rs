@@ -4,11 +4,11 @@ use tiny_skia::{
     FillRule, Mask, Paint, Path, PathBuilder, PixmapMut, Rect as SkRect, Stroke, Transform,
 };
 
-use crate::linux_direct_icons::{draw_normalized_icon, LinuxIconCanvas};
 use crate::linux_direct_menu::{
     LinuxDirectMenuSurface, LinuxMenuCanvas, LinuxMenuTextMetrics, LinuxMenuTextPlacement,
 };
 use crate::native_draw_support::{NativeDrawPalette, NativeDrawTextStyleResolver};
+use crate::symbolic_icons::{draw_normalized_icon, SymbolicIconCanvas};
 use crate::{
     Color, HorizontalAlign, NativeDrawCommand, NativeDrawCommandSink, NativeDrawIconCommand,
     NativeDrawImageCommand, NativeDrawPlan, NativeDrawTextCommand, NativeImageInterpolation,
@@ -655,7 +655,7 @@ impl<'a, 'b> TinyIconCanvas<'a, 'b> {
     }
 }
 
-impl LinuxIconCanvas for TinyIconCanvas<'_, '_> {
+impl SymbolicIconCanvas for TinyIconCanvas<'_, '_> {
     fn new_sub_path(&mut self) {
         self.has_path = false;
     }
@@ -689,19 +689,7 @@ impl LinuxIconCanvas for TinyIconCanvas<'_, '_> {
     }
 
     fn arc(&mut self, x: f64, y: f64, radius: f64, start: f64, end: f64) {
-        let steps = (((end - start).abs() / std::f64::consts::TAU) * 24.0)
-            .ceil()
-            .max(4.0) as usize;
-        for index in 0..=steps {
-            let angle = start + (end - start) * index as f64 / steps as f64;
-            let px = x + radius * angle.cos();
-            let py = y + radius * angle.sin();
-            if index == 0 && !self.has_path {
-                self.move_to(px, py);
-            } else {
-                self.line_to(px, py);
-            }
-        }
+        crate::symbolic_icons::trace_arc(self, x, y, radius, start, end);
     }
 
     fn rectangle(&mut self, x: f64, y: f64, width: f64, height: f64) {
@@ -790,10 +778,6 @@ pub(crate) fn shape_linux_lite_text_line(
     text_system: &LinuxLiteTextSystem,
     text: &str,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
-    use crate::native_input_visuals::{
-        NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
-    };
-
     if text.is_empty() {
         return None;
     }
@@ -807,74 +791,7 @@ pub(crate) fn shape_linux_lite_text_line(
     style.ellipsis = false;
     let mut engine = text_system.inner.lock().ok()?;
     let layout = engine.layout(text, &style, 0, 0, 1.0);
-    let line = layout.lines().first()?;
-    let glyphs = layout.glyphs_for_line(line.line_index)?;
-    let boundaries = crate::native_text_edit::grapheme_boundaries(text);
-    let byte_offsets = boundaries
-        .iter()
-        .map(|index| crate::native_text_edit::char_to_byte_index(text, *index))
-        .collect::<Vec<_>>();
-    let mut clusters = Vec::with_capacity(boundaries.len().saturating_sub(1));
-    for (logical, bytes) in boundaries.windows(2).zip(byte_offsets.windows(2)) {
-        let mut left = f32::INFINITY;
-        let mut right = f32::NEG_INFINITY;
-        let mut rtl = false;
-        for glyph in glyphs
-            .iter()
-            .filter(|glyph| glyph.cluster_end > bytes[0] && glyph.cluster_start < bytes[1])
-        {
-            let cluster_boundaries = byte_offsets
-                .iter()
-                .copied()
-                .filter(|offset| *offset >= glyph.cluster_start && *offset <= glyph.cluster_end)
-                .collect::<Vec<_>>();
-            let part_count = cluster_boundaries.len().saturating_sub(1).max(1) as f32;
-            let part = cluster_boundaries
-                .windows(2)
-                .position(|pair| pair[0] <= bytes[0] && pair[1] >= bytes[1])
-                .unwrap_or(0) as f32;
-            let glyph_left = glyph.origin_x_px + glyph.advance_px * part / part_count;
-            let glyph_right = glyph.origin_x_px + glyph.advance_px * (part + 1.0) / part_count;
-            left = left.min(glyph_left.min(glyph_right));
-            right = right.max(glyph_left.max(glyph_right));
-            rtl = glyph.rtl;
-        }
-        if !left.is_finite() || !right.is_finite() {
-            let fallback = clusters
-                .last()
-                .map(|cluster: &NativeShapedTextCluster| cluster.end_x)
-                .unwrap_or(0);
-            left = fallback as f32;
-            right = left + style.size.max(1.0) * 0.5;
-        }
-        let (start_x, end_x) = if rtl {
-            (right.round() as i32, left.round() as i32)
-        } else {
-            (left.round() as i32, right.round() as i32)
-        };
-        clusters.push(NativeShapedTextCluster {
-            start: logical[0],
-            end: logical[1],
-            start_x,
-            end_x,
-        });
-    }
-    let mut carets = Vec::with_capacity(boundaries.len());
-    for (position, index) in boundaries.iter().copied().enumerate() {
-        let previous = position
-            .checked_sub(1)
-            .and_then(|previous| clusters.get(previous))
-            .map(|cluster| cluster.end_x);
-        let next = clusters.get(position).map(|cluster| cluster.start_x);
-        let primary = previous.or(next).unwrap_or(0);
-        let secondary = next.or(previous).unwrap_or(primary);
-        carets.push(NativeShapedTextCaret {
-            index,
-            primary_x: primary,
-            secondary_x: secondary,
-        });
-    }
-    NativeShapedTextLine::new(line.width_px.ceil() as i32, clusters, carets)
+    crate::rust_text_renderer::native_shaped_line_from_layout(text, &layout, style.size)
 }
 
 fn parse_configured_font(configured: &str) -> (String, f32) {

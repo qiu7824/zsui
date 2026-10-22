@@ -7,7 +7,7 @@ tasks start at `docs/ai-agent.md` and load one task pack from
 ## v0.2 Release and Broader Roadmap
 
 The three-desktop-platform v0.2 release gate is 100% complete. It covers one
-shared Rust application loop, 51 runtime component families, the versioned UI
+shared Rust application loop, 47 runtime component families, the versioned UI
 document/Viewer path, feature pruning, native services, final platform surfaces,
 structured interaction evidence, and fixed Win32/AppKit/GTK4/Linux CI. The
 percentages below describe optional post-v0.2 breadth and longer-term framework
@@ -15,60 +15,18 @@ work; they must not be used to report v0.2 as incomplete.
 
 - Foundation contracts: about 78% complete.
 - Declaration API: about 85% complete.
-- Component library: 100% first-pass runtime coverage (51 runtime surfaces out
-  of 51 catalogued component families); readiness gaps remain per component.
+- Component library: 100% first-pass runtime coverage (47 runtime surfaces out
+  of 47 catalogued component families); readiness gaps remain per component.
 - Minimal native window runtime: about 89% complete.
 - Feature-pruned architecture: about 55% complete.
 - Rust-first API model: about 90% complete.
-- Reloadable UI authoring v0.2 gate: 100% complete; schema version 1, the typed
-  `State`/`Msg` binding manifest, `zsui-uic check` and the prebuilt native
-  auto-reload Viewer have a first pass. Accepted reloads now report stable-ID
-  compatibility, preserve native focus/text selection/editor viewport for
-  compatible controls, and clear incompatible focus/text/drag/IME state. Text,
-  toggle and slider value actions use owned typed control callbacks and update
-  explicit bound Viewer state across rebuilds. Slider also projects its shared
-  range and step into writable UIA, AppKit Accessibility and AccessKit numeric
-  semantics without creating a second backend-local control state.
-  `zsui-uic handoff` now emits a
-  deterministic canonical package with document, binding/value snapshots,
-  optional final native PNG metadata, stable node indexes, feature requirements
-  and component contracts. `zsui-uic embed` and the feature-pruned
-  `ui-document-runtime` now provide a deterministic, versioned embedded
-  artifact plus reusable `UiDocument`-to-`ViewNode<Msg>` compilation without
-  linking Viewer, watcher or preview code. Controlled scroll offset now
-  survives View rebuilds through explicit number bindings, and Win32 Viewer
-  smoke routes a fixed native scroll before final capture. Viewer proof now
-  has a versioned target identity, logical/pixel window metrics and
-  deterministic node/layout snapshot. Native UI Proof run `29883039068` passes
-  the same controlled-scroll document on fixed AppKit and Linux jobs, with one
-  handled scroll, one typed Viewer message, final platform-surface PNGs and
-  runtime memory evidence. All 51 catalog components are document-ready,
-  including Toast, InfoBar, ContentDialog, Image, ItemsRepeater, SettingsCard
-  and the typed Workbench composition; NumberBox
-  adds a nullable numeric contract, while ComboBox adds homogeneous string
-  options plus controlled nullable selection and expanded state. Tabs maps each
-  direct child's stable ID to a typed content slot, semantic header and
-  controlled string selection. Grid compiles typed fixed/fraction tracks and
-  a complete stable-child-ID placement map, retaining cell identity across
-  sibling reordering and rejecting invalid spans or bounds before native
-  layout. TimePicker uses canonical `HH:MM` state, typed `ZsTime` manifest
-  helpers, validated minute increments and separate controlled value/expanded
-  loops while keeping target display formatting platform-owned. ColorPicker
-  adds canonical uppercase `#RRGGBBAA`, typed `Color` manifest helpers and
-  separately controlled color, expanded and active-channel state while keeping
-  WinUI, AppKit and GTK rendering profiles platform-owned. Local Win32 Viewer
-  proof changes both channel and RGBA state through one native click with no
-  unhandled input and retains the final platform-surface PNG. A catalog audit
-  prevents future components from silently omitting a document schema.
-  Accepted reloads compare property-binding type and secure/ordinary storage
-  class, preserve compatible values and filter removed or incompatible values
-  before the new View is compiled. Native UI Proof run `30069326871`, job
-  `89406615062`, passes the fixed `windows-2025` Win32 Viewer reload scene:
-  revision 2 preserves all four Workbench nodes and `timeline_offset`, resets
-  removed `composer_draft` state explicitly, captures the final 960x640
-  `WM_PRINTCLIENT` surface, uses the Win32 system UI font and records process
-  memory. Later releases may broaden AppKit/Linux advanced-control interaction
-  coverage without changing this v0.2 contract.
+- Reloadable UI authoring: schema version 1, typed binding validation, stable-ID
+  reload, deterministic handoff and feature-pruned release embedding are implemented.
+  All 47 catalog components have document schema and runtime coverage. Compatible
+  focus, selection, editor viewport and property values survive reload; removed,
+  retyped and secure-storage changes produce explicit resets. The standalone Viewer
+  exercises native input and scrolling and records final platform surfaces.
+
 - Full desktop native host v0.2 gate: 100% complete. Candidate-window and
   assistive-technology experience remain explicit human release checks rather
   than claims made by deterministic automation.
@@ -91,10 +49,8 @@ The machine-readable audit tracks 18 required native capabilities per platform:
 
 Use `native_ui_platform_readiness_reports()` for current capability-level
 evidence instead of inferring platform completeness from backend registration.
-Use `zsui_component_catalog_summary()` for component coverage: all 51 families
-have a first-pass runtime surface; none are contract-only or not started. A
-composite workbench does not make its underlying contract-only controls
-complete. WebView is intentionally outside the v0.2 product boundary.
+Use `zsui_component_catalog_summary()` for component coverage: all 47 families
+have a first-pass runtime surface; none are contract-only or not started. Composite layout does not establish target interaction readiness. WebView is intentionally outside the v0.2 product boundary.
 
 The crate can already describe and audit windows, tray/status menus, commands,
 hotkeys, settings pages, host capabilities, shared geometry,
@@ -242,28 +198,7 @@ such as values/toggles/buttons/dropdowns and an action-button area through
 `ZsShellLayoutSpec` or `ZsNavigationScaffoldSpec`. The module audits the
 layout, computes stable regions and projects the result into a product-neutral
 `NativeDrawPlan` for the same no-flicker native painting path.
-The optional `workbench` feature in `src/workbench.rs` adds a reusable
-conversation/task workspace. It covers collapsible navigation, grouped history,
-user/assistant/system/tool message roles, paragraph/code/tool/notice blocks,
-message actions, composer controls and an optional inspector. The first pass is
-DPI-aware and exposes draw plans, hit regions, bounded scrolling and local
-selection state. `ZsWorkbenchShellSpec` assembles explicit
-`ZsMessageTimelineSpec`, `ZsComposerSpec` and `ZsInspectorPanelSpec` child
-contracts; `workbench_shell(...)` builds the View and
-`NativeWindowBuilder::workbench(...)` accepts the structured shell or the
-flattened compatibility spec. The retained route exposes timeline scrolling,
-editable composer text and typed toolbar/message/sidebar/inspector actions;
-three-target composer IME, selection, accessibility and interaction-state proof
-remain explicit gaps.
-Its built-in visuals use separate WinUI, AppKit and GTK component metrics plus
-semantic `ZsIcon` commands from `src/icon.rs`. Agents must not add PUA glyph
-strings, private component palettes or arbitrary control dimensions to this
-module. Windows detects Segoe Fluent Icons and falls back to Segoe MDL2 Assets
-in the live GDI renderer. The shared resolver orders SF Symbols on macOS and
-GTK symbolic theme names on Linux before the optional MIT Fluent SVG fallback.
-AppKit `NSImage` and GTK `GtkIconTheme` runtime lookup remain incomplete, as do
-dark/high contrast smoke and complete hover/pressed/focus-visible coverage.
-`src/component_catalog.rs` tracks 51 component families, all with a first-pass
+`src/component_catalog.rs` tracks 47 component families, all with a first-pass
 runtime surface. The optional
 Canvas surface retains backend-neutral primitives in local `Dp` coordinates,
 uses semantic color and text roles, emits a balanced clipped native draw plan
@@ -491,7 +426,7 @@ state cannot call `run`. The original one-line builder remains unchanged.
 - AppCx/UI command executor boundaries: `src/app_command.rs`,
   `src/command_protocol.rs`
 - WinUI-style navigation/card shell layout API: `src/shell_layout.rs`
-- Conversation/task workbench API: `src/workbench.rs`
+
 - Document editor shell API: `src/document_shell.rs`
 - Component readiness catalog: `src/component_catalog.rs`
 - Notepad integration and five-framework benchmark: `docs/notepad-demo.md`,
@@ -586,15 +521,13 @@ cargo run --example zsui_calculator --no-default-features --features calculator-
    Linux target smoke for that entry point.
 3. Keep the default facade small and split heavier widget/backend families into
    feature-gated crates or modules as their contracts stabilize.
-4. Connect `ZsWorkbenchRuntime` hit regions, scrolling and composer input to
-   real host event loops, then generalize the reusable composite-control route.
-5. Complete Win32 main-window/GDI/tray integration, then implement AppKit/GTK
+4. Complete Win32 main-window/GDI/tray integration, then implement AppKit/GTK
    status item, menu, dialog, clipboard, rendering and input capabilities.
-6. Turn the Android Activity bridge contract into a real FFI/runtime
+5. Turn the Android Activity bridge contract into a real FFI/runtime
    implementation with device smoke artifacts.
-7. Expand the non-clipboard product adapter example into a target native smoke
+6. Expand the non-clipboard product adapter example into a target native smoke
    harness.
-8. Expand host capability reporting so agents can choose supported APIs without
+7. Expand host capability reporting so agents can choose supported APIs without
    reading platform code.
 
 ## Machine-Readable Progress
@@ -628,11 +561,7 @@ stable context without reading prose:
   description text, row
   accessories, action buttons, audit output, stable layout regions, viewport
   masks, scrollbar plans and `NativeDrawPlan` projection.
-- `ZsWorkbenchShellSpec`, `ZsMessageTimelineSpec`, `ZsComposerSpec`,
-  `ZsInspectorPanelSpec`, `workbench_shell(...)`, `ZsWorkbenchRuntime` and
-  `NativeWindowBuilder::workbench(...)`: reusable navigation, message timeline,
-  composer and inspector contracts with target-owned geometry, DPI-aware layout
-  and hit regions.
+
 - `items_repeater(...)`, `ZsItemsRepeaterItemMetric`, `item_metric(s)` and
   `items_repeater_viewport_with_metrics(...)`: bounded variable-height
   collection construction and viewport math shared by ordinary View code and

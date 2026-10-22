@@ -26,7 +26,6 @@ is enough.
 | Rust-first framework goals | `src/framework_goals.rs`, `docs/framework-goals.md` |
 | Rust-first view and live state runtime API | `src/view/mod.rs`, `src/native.rs` |
 | WinUI-style navigation/card shell layout API | `src/shell_layout.rs` |
-| Conversation/task workbench API | `src/workbench.rs` |
 | Document editor shell API | `src/document_shell.rs` |
 | Calculator engine and shell API | `src/calculator.rs` |
 | Component readiness catalog | `src/component_catalog.rs` |
@@ -114,11 +113,7 @@ Already reusable at code level:
   cards, row titles, description text, row accessories, action buttons,
   viewport masks, scrollbars, audit output, layout regions and
   `NativeDrawPlan` projection. This is not a product settings schema.
-- Optional `workbench` composite surface through `ZsWorkbenchShellSpec`,
-  `ZsMessageTimelineSpec`, `ZsComposerSpec`, `ZsInspectorPanelSpec`,
-  `workbench_shell(...)` and `ZsWorkbenchRuntime`, with collapsible navigation,
-  grouped history, message blocks, composer actions, inspector tabs,
-  target-owned geometry, DPI-aware layout and hit regions.
+
 - Optional `document-shell` composite through `ZsDocumentShellSpec`, with a
   document tab, command bar, editor content inset, status surface, semantic
   icons, compact layout and stable command hit regions.

@@ -17,14 +17,14 @@ window
 ```
 
 An absent requirement is not permission to invent another region. Do not add
-navigation, cards, tabs, inspectors, timelines, composers, command bars,
+navigation, cards, tabs, inspectors, command bars,
 status banners or duplicate actions merely because a framework example exposes
 them.
 
 Before writing code, reduce the brief to this internal decision record:
 
 ```text
-surface: compact_utility | form | navigation | workbench | document | custom
+surface: compact_utility | form | navigation | document | custom
 required_regions: [...]       # only regions named or required by the workflow
 required_actions: [...]       # one visual action for each product action
 required_data: [...]          # only data needed to make a decision
@@ -43,10 +43,9 @@ implementation task.
 | Compact utility or control panel | A small number of values and actions fit in one view | `column`, `row`, `text`, `button`, `toggle` | “manager”, “console”, “service”, “task”, “status”, “log” |
 | Form or settings page | Several editable settings need labels, validation or grouped sections | Basic View controls; `settings_card` only for real groups | The presence of one toggle |
 | Navigation application | The product has at least two durable top-level destinations | `navigation_view` with one content subtree | A list of actions or status categories |
-| Workbench | A message timeline and composer are explicit product requirements | `ZsWorkbenchShellSpec`; inspector only when explicitly required | “task”, “tool”, “assistant”, “management”, process output |
 | Document application | Editing a document is the primary workflow | `ZsDocumentShellSpec` | A read-only text field or log excerpt |
 
-`navigation-shell`, `workbench`, `document-shell`, Gallery and Viewer are
+`navigation-shell`, `document-shell`, Gallery and Viewer are
 opt-in compositions. Never use one as a shortcut for arranging ordinary
 controls.
 
@@ -71,7 +70,7 @@ controls.
 ## Feature selection
 
 Start with `default-features = false` and enable only the controls used by the
-view. Do not enable `full`, `all-widgets`, `workbench`, `settings`,
+view. Do not enable `full`, `all-widgets`, `settings`,
 `document-shell`, `ui-viewer` or a Gallery feature unless the selected surface
 requires it.
 

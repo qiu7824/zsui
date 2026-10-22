@@ -15,12 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(audit.valid, "{:?}", audit.issues);
 
     let builder = if args.iter().any(|argument| argument == "--benchmark-empty") {
-        native_window("发票工作台 · ZSUI")
+        native_window("发票工具 · ZSUI")
             .size(1000, 700)
             .min_size(820, 560)
             .release_view_when_hidden()
     } else {
-        native_window("发票工作台 · ZSUI")
+        native_window("发票工具 · ZSUI")
             .size(1000, 700)
             .min_size(820, 560)
             .release_view_when_hidden()
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn invoice_shell() -> ZsShellLayoutSpec {
-    ZsShellLayoutSpec::new("invoice-workbench", "发票重命名")
+    ZsShellLayoutSpec::new("invoice-tool", "发票重命名")
         .app_title("票据工坊")
         .selected_nav("rename")
         .nav_item(ZsNavItemSpec::new("merge", "发票合并打印").semantic_icon(ZsIcon::Copy))

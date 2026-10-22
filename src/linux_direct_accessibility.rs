@@ -633,6 +633,7 @@ fn accesskit_semantic_role(role: crate::ZsAccessibilityRole) -> Role {
         crate::ZsAccessibilityRole::ProgressBar => Role::ProgressIndicator,
         crate::ZsAccessibilityRole::Region => Role::Region,
         crate::ZsAccessibilityRole::Slider => Role::Slider,
+        crate::ZsAccessibilityRole::Splitter => Role::Splitter,
         crate::ZsAccessibilityRole::SpinButton => Role::SpinButton,
         crate::ZsAccessibilityRole::Status => Role::Status,
         crate::ZsAccessibilityRole::Tab => Role::Tab,
@@ -832,6 +833,8 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
 
 fn accesskit_role(kind: ViewHitTargetKind) -> Role {
     match kind {
+        #[cfg(feature = "resize")]
+        ViewHitTargetKind::ResizeHandle(_) => Role::Splitter,
         #[cfg(feature = "canvas")]
         ViewHitTargetKind::Canvas => Role::Canvas,
         ViewHitTargetKind::Button => Role::Button,
@@ -841,6 +844,8 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::NavigationViewScrim => Role::GenericContainer,
         #[cfg(feature = "split-view")]
         ViewHitTargetKind::SplitViewScrim => Role::GenericContainer,
+        #[cfg(feature = "context-menu")]
+        ViewHitTargetKind::ContextMenuRegion => Role::GenericContainer,
         #[cfg(feature = "virtual-list")]
         ViewHitTargetKind::ItemsRepeaterScrollbarTrack => Role::ScrollBar,
         #[cfg(feature = "virtual-list")]

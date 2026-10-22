@@ -827,50 +827,6 @@ cargo run --bin zsui-viewer `
   --values examples/ui-documents/image.values.json
 ```
 
-Workbench 示例用一份声明组合 WorkbenchShell、MessageTimeline、Composer 和
-InspectorPanel。四个组件共享稳定 ID、受控状态和类型化事件，目标平台继续决定字体、图标、
-布局参数与最终绘制：
-
-这不是普通工具窗口的默认模板。只有产品明确包含消息时间线和编辑器时才选择
-Workbench；服务控制、状态查看、日志阅读或少量按钮仍使用基础 View。工具块的
-`status` 只提供状态语义、图标和颜色，用户可见状态文字必须由应用通过
-`status_label` 显式提供并本地化，框架不会自动插入英文状态词。
-
-```powershell
-cargo run --bin zsui-viewer `
-  --no-default-features `
-  --features ui-viewer `
-  -- examples/ui-documents/workbench.json `
-  --bindings examples/ui-documents/workbench.bindings.json `
-  --values examples/ui-documents/workbench.values.json
-```
-
-`workbench_shell` 的直接子节点顺序固定为 `message_timeline`、`composer` 和可选的
-`inspector_panel`。子组件不能脱离外壳单独使用；编译器将它们组合成一个保留式
-Workbench 表面，而不是把四份外观相似的通用 Stack 拼在一起。
-
-Sidebar 会话项支持可选 `subtitle` 和语义 `icon` 字段；它们只影响行内信息布局，
-不会改变会话的稳定 `id`。Workbench 是可选的组合层，应用也可以只使用基础导航和
-其他 View 组件。
-
-Rust builder 使用同一套组件契约，不需要先构造一份文档或使用旧的扁平化
-`ZsWorkbenchSpec`：
-
-```rust
-let timeline = zsui::message_timeline()
-    .message(message)
-    .scroll_y(state.timeline_offset);
-let composer = zsui::composer("输入消息 / Write a message")
-    .draft(state.draft);
-let inspector = zsui::inspector_panel("检查器 / Inspector")
-    .tab(details_tab);
-let shell = zsui::ZsWorkbenchShellSpec::new("工作台 / Workbench", sidebar, composer)
-    .timeline(timeline)
-    .inspector(inspector);
-
-zsui::workbench_shell(shell)
-```
-
 `items_repeater(...)`、`image(frame)` 和 `settings_card(...)` 是对应的公开 Rust
 构造器；`ZsItemsRepeaterItemMetric`、`item_metric(s)` 与
 `items_repeater_viewport_with_metrics(...)` 提供有界可变行高契约。`virtual_list(...)`、
@@ -944,11 +900,10 @@ Windows MenuFlyout 受控示例点击一个真实命令行，记录 1 次命令�
 2 条 Viewer 消息和 0 次未处理点击。最终 Win32 PNG 来自关闭后的普通页面；单独的打开
 状态捕获保留完整双语菜单、勾选状态、子菜单指示和未截断的 `Ctrl+N`/`Ctrl+S` 快捷键。
 
-固定 Windows Viewer 热重载证明运行在 `windows-2025` Runner。它在同一个真实 Win32
-窗口中把 Workbench revision 1 注入为 revision 2，严格校验四个稳定节点、保留的
-`timeline_offset`、删除后明确重置的 `composer_draft`、系统 UI 字体、进程内存和最终
-`WM_PRINTCLIENT` PNG。Native UI Proof 运行 `30069326871` 的任务 `89406615062` 已在提交
-`9060463` 上通过；固定窗口为 960×640，避免托管桌面把超大顶层窗口夹取到工作区尺寸。
+Windows Viewer 热重载场景使用 `viewer-reload-form.json` 与下一版本文档，校验
+四个稳定节点、保留的 `scroll_offset`、删除后明确重置的 `editor_text`、系统 UI
+字体、进程内存和最终 `WM_PRINTCLIENT` PNG。输入场景使用 `text-input.json`，
+通过 `--smoke-text-editor editor` 验证真实文本输入、导航与选择。
 
 固定 Native Proof CI 在 `macos-15` AppKit 和 Ubuntu 24.04 Linux Direct 上运行同一份
 `scrolling.json`，注入同一滚动场景并校验结构报告、类型化消息、内存采样和最终 PNG。
@@ -1046,7 +1001,7 @@ let view = ui_document_view(
 profile 完成布局和绘制。该路径不依赖 `ui-viewer`，因此不会携带轮询器、预览 PNG、
 原生 smoke 驱动或强制额外进程。
 
-全部 51 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
+全部 47 个目录组件均已有 schema 和发布编译路径。热重载会同时比较稳定节点身份与属性绑定
 身份：绑定类型和普通/安全存储通道兼容时保留值；绑定被删除、改型或改变存储通道时，
 `source.last_reload.binding_state_resets` 输出确定性原因，旧值不会进入新 View 编译。Win32、
 AppKit 与 Linux Direct 均已有固定 Runner Viewer 证据；仍需补齐高级控件在 AppKit/Linux

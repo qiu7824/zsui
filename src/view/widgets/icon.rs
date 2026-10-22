@@ -17,7 +17,14 @@ impl<Msg> ViewNode<Msg> {
     pub fn icon_size(mut self, size: crate::ZsIconSize) -> Self {
         if let ViewNodeKind::Icon { size: current, .. } = &mut self.kind {
             *current = size;
+            self.icon_role = None;
         }
+        self
+    }
+
+    /// Uses the platform's glyph metric for a semantic placement role.
+    pub fn icon_role(mut self, role: crate::ZsIconRole) -> Self {
+        if matches!(self.kind, ViewNodeKind::Icon { .. }) { self.icon_role = Some(role); }
         self
     }
 

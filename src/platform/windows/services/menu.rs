@@ -159,15 +159,37 @@ impl WindowsWin32OwnedWindowMenu {
         self.detach_and_destroy_active()
     }
 
+    /// Detaches and destroys the menu once, reporting native failure.
+    pub fn try_detach_and_destroy(mut self) -> ZsuiResult<()> {
+        if self.detach_and_destroy_active() {
+            Ok(())
+        } else {
+            Err(ZsuiError::host(
+                "windows_window_menu_destroy",
+                "SetMenu or DestroyMenu failed",
+            ))
+        }
+    }
+
     fn detach_and_destroy_active(&mut self) -> bool {
-        if !self.active {
+        if !std::mem::replace(&mut self.active, false) {
             return true;
         }
         clear_windows_win32_window_menu_command_table(self.owner);
         if !self.owner.is_null() && unsafe { IsWindow(self.owner) } != 0 {
             unsafe {
-                SetMenu(self.owner, null_mut());
-                DrawMenuBar(self.owner);
+                if SetMenu(self.owner, null_mut()) == 0 {
+                    return false;
+                }
+                if DrawMenuBar(self.owner) == 0 {
+                    {
+                        use std::io::Write as _;
+                        let _ = writeln!(
+                            std::io::stderr(),
+                            "ZSUI window menu repaint failed: DrawMenuBar"
+                        );
+                    }
+                }
             }
         }
         let destroyed = unsafe { DestroyMenu(self.menu) != 0 };
@@ -180,7 +202,15 @@ impl WindowsWin32OwnedWindowMenu {
 
 impl Drop for WindowsWin32OwnedWindowMenu {
     fn drop(&mut self) {
-        let _ = self.detach_and_destroy_active();
+        if !self.detach_and_destroy_active() {
+            {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "ZSUI window menu cleanup failed: SetMenu or DestroyMenu"
+                );
+            }
+        }
     }
 }
 

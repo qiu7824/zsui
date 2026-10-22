@@ -59,7 +59,7 @@ composition and interaction conventions:
   navigation/card shell while remaining independent from native backend
   selection. Shared component rendering consumes those resolved profiles
   without direct desktop-platform variant branches. Shared composite surfaces
-  such as Workbench consume the same tokens instead of Windows-specific
+  consume the same tokens instead of Windows-specific
   compatibility constants. Feature-gated compatibility layouts for Document
   Shell and Calculator Shell resolve through dedicated desktop profiles rather
   than embedding one platform's dimensions. The same semantic declaration
@@ -143,17 +143,12 @@ The current priority order is:
 3. Move the existing Win32 proof and the Linux target runtime onto the same
    versioned proof schema and regression tool so all three desktop paths block
    regressions before the 0.3.0 release.
-4. Keep the reusable `workbench_shell` as an opt-in composition layer and
-   complete its conversation/task loop: navigation, timeline scrolling,
-   composer input, tool/message actions and inspector state. Its navigation
-   rows support both subtitle text and semantic icons; this layer is an
-   acceptance surface and does not become the default application structure.
-5. Stabilize the Rust-first application loop so typed messages update explicit
+4. Stabilize the Rust-first application loop so typed messages update explicit
    state and repaint the live window, then cover IME, accessibility, focus,
    menus and dialogs required by native utility applications.
-6. Tighten Cargo feature boundaries and split crates only after the public
+5. Tighten Cargo feature boundaries and split crates only after the public
    widget/runtime boundaries are proven by real applications.
-7. Replace the Android Activity scaffold with a real FFI host and device smoke
+6. Replace the Android Activity scaffold with a real FFI host and device smoke
    artifacts.
 
 Protocol manifests, AI handoff metadata and mobile bridge contracts support
@@ -166,33 +161,16 @@ unclosed input, state, paint or target-verification gap.
 每个阶段记录 focused test、全特性结果、目标截图/报告和运行时内存采样，再推进
 下一阶段；单纯的 contract 或 demo 编译不视为阶段完成。
 
-## 当前缺陷审计与阶段计划（2026-09）
+## 桌面可靠性与应用可用性
 
-本轮基线审计覆盖公共 API、View/layout、UiDocument/Viewer、Win32/AppKit/Linux
-宿主、Android 边界、feature manifest、内存容器和编译诊断。当前基线为：无
-`TODO`、`FIXME`、`unimplemented!` 或 `todo!` 代码路径；无默认特性测试全部通过；
-全特性库测试通过；锁定特性矩阵、native boundary 和 Windows GUI subsystem 检查
-通过。`cargo clippy --no-default-features --lib -- -D warnings` 仍有既有的约
-46 项结构与风格诊断，不能当作功能已完成的证据。
+执行顺序、问题状态及验收门槛见
+[桌面框架完善计划](desktop-hardening-plan.md)。桌面应用基础完善阶段按 A—G 交付：
+可靠输入与效果调度、稳定入口和视觉布局、共享交互、虚拟数据控件、富文本与文档标签、
+开发工具，以及三平台验收。已有单行横滚与标签收缩进入验收，效果队列预算后续调度优先收口。
+原生子视图属于独立可选能力。
 
-后续按以下顺序推进：
-
-1. 缺陷收敛：为公共 `CommandQueue`、延迟 app/UI command 和 proof 输入增加明确
-   的容量或背压策略；将 Win32/AppKit/GTK 服务中被忽略的清理、tooltip 和菜单
-   更新错误纳入统一诊断；为每项新增上限和错误路径测试。应用状态仍由应用拥有，
-   不引入全局控件注册表。
-2. 导航与组合层证据：为 Shell 导航副文本、Workbench 会话图标/副文本补齐
-   Win32、AppKit、Linux Direct 的同场景最终表面截图、点击 ID 和窄窗口布局证据。
-   `workbench_shell` 继续保持可选组合层，不改变默认应用结构。
-3. 桌面能力收口：优先补齐 Linux Direct/GTK status item 与菜单服务、AppKit/GTK
-   的目标交互和辅助功能证据；能力状态只有在真实宿主报告创建、事件、清理和
-   内存采样后才从 partial/unsupported 调整。
-4. 质量门禁：分批处理 Clippy 诊断，先修复可能掩盖行为错误的 checked arithmetic、
-   资源错误吞掉和无界容器，再处理参数组织与可读性；每批都用 `-j1` 运行 focused
-   tests、全特性库测试和锁定 feature matrix。
-5. 移动与发布：桌面证据稳定后再推进 Android FFI/device smoke；发布前补齐
-   VoiceOver、Narrator/NVDA、Orca 和真实 IME 人工验收，保持自动协议证据与人工
-   体验记录分离。
+每项分别记录实现、目标交互和人工体验状态。组件覆盖率、没有 TODO 或通过编译，
+不能替代真实应用场景验收；既有 v0.2 发布门槛与 0.3 Native Proof CI 目标保持独立。
 
 Buffered no-flicker self-draw is the Windows rendering baseline:
 avoid background erase, paint into an owned buffer when possible, then present
@@ -203,15 +181,10 @@ must stay independent of raw platform handles and broad native dependencies.
 ## Component Coverage
 
 `zsui_component_catalog()` is the component-level source of truth. The current
-catalog covers 51 desktop component families, all with first-pass runtime
+catalog covers 47 desktop component families, all with first-pass runtime
 surfaces and none contract-only or not started. Composite shells do not change
 those statuses.
 Embedded browser controls are intentionally outside the v0.2 product boundary.
-
-`workbench` is the first reusable application-shell feature. It provides
-navigation history, a message timeline, paragraph/code/tool/notice blocks,
-composer controls and an optional inspector while leaving persistence, model
-execution and product commands outside the framework.
 
 `document-shell` provides the same product-neutral boundary for text-oriented
 utilities: a document tab, command bar, rounded editor frame, status surface,
@@ -235,9 +208,7 @@ First-pass component status is not Fluent conformance. A built-in component
 may advance toward ready only when it uses the shared typography, spacing,
 radius, control-metric and semantic-color tokens; emits semantic icons instead
 of private glyph text; and has hover, pressed, disabled, focus-visible, dark
-theme and high-contrast evidence. The Windows workbench now satisfies the
-token and semantic-icon parts. Its complete state matrix and non-Windows native
-bindings remain open gates.
+theme and high-contrast evidence.
 
 ## Rust-First API Shape
 

@@ -356,7 +356,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             area_name: "declaration_api",
             percent_complete: 85,
             status_name: "fluent_tokens_semantic_icons_system_high_contrast_and_composite_declarations_ready",
-            source_path: "src/workbench.rs",
+            source_path: "src/view/mod.rs",
             missing_before_complete: vec![
                 "native component bindings",
                 "system accent binding",
@@ -373,7 +373,6 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
                 "content-sized grid tracks and variable-height repeater layout",
                 "animated image formats, color-profile handling and accessibility",
                 "accessibility and non-Windows target proof for advanced controls",
-                "workbench interaction-state polish and non-Windows target proof",
             ],
         },
         ZsuiCompletionArea {
@@ -408,7 +407,7 @@ pub fn zsui_completion_areas() -> Vec<ZsuiCompletionArea> {
             percent_complete: 90,
             status_name:
                 "typed_state_shaped_bidi_semantic_icons_composite_shells_and_content_typestate_ready",
-            source_path: "src/workbench.rs",
+            source_path: "src/view/mod.rs",
             missing_before_complete: vec![
                 "preserve one-line native entrypoints across target hosts",
                 "keep raw HWNDs out of higher-level APIs",
@@ -579,7 +578,7 @@ pub fn zsui_reuse_readiness_report() -> ZsuiReuseReadinessReport {
             "src/view/mod.rs",
             "src/widget_render.rs",
             "src/shell_layout.rs",
-            "src/workbench.rs",
+            "src/view/mod.rs",
             "src/document_shell.rs",
             "src/calculator.rs",
             "examples/rust_first_view.rs",
@@ -893,8 +892,8 @@ mod tests {
             .readiness
             .optional_dependency_feature_names
             .contains(&"linux-gtk"));
-        assert_eq!(context.readiness.component_catalog.total_count, 51);
-        assert_eq!(context.readiness.component_catalog.first_pass_count, 51);
+        assert_eq!(context.readiness.component_catalog.total_count, 47);
+        assert_eq!(context.readiness.component_catalog.first_pass_count, 47);
         assert_eq!(context.readiness.component_catalog.contract_only_count, 0);
         assert_eq!(context.readiness.component_catalog.not_started_count, 0);
         let component_area = context
@@ -1175,7 +1174,7 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 20);
+        assert_eq!(packs.len(), 19);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {

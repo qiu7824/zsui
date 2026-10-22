@@ -1,4 +1,4 @@
-# 发票工作台多框架对比
+# 发票工具多框架对比
 
 本页保留早期单一 Common 场景的历史结果。当前用于回归判断的四档独立构建、完整
 内存阶段和 CPU 测量见 [UI 性能测试矩阵](ui-performance-matrix.md)。两组数据的
@@ -12,17 +12,17 @@
 <table>
   <tr><th>ZSUI</th><th>eframe / egui</th><th>Iced</th></tr>
   <tr>
-    <td><img src="images/invoice-zsui.png" alt="ZSUI 发票工作台"></td>
-    <td><img src="images/invoice-egui.png" alt="egui 发票工作台"></td>
-    <td><img src="images/invoice-iced.png" alt="Iced 发票工作台"></td>
+    <td><img src="images/invoice-zsui.png" alt="ZSUI 发票工具"></td>
+    <td><img src="images/invoice-egui.png" alt="egui 发票工具"></td>
+    <td><img src="images/invoice-iced.png" alt="Iced 发票工具"></td>
   </tr>
 </table>
 
 <table>
   <tr><th>Slint</th><th>Tauri 2</th></tr>
   <tr>
-    <td><img src="images/invoice-slint.png" alt="Slint 发票工作台"></td>
-    <td><img src="images/invoice-tauri.png" alt="Tauri 2 发票工作台"></td>
+    <td><img src="images/invoice-slint.png" alt="Slint 发票工具"></td>
+    <td><img src="images/invoice-tauri.png" alt="Tauri 2 发票工具"></td>
   </tr>
 </table>
 

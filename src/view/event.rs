@@ -1,3 +1,10 @@
+use std::path::PathBuf;
+
+use crate::{
+    AppEffect, AppEffectOutcome, AppEffectRequest, DialogResponse, DirectoryDialogSpec,
+    FileDialogSpec, NativeDialogSpec, SaveFileDialogSpec, ZsuiResult,
+};
+
 #[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ZsTextSelection {
@@ -169,6 +176,12 @@ impl ViewEditableTextDescriptor {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
+    #[cfg(feature = "resize")]
+    Resized {
+        widget: WidgetId,
+        target: crate::ZsResizeTarget,
+        extent: Dp,
+    },
     Click {
         widget: WidgetId,
     },
@@ -558,6 +571,8 @@ impl ViewHitTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewHitTargetKind {
     Unknown,
+    #[cfg(feature = "resize")]
+    ResizeHandle(crate::ZsResizeHandle),
     #[cfg(feature = "canvas")]
     Canvas,
     Button,
@@ -1051,6 +1066,8 @@ impl ViewHitTargetKind {
     /// pointer/wheel targets and intentionally do not own focus visuals.
     pub const fn focus_behavior(self) -> ViewFocusBehavior {
         match self {
+            #[cfg(feature = "resize")]
+            Self::ResizeHandle(_) => ViewFocusBehavior::TabStop,
             Self::Unknown | Self::Button | Self::Textbox | Self::TextEditor => {
                 ViewFocusBehavior::TabStop
             }
@@ -1268,8 +1285,11 @@ impl<Msg> Default for ViewEventCx<Msg> {
 
 #[derive(Debug, Clone, Default)]
 pub struct AppCx {
+    allowance: crate::dispatch_queue::DispatchAllowance,
+    rejected: usize,
     commands: Vec<Command>,
     ui_commands: Vec<UiCommand>,
+    effects: Vec<AppEffectRequest>,
     #[cfg(feature = "text-input-core")]
     text_edit_commands: Vec<ZsTextEditCommandRequest>,
     quit_requested: bool,
@@ -1280,24 +1300,259 @@ impl AppCx {
         Self::default()
     }
 
-    pub fn command(&mut self, command: Command) {
+    pub(crate) fn with_allowance(allowance: crate::dispatch_queue::DispatchAllowance) -> Self {
+        Self {
+            allowance,
+            ..Self::default()
+        }
+    }
+    fn admit(
+        &mut self,
+        queue: &'static str,
+        len: usize,
+        capacity: usize,
+    ) -> Result<(), crate::QueueFull> {
+        if len < capacity {
+            Ok(())
+        } else {
+            self.rejected = self.rejected.saturating_add(1);
+            Err(crate::QueueFull { queue, capacity })
+        }
+    }
+    /// Number of rejected requests in this update; native hosts report this count.
+    pub fn rejected_count(&self) -> usize {
+        self.rejected
+    }
+    /// Queues an application command or reports backpressure without blocking.
+    pub fn try_command(&mut self, command: Command) -> Result<(), crate::QueueFull> {
+        self.admit(
+            "application command",
+            self.commands.len(),
+            self.allowance.commands,
+        )?;
         self.commands.push(command);
+        Ok(())
+    }
+    pub fn command(&mut self, command: Command) {
+        let _ = self.try_command(command);
     }
 
-    pub fn ui_command(&mut self, command: UiCommand) {
+    /// Queues a UI command or reports backpressure without blocking.
+    pub fn try_ui_command(&mut self, command: UiCommand) -> Result<(), crate::QueueFull> {
+        self.admit(
+            "UI command",
+            self.ui_commands.len(),
+            self.allowance.ui_commands,
+        )?;
         self.ui_commands.push(command);
+        Ok(())
+    }
+    pub fn ui_command(&mut self, command: UiCommand) {
+        let _ = self.try_ui_command(command);
+    }
+    /// Accepts a request and returns its cancellation token.
+    pub fn try_effect_request(
+        &mut self,
+        request: AppEffectRequest,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.admit("native effect", self.effects.len(), self.allowance.effects)?;
+        let cancellation = request.cancellation();
+        self.effects.push(request);
+        Ok(cancellation)
+    }
+    /// Queues a native effect with typed completion, or reports backpressure.
+    pub fn try_effect_with<Msg: Send + 'static>(
+        &mut self,
+        effect: AppEffect,
+        respond: impl Fn(AppEffectOutcome) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(effect, move |outcome| {
+            Some(respond(outcome))
+        }))
     }
 
+    /// Queues a native effect without a responder. The desktop host executes
+    /// it outside the live-view lock and discards the outcome.
+    ///
+    /// Prefer the typed helpers ([`AppCx::open_file_dialog`],
+    /// [`AppCx::save_file_dialog`], [`AppCx::pick_directory`],
+    /// [`AppCx::show_dialog`]) or [`AppCx::effect_with`] when the outcome must
+    /// reach `update` as a message.
+    pub fn effect(&mut self, effect: AppEffect) {
+        let _ = self.try_effect_request(AppEffectRequest::new(effect));
+    }
+
+    /// Queues a native effect whose outcome is mapped to one typed message.
+    ///
+    /// The host runs the effect outside the live-view lock, then delivers the
+    /// mapped message back to `update` exactly once. If the window is
+    /// destroyed before the effect finishes, the outcome is dropped.
+    pub fn effect_with<Msg>(
+        &mut self,
+        effect: AppEffect,
+        respond: impl Fn(AppEffectOutcome) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        let _ = self.try_effect_request(AppEffectRequest::typed(effect, move |outcome| {
+            Some(respond(outcome))
+        }));
+    }
+
+    /// Opens the native file-open dialog outside the update lock.
+    ///
+    /// `respond` receives `Ok(None)` when the user cancels, `Ok(Some(paths))`
+    /// for a confirmed selection and `Err` when the backend fails or does not
+    /// implement the dialog.
+    pub fn open_file_dialog<Msg>(
+        &mut self,
+        spec: FileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<Vec<PathBuf>>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        let _ = self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::OpenFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::OpenFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Opens the native save dialog outside the update lock. `Ok(None)` means
+    /// the user cancelled.
+    pub fn save_file_dialog<Msg>(
+        &mut self,
+        spec: SaveFileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        let _ = self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::SaveFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::SaveFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Opens a native directory picker outside the update lock. `Ok(None)`
+    /// means the user cancelled.
+    pub fn pick_directory<Msg>(
+        &mut self,
+        spec: DirectoryDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        let _ = self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::PickDirectory(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::PickDirectory(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Shows a native message or confirmation dialog outside the update lock
+    /// and delivers the typed [`DialogResponse`] back through `respond`.
+    pub fn show_dialog<Msg>(
+        &mut self,
+        spec: NativeDialogSpec,
+        respond: impl Fn(ZsuiResult<DialogResponse>) -> Msg + Send + Sync + 'static,
+    ) where
+        Msg: Send + 'static,
+    {
+        let _ = self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::ShowDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::ShowDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ));
+    }
+
+    /// Queues the native service, returning cancellation or admission failure.
+    pub fn try_open_file_dialog<Msg: Send + 'static>(
+        &mut self,
+        spec: FileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<Vec<PathBuf>>>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::OpenFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::OpenFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
+    /// Queues the native service, returning cancellation or admission failure.
+    pub fn try_save_file_dialog<Msg: Send + 'static>(
+        &mut self,
+        spec: SaveFileDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::SaveFileDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::SaveFileDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
+    /// Queues the native service, returning cancellation or admission failure.
+    pub fn try_pick_directory<Msg: Send + 'static>(
+        &mut self,
+        spec: DirectoryDialogSpec,
+        respond: impl Fn(ZsuiResult<Option<PathBuf>>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::PickDirectory(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::PickDirectory(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
+    /// Queues the native service, returning cancellation or admission failure.
+    pub fn try_show_dialog<Msg: Send + 'static>(
+        &mut self,
+        spec: NativeDialogSpec,
+        respond: impl Fn(ZsuiResult<DialogResponse>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::ShowDialog(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::ShowDialog(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
     #[cfg(feature = "text-input-core")]
     pub fn text_edit_command(&mut self, command: ZsTextEditCommand) {
-        self.text_edit_commands
-            .push(ZsTextEditCommandRequest::focused(command));
+        let _ = self.try_text_edit_command(ZsTextEditCommandRequest::focused(command));
     }
 
     #[cfg(feature = "text-input-core")]
     pub fn text_edit_command_for(&mut self, widget: WidgetId, command: ZsTextEditCommand) {
-        self.text_edit_commands
-            .push(ZsTextEditCommandRequest::for_widget(widget, command));
+        let _ = self.try_text_edit_command(ZsTextEditCommandRequest::for_widget(widget, command));
+    }
+
+    /// Queues an edit operation within the per-update action budget.
+    #[cfg(feature = "text-input-core")]
+    pub fn try_text_edit_command(
+        &mut self,
+        request: ZsTextEditCommandRequest,
+    ) -> Result<(), crate::QueueFull> {
+        self.admit(
+            "text edit",
+            self.text_edit_commands.len(),
+            crate::DISPATCH_BATCH_SIZE,
+        )?;
+        self.text_edit_commands.push(request);
+        Ok(())
     }
 
     pub fn quit(&mut self) {
@@ -1310,6 +1565,11 @@ impl AppCx {
 
     pub fn ui_commands(&self) -> &[UiCommand] {
         &self.ui_commands
+    }
+
+    /// The native effects queued during this update, in request order.
+    pub fn effects(&self) -> &[AppEffectRequest] {
+        &self.effects
     }
 
     #[cfg(feature = "text-input-core")]

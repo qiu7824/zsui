@@ -35,6 +35,8 @@ pub(crate) struct LinuxGtkNativeWindowRunReport {
     pub menu_command_routed: bool,
     pub process_memory: Option<crate::NativeProofProcessMemoryEvidence>,
     pub accessibility_node_count: usize,
+    pub native_window_resize: Option<crate::NativeWindowResizeEvidence>,
+    pub native_window_resize_error: Option<String>,
 }
 
 pub(crate) fn run_linux_gtk_native_window_event_loop(
@@ -44,6 +46,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     auto_close_after_ms: Option<u64>,
     capture_path: Option<&std::path::Path>,
     proof_inputs: &[crate::NativeViewSmokeInput],
+    proof_resize: Option<crate::Size>,
 ) -> ZsuiResult<LinuxGtkNativeWindowRunReport> {
     if specs.is_empty() {
         return Ok(LinuxGtkNativeWindowRunReport {
@@ -53,6 +56,8 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             menu_command_routed: false,
             process_memory: None,
             accessibility_node_count: 0,
+            native_window_resize: None,
+            native_window_resize_error: None,
         });
     }
     let application = gtk::Application::builder()
@@ -72,6 +77,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let menu_command_routed = Rc::new(RefCell::new(false));
     let process_memory = Rc::new(RefCell::new(None));
     let accessibility_node_count = Rc::new(RefCell::new(0_usize));
+    let resize_evidence = Rc::new(RefCell::new(None::<crate::NativeWindowResizeEvidence>));
 
     application.connect_activate({
         let specs = Rc::clone(&specs);
@@ -87,6 +93,7 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         let menu_command_routed = Rc::clone(&menu_command_routed);
         let process_memory = Rc::clone(&process_memory);
         let accessibility_node_count = Rc::clone(&accessibility_node_count);
+        let resize_evidence = Rc::clone(&resize_evidence);
         move |application| {
             if state.borrow().is_some() {
                 return;
@@ -105,6 +112,18 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
                                 *startup_error.borrow_mut() = Some(error.to_string());
                                 application.quit();
                                 return;
+                            }
+                        }
+                        if index == 0 && proof_resize.is_some() {
+                            if let Some(host) = windows.view_hosts.get(&id) {
+                                let evidence = Rc::clone(&resize_evidence);
+                                host.observe_size_changes(move |size| {
+                                    if let Some(evidence) = evidence.borrow_mut().as_mut() {
+                                        evidence.native_event_count = evidence.native_event_count.saturating_add(1);
+                                        evidence.final_size = Some(size);
+                                        evidence.applied = size == evidence.requested_size;
+                                    }
+                                });
                             }
                         }
                         ids.push(id)
@@ -160,18 +179,37 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
             });
 
             if let Some(delay) = auto_close_after_ms {
+                if let Some(requested_size) = proof_resize {
+                    let proof_state = Rc::clone(&state);
+                    let evidence = Rc::clone(&resize_evidence);
+                    let first_window = ids.first().copied();
+                    gtk::glib::timeout_add_local_once(Duration::from_millis((delay / 4).max(1)), move || {
+                        let target = proof_state.borrow().as_ref().and_then(|runtime| {
+                            let id = first_window?;
+                            let window = runtime._windows.windows.get(&id)?;
+                            let host = runtime._windows.view_hosts.get(&id)?;
+                            Some((window.clone(), host.clone()))
+                        });
+                        if let Some((window, host)) = target {
+                            *evidence.borrow_mut() = Some(crate::NativeWindowResizeEvidence {
+                                backend: "gtk4_set_default_size_resize_signal", requested_size,
+                                initial_size: Some(host.surface_size()), final_size: None,
+                                native_event_count: 0, applied: false,
+                            });
+                            window.set_default_size(requested_size.width.max(1), requested_size.height.max(1));
+                        }
+                    });
+                }
                 let proof_state = Rc::clone(&state);
                 let proof_inputs = Rc::clone(&proof_inputs);
                 let proof_input_reports = Rc::clone(&proof_input_reports);
                 gtk::glib::timeout_add_local_once(
                     Duration::from_millis((delay / 2).max(1)),
                     move || {
-                        *proof_input_reports.borrow_mut() = proof_state
-                            .borrow()
-                            .as_ref()
-                            .and_then(|runtime| runtime._windows.view_hosts.values().next())
-                            .map(|host| host.dispatch_proof_inputs(&proof_inputs))
-                            .unwrap_or_default();
+                        let host = proof_state.borrow().as_ref()
+                            .and_then(|runtime| runtime._windows.view_hosts.values().next()).cloned();
+                        let reports = host.map(|host| host.dispatch_proof_inputs(&proof_inputs)).unwrap_or_default();
+                        *proof_input_reports.borrow_mut() = reports;
                     },
                 );
                 let application = application.clone();
@@ -222,6 +260,13 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
     let menu_command_routed = *menu_command_routed.borrow();
     let process_memory = process_memory.borrow_mut().take();
     let accessibility_node_count = *accessibility_node_count.borrow();
+    let native_window_resize = resize_evidence.borrow_mut().take();
+    let native_window_resize_error = proof_resize.and_then(|_| {
+        (!native_window_resize
+            .as_ref()
+            .is_some_and(|evidence| evidence.applied && evidence.native_event_count > 0))
+        .then(|| "GTK4 did not allocate the requested native client size".to_string())
+    });
     Ok(LinuxGtkNativeWindowRunReport {
         created_window_count,
         native_view_capture,
@@ -229,6 +274,8 @@ pub(crate) fn run_linux_gtk_native_window_event_loop(
         menu_command_routed,
         process_memory,
         accessibility_node_count,
+        native_window_resize,
+        native_window_resize_error,
     })
 }
 
@@ -490,6 +537,13 @@ impl FileDialogService for LinuxGtkFileDialogService {
         linux_gtk_open_file_dialog(spec)
     }
 
+    fn pick_directory_dialog(
+        &mut self,
+        spec: &crate::DirectoryDialogSpec,
+    ) -> ZsuiResult<Option<PathBuf>> {
+        linux_gtk_pick_directory_dialog(spec)
+    }
+
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
         linux_gtk_save_file_dialog(spec)
     }
@@ -524,6 +578,47 @@ pub fn linux_gtk_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Ve
     let response = MainContext::default().block_on(dialog.run_future());
     let result = if response == ResponseType::Accept {
         gtk_selected_local_paths(&dialog).map(Some)
+    } else {
+        Ok(None)
+    };
+    dialog.destroy();
+    result
+}
+
+#[allow(deprecated)]
+pub fn linux_gtk_pick_directory_dialog(
+    spec: &crate::DirectoryDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    spec.validate()?;
+    ensure_gtk_main_thread("gtk_pick_directory_dialog")?;
+    let dialog = FileChooserNative::builder()
+        .title(&spec.title)
+        .action(FileChooserAction::SelectFolder)
+        .modal(true)
+        .select_multiple(false)
+        .build();
+    gtk_bind_file_dialog_to_active_window(&dialog);
+    if let Some(directory) = native_file_dialog_initial_directory(spec.current_path.as_deref()) {
+        if let Err(error) = dialog.set_current_folder(Some(&gio::File::for_path(directory))) {
+            dialog.destroy();
+            return Err(ZsuiError::host(
+                "gtk_pick_directory_dialog",
+                error.to_string(),
+            ));
+        }
+    }
+    let response = MainContext::default().block_on(dialog.run_future());
+    let result = if response == ResponseType::Accept {
+        dialog
+            .file()
+            .and_then(|file| file.path())
+            .map(|path| Some(path))
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "gtk_pick_directory_dialog",
+                    "GTK accepted without a local directory",
+                )
+            })
     } else {
         Ok(None)
     };

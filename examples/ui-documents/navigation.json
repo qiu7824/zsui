@@ -13,15 +13,16 @@
           "icon": "Settings"
         }
       ],
-      "pane_width": 252,
       "minimum_content_width": 520
     },
     "property_bindings": {
       "items": "gallery_navigation_items",
-      "selected": "gallery_navigation_selected"
+      "selected": "gallery_navigation_selected",
+      "pane_width": "gallery_navigation_width"
     },
     "action_bindings": {
-      "select": "gallery_navigation_selected_changed"
+      "select": "gallery_navigation_selected_changed",
+      "resize": "gallery_navigation_resized"
     },
     "children": [
       {

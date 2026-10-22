@@ -40,7 +40,7 @@ impl WidgetId {
     feature = "split-view",
     feature = "canvas",
     feature = "scroll",
-    feature = "workbench"
+    feature = "resize"
 ))]
 #[doc(hidden)]
 pub struct ViewMessageMapper<Input, Msg> {
@@ -76,7 +76,7 @@ pub struct ViewMessageMapper<Input, Msg> {
     feature = "split-view",
     feature = "canvas",
     feature = "scroll",
-    feature = "workbench"
+    feature = "resize"
 ))]
 enum ViewMessageMapperKind<Input, Msg> {
     Function(fn(Input) -> Msg),
@@ -112,7 +112,7 @@ enum ViewMessageMapperKind<Input, Msg> {
     feature = "split-view",
     feature = "canvas",
     feature = "scroll",
-    feature = "workbench"
+    feature = "resize"
 ))]
 impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     fn from_function(mapper: fn(Input) -> Msg) -> Self {
@@ -121,9 +121,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
         }
     }
 
-    fn from_shared(
-        mapper: impl Fn(Input) -> Msg + Send + Sync + 'static,
-    ) -> Self {
+    fn from_shared(mapper: impl Fn(Input) -> Msg + Send + Sync + 'static) -> Self {
         Self {
             mapper: ViewMessageMapperKind::Shared(Arc::new(mapper)),
         }
@@ -166,15 +164,13 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
     feature = "split-view",
     feature = "canvas",
     feature = "scroll",
-    feature = "workbench"
+    feature = "resize"
 ))]
 impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     fn clone(&self) -> Self {
         Self {
             mapper: match &self.mapper {
-                ViewMessageMapperKind::Function(mapper) => {
-                    ViewMessageMapperKind::Function(*mapper)
-                }
+                ViewMessageMapperKind::Function(mapper) => ViewMessageMapperKind::Function(*mapper),
                 ViewMessageMapperKind::Shared(mapper) => {
                     ViewMessageMapperKind::Shared(Arc::clone(mapper))
                 }
@@ -211,7 +207,8 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
     feature = "teaching-tip",
     feature = "split-view",
     feature = "canvas",
-    feature = "scroll"
+    feature = "scroll",
+    feature = "resize"
 ))]
 impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -222,10 +219,10 @@ impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
 const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
 #[cfg(any(
+    feature = "resize",
     all(feature = "dialog", feature = "accessibility"),
     feature = "tabs",
     feature = "accordion",
-    feature = "workbench",
     all(feature = "shell", feature = "ui-document-runtime")
 ))]
 const SYNTHETIC_WIDGET_ID_NAMESPACE: u64 = 3 << 62;
@@ -235,18 +232,15 @@ impl WidgetId {
     /// Builds a deterministic identity for an interactive surface owned by a
     /// composite widget rather than by an application View node.
     #[cfg(any(
+        feature = "resize",
         all(feature = "dialog", feature = "accessibility"),
         feature = "tabs",
         feature = "accordion",
-        feature = "workbench",
         all(feature = "shell", feature = "ui-document-runtime")
     ))]
     pub(crate) const fn synthetic_child(parent: Self, local: u64) -> Self {
         let mut hash = parent.0 ^ 0x9e37_79b9_7f4a_7c15;
-        hash = hash
-            .rotate_left(27)
-            .wrapping_mul(0x94d0_49bb_1331_11eb)
-            ^ local;
+        hash = hash.rotate_left(27).wrapping_mul(0x94d0_49bb_1331_11eb) ^ local;
         hash ^= hash >> 31;
         hash = hash.wrapping_mul(0xbf58_476d_1ce4_e5b9);
         hash ^= hash >> 29;
@@ -923,12 +917,7 @@ pub enum ViewNodeKind<Msg> {
         fit: ZsVideoFit,
         interpolation: NativeImageInterpolation,
     },
-    #[cfg(feature = "workbench")]
-    Workbench {
-        spec: crate::ZsWorkbenchSpec,
-        on_interaction:
-            Option<ViewMessageMapper<crate::ZsWorkbenchInteractionEvent, Option<Msg>>>,
-    },
+
     #[cfg(feature = "icon")]
     Icon {
         icon: crate::ZsIcon,
@@ -1263,41 +1252,26 @@ impl Default for ViewStyle {
     }
 }
 
-#[cfg(feature = "workbench")]
-#[derive(Debug, Clone)]
-struct ViewWorkbenchLayoutCache {
-    plan: crate::ZsWorkbenchLayoutPlan,
-    typography_scale: f32,
-    text_measurements: Arc<ViewTextMeasurements>,
-}
-
-#[cfg(feature = "workbench")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ViewWorkbenchTransientSource {
-    sidebar_collapsed: bool,
-    sidebar_force_expanded: bool,
-    sidebar_scroll_y: i32,
-    inspector_scroll_y: Option<i32>,
-}
-
-#[cfg(feature = "workbench")]
-impl ViewWorkbenchTransientSource {
-    fn from_spec(spec: &crate::ZsWorkbenchSpec) -> Self {
-        Self {
-            sidebar_collapsed: spec.sidebar.collapsed,
-            sidebar_force_expanded: spec.sidebar.force_expanded,
-            sidebar_scroll_y: spec.sidebar.scroll_y,
-            inspector_scroll_y: spec.inspector.as_ref().map(|inspector| inspector.scroll_y),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ViewNode<Msg> {
     pub id: Option<WidgetId>,
     pub kind: ViewNodeKind<Msg>,
     pub style: ViewStyle,
     pub children: Vec<ViewNode<Msg>>,
+    #[cfg(feature = "label")]
+    navigation_open_source: Option<bool>,
+    #[cfg(all(feature = "label", feature = "resize"))]
+    on_navigation_open_change: Option<ViewMessageMapper<bool, Msg>>,
+    #[cfg(feature = "icon")]
+    icon_role: Option<crate::ZsIconRole>,
+    #[cfg(feature = "resize")]
+    pane_resize_limits: Option<crate::ZsResizeLimits>,
+    #[cfg(feature = "resize")]
+    on_pane_resize: Option<ViewMessageMapper<Dp, Msg>>,
+    #[cfg(feature = "table")]
+    on_table_column_resize: Option<ViewMessageMapper<crate::ZsTableColumnResize, Msg>>,
+    #[cfg(feature = "table")]
+    on_table_columns_change: Option<ViewMessageMapper<Vec<crate::ZsTableColumn>, Msg>>,
     #[cfg(feature = "text-input-core")]
     editable_text: Option<ViewEditableTextDescriptor>,
     #[cfg(feature = "tooltip")]
@@ -1330,29 +1304,31 @@ pub struct ViewNode<Msg> {
     adaptive_scroll_offset_y: Dp,
     #[cfg(feature = "scroll")]
     resolved_scroll_content_height: Dp,
-    #[cfg(feature = "workbench")]
-    workbench_layout: Option<ViewWorkbenchLayoutCache>,
-    #[cfg(feature = "workbench")]
-    workbench_transient_source: Option<ViewWorkbenchTransientSource>,
-    #[cfg(feature = "workbench")]
-    workbench_owner_applies_interaction: bool,
+
     message: PhantomData<fn() -> Msg>,
 }
 
 impl<Msg> ViewNode<Msg> {
     pub fn new(kind: ViewNodeKind<Msg>) -> Self {
-        #[cfg(feature = "workbench")]
-        let workbench_transient_source = match &kind {
-            ViewNodeKind::Workbench { spec, .. } => {
-                Some(ViewWorkbenchTransientSource::from_spec(spec))
-            }
-            _ => None,
-        };
         Self {
             id: None,
             kind,
             style: ViewStyle::default(),
             children: Vec::new(),
+            #[cfg(feature = "label")]
+            navigation_open_source: None,
+            #[cfg(all(feature = "label", feature = "resize"))]
+            on_navigation_open_change: None,
+            #[cfg(feature = "icon")]
+            icon_role: None,
+            #[cfg(feature = "resize")]
+            pane_resize_limits: None,
+            #[cfg(feature = "resize")]
+            on_pane_resize: None,
+            #[cfg(feature = "table")]
+            on_table_column_resize: None,
+            #[cfg(feature = "table")]
+            on_table_columns_change: None,
             #[cfg(feature = "text-input-core")]
             editable_text: None,
             #[cfg(feature = "tooltip")]
@@ -1366,11 +1342,11 @@ impl<Msg> ViewNode<Msg> {
                 any(
                     feature = "badge",
                     feature = "split-view",
-                feature = "button",
-                feature = "icon",
-                feature = "label",
-                feature = "scroll",
-                feature = "virtual-list"
+                    feature = "button",
+                    feature = "icon",
+                    feature = "label",
+                    feature = "scroll",
+                    feature = "virtual-list"
                 )
             ))]
             platform_style_override: None,
@@ -1385,12 +1361,7 @@ impl<Msg> ViewNode<Msg> {
             adaptive_scroll_offset_y: Dp::new(0.0),
             #[cfg(feature = "scroll")]
             resolved_scroll_content_height: Dp::new(0.0),
-            #[cfg(feature = "workbench")]
-            workbench_layout: None,
-            #[cfg(feature = "workbench")]
-            workbench_transient_source,
-            #[cfg(feature = "workbench")]
-            workbench_owner_applies_interaction: false,
+
             message: PhantomData,
         }
     }
@@ -1408,12 +1379,13 @@ impl<Msg> ViewNode<Msg> {
     }
 
     #[cfg(feature = "toast")]
-    pub(crate) fn collect_active_toasts(
-        &self,
-        active: &mut Vec<(WidgetId, crate::ZsToastId)>,
-    ) {
-        if let (Some(widget), ViewNodeKind::ToastPresenter { toast: Some(toast), .. }) =
-            (self.id, &self.kind)
+    pub(crate) fn collect_active_toasts(&self, active: &mut Vec<(WidgetId, crate::ZsToastId)>) {
+        if let (
+            Some(widget),
+            ViewNodeKind::ToastPresenter {
+                toast: Some(toast), ..
+            },
+        ) = (self.id, &self.kind)
         {
             active.push((widget, toast.id()));
         }
@@ -1493,8 +1465,13 @@ impl<Msg> ViewNode<Msg> {
                 ..
             } = &mut self.kind
             {
-                if let Some((_, retained_open, retained_anchor, retained_highlight, retained_stack)) =
-                    states.iter().find(|(candidate, ..)| *candidate == widget)
+                if let Some((
+                    _,
+                    retained_open,
+                    retained_anchor,
+                    retained_highlight,
+                    retained_stack,
+                )) = states.iter().find(|(candidate, ..)| *candidate == widget)
                 {
                     *open = *retained_open;
                     *context_anchor = *retained_anchor;
@@ -1505,106 +1482,6 @@ impl<Msg> ViewNode<Msg> {
         }
         for child in &mut self.children {
             child.restore_context_menu_states(states);
-        }
-    }
-
-    #[cfg(feature = "workbench")]
-    fn cache_workbench_layout(&mut self, cx: &ViewLayoutCx) {
-        let ViewNodeKind::Workbench { spec, .. } = &self.kind else {
-            self.workbench_layout = None;
-            return;
-        };
-        let typography_scale = cx.typography_scale();
-        let text_measurements = cx.text_measurements.clone();
-        let plan = spec.layout_with_text_measurements(
-            cx.bounds,
-            cx.dpi,
-            typography_scale,
-            text_measurements.as_ref(),
-        );
-        self.workbench_layout = Some(ViewWorkbenchLayoutCache {
-            plan,
-            typography_scale,
-            text_measurements,
-        });
-    }
-
-    #[cfg(feature = "workbench")]
-    fn refresh_workbench_layout(&mut self) {
-        let (Some(bounds), Some(cache)) = (self.bounds, self.workbench_layout.as_ref()) else {
-            return;
-        };
-        let typography_scale = cache.typography_scale;
-        let text_measurements = cache.text_measurements.clone();
-        let ViewNodeKind::Workbench { spec, .. } = &self.kind else {
-            self.workbench_layout = None;
-            return;
-        };
-        let plan = spec.layout_with_text_measurements(
-            bounds,
-            self.layout_dpi,
-            typography_scale,
-            text_measurements.as_ref(),
-        );
-        self.workbench_layout = Some(ViewWorkbenchLayoutCache {
-            plan,
-            typography_scale,
-            text_measurements,
-        });
-    }
-
-    #[cfg(feature = "workbench")]
-    fn resolved_workbench_layout<'a>(
-        &'a self,
-        spec: &crate::ZsWorkbenchSpec,
-        bounds: Rect,
-    ) -> std::borrow::Cow<'a, crate::ZsWorkbenchLayoutPlan> {
-        if let Some(cache) = self.workbench_layout.as_ref().filter(|cache| {
-            cache.plan.metrics.surface == bounds && cache.plan.dpi == self.layout_dpi
-        }) {
-            std::borrow::Cow::Borrowed(&cache.plan)
-        } else {
-            std::borrow::Cow::Owned(spec.layout(bounds, self.layout_dpi))
-        }
-    }
-
-    #[cfg(feature = "workbench")]
-    fn restore_workbench_transient_state(&mut self, previous: &Self) {
-        let (Some(source), Some(previous_source)) = (
-            self.workbench_transient_source,
-            previous.workbench_transient_source,
-        ) else {
-            return;
-        };
-        let (
-            ViewNodeKind::Workbench { spec, .. },
-            ViewNodeKind::Workbench {
-                spec: previous_spec,
-                ..
-            },
-        ) = (&mut self.kind, &previous.kind)
-        else {
-            return;
-        };
-
-        if (source.sidebar_collapsed, source.sidebar_force_expanded)
-            == (
-                previous_source.sidebar_collapsed,
-                previous_source.sidebar_force_expanded,
-            )
-        {
-            spec.sidebar.collapsed = previous_spec.sidebar.collapsed;
-            spec.sidebar.force_expanded = previous_spec.sidebar.force_expanded;
-        }
-        if source.sidebar_scroll_y == previous_source.sidebar_scroll_y {
-            spec.sidebar.scroll_y = previous_spec.sidebar.scroll_y;
-        }
-        if source.inspector_scroll_y == previous_source.inspector_scroll_y {
-            if let (Some(inspector), Some(previous_inspector)) =
-                (spec.inspector.as_mut(), previous_spec.inspector.as_ref())
-            {
-                inspector.scroll_y = previous_inspector.scroll_y;
-            }
         }
     }
 
@@ -1627,9 +1504,7 @@ impl<Msg> ViewNode<Msg> {
             .accessibility
             .take()
             .or_else(|| self.implicit_accessibility_spec())
-            .unwrap_or_else(|| {
-                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
-            });
+            .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group));
         self.accessibility = Some(current.label(label));
         self
     }
@@ -1652,9 +1527,7 @@ impl<Msg> ViewNode<Msg> {
             .accessibility
             .take()
             .or_else(|| self.implicit_accessibility_spec())
-            .unwrap_or_else(|| {
-                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group)
-            });
+            .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group));
         self.accessibility = Some(current.description(description));
         self
     }
@@ -1668,9 +1541,7 @@ impl<Msg> ViewNode<Msg> {
             .accessibility
             .take()
             .or_else(|| self.implicit_accessibility_spec())
-            .unwrap_or_else(|| {
-                crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Status)
-            });
+            .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Status));
         self.accessibility = Some(current.live_region(live_region));
         self
     }
@@ -1707,8 +1578,7 @@ impl<Msg> ViewNode<Msg> {
             let mut candidate = automatic_widget_id_for_path(path);
             while used.contains(&candidate) {
                 candidate = AUTOMATIC_WIDGET_ID_NAMESPACE
-                    | (candidate
-                        .wrapping_add(AUTOMATIC_WIDGET_ID_PROBE)
+                    | (candidate.wrapping_add(AUTOMATIC_WIDGET_ID_PROBE)
                         & FRAMEWORK_WIDGET_ID_PAYLOAD_MASK);
             }
             self.id = Some(WidgetId(candidate));
@@ -1806,8 +1676,7 @@ impl<Msg> ViewNode<Msg> {
             ViewNodeKind::Scroll { .. } => true,
             #[cfg(feature = "virtual-list")]
             ViewNodeKind::VirtualList { .. } => true,
-            #[cfg(feature = "workbench")]
-            ViewNodeKind::Workbench { .. } => true,
+
             _ => false,
         }
     }
@@ -1974,10 +1843,7 @@ impl<Msg> ViewNode<Msg> {
         let same_node = self.id.is_some()
             && self.id == previous.id
             && std::mem::discriminant(&self.kind) == std::mem::discriminant(&previous.kind);
-        #[cfg(feature = "workbench")]
-        if same_node {
-            self.restore_workbench_transient_state(previous);
-        }
+
         if same_node
             && self.style.overflow_y == ViewOverflow::Auto
             && previous.style.overflow_y == ViewOverflow::Auto
@@ -1988,7 +1854,12 @@ impl<Msg> ViewNode<Msg> {
         for (index, child) in self.children.iter_mut().enumerate() {
             let previous_child = child
                 .id
-                .and_then(|id| previous.children.iter().find(|candidate| candidate.id == Some(id)))
+                .and_then(|id| {
+                    previous
+                        .children
+                        .iter()
+                        .find(|candidate| candidate.id == Some(id))
+                })
                 .or_else(|| {
                     child
                         .id
@@ -2264,10 +2135,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 
     #[cfg(any(feature = "checkbox", feature = "toggle", feature = "toggle-button"))]
-    pub fn on_toggle_with(
-        mut self,
-        message: impl Fn(bool) -> Msg + Send + Sync + 'static,
-    ) -> Self {
+    pub fn on_toggle_with(mut self, message: impl Fn(bool) -> Msg + Send + Sync + 'static) -> Self {
         let message = ViewMessageMapper::from_shared(message);
         match &mut self.kind {
             #[cfg(feature = "toggle-button")]
@@ -2290,10 +2158,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 
     #[cfg(feature = "slider")]
-    pub fn on_slide_with(
-        mut self,
-        message: impl Fn(f32) -> Msg + Send + Sync + 'static,
-    ) -> Self {
+    pub fn on_slide_with(mut self, message: impl Fn(f32) -> Msg + Send + Sync + 'static) -> Self {
         if let ViewNodeKind::Slider { on_slide, .. } = &mut self.kind {
             *on_slide = Some(ViewMessageMapper::from_shared(message));
         }
@@ -2690,10 +2555,7 @@ impl<Msg: Clone> ViewNode<Msg> {
 
     #[cfg(feature = "canvas")]
     /// Maps Canvas pointer press, move, release and cancellation to an app message.
-    pub fn on_canvas_pointer(
-        mut self,
-        message: fn(crate::ZsCanvasPointerEvent) -> Msg,
-    ) -> Self {
+    pub fn on_canvas_pointer(mut self, message: fn(crate::ZsCanvasPointerEvent) -> Msg) -> Self {
         if let ViewNodeKind::Canvas { on_pointer, .. } = &mut self.kind {
             *on_pointer = Some(ViewMessageMapper::from_function(message));
         }
@@ -2714,10 +2576,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 
     #[cfg(feature = "flyout")]
-    pub fn on_flyout_dismiss(
-        mut self,
-        message: fn(crate::ZsFlyoutDismissReason) -> Msg,
-    ) -> Self {
+    pub fn on_flyout_dismiss(mut self, message: fn(crate::ZsFlyoutDismissReason) -> Msg) -> Self {
         if let ViewNodeKind::Flyout { on_dismiss, .. } = &mut self.kind {
             *on_dismiss = Some(ViewMessageMapper::from_function(message));
         }
@@ -3572,10 +3431,7 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 
     #[cfg(feature = "scroll")]
-    pub fn on_scroll_with(
-        mut self,
-        message: impl Fn(Dp) -> Msg + Send + Sync + 'static,
-    ) -> Self {
+    pub fn on_scroll_with(mut self, message: impl Fn(Dp) -> Msg + Send + Sync + 'static) -> Self {
         if let ViewNodeKind::Scroll { on_scroll, .. } = &mut self.kind {
             *on_scroll = Some(ViewMessageMapper::from_shared(message));
         }
@@ -3627,7 +3483,8 @@ impl<Msg: Clone> ViewNode<Msg> {
         {
             if metric.index < *total_count {
                 let metric = ZsItemsRepeaterItemMetric::new(metric.index, metric.height);
-                match item_metrics.binary_search_by_key(&metric.index, |candidate| candidate.index) {
+                match item_metrics.binary_search_by_key(&metric.index, |candidate| candidate.index)
+                {
                     Ok(position) => item_metrics[position] = metric,
                     Err(position) => item_metrics.insert(position, metric),
                 }
@@ -3659,7 +3516,9 @@ impl<Msg: Clone> ViewNode<Msg> {
             for metric in next {
                 if normalized
                     .last()
-                    .is_some_and(|current: &ZsItemsRepeaterItemMetric| current.index == metric.index)
+                    .is_some_and(|current: &ZsItemsRepeaterItemMetric| {
+                        current.index == metric.index
+                    })
                 {
                     *normalized.last_mut().expect("metric entry must exist") = metric;
                 } else {
@@ -3710,35 +3569,6 @@ impl<Msg: Clone> ViewNode<Msg> {
     pub fn loading(mut self, is_loading: bool) -> Self {
         if let ViewNodeKind::VirtualList { loading, .. } = &mut self.kind {
             *loading = is_loading;
-        }
-        self
-    }
-
-    #[cfg(feature = "workbench")]
-    pub fn on_workbench_interaction_with(
-        mut self,
-        message: impl Fn(crate::ZsWorkbenchInteractionEvent) -> Option<Msg>
-            + Send
-            + Sync
-            + 'static,
-    ) -> Self {
-        if let ViewNodeKind::Workbench { on_interaction, .. } = &mut self.kind {
-            *on_interaction = Some(ViewMessageMapper::from_shared(message));
-        }
-        self
-    }
-
-    #[cfg(feature = "workbench")]
-    pub(crate) fn on_controlled_workbench_interaction_with(
-        mut self,
-        message: impl Fn(crate::ZsWorkbenchInteractionEvent) -> Option<Msg>
-        + Send
-        + Sync
-        + 'static,
-    ) -> Self {
-        if let ViewNodeKind::Workbench { on_interaction, .. } = &mut self.kind {
-            *on_interaction = Some(ViewMessageMapper::from_shared(message));
-            self.workbench_owner_applies_interaction = true;
         }
         self
     }

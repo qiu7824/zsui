@@ -20,23 +20,21 @@ use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOn
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
     NSAlertThirdButtonReturn, NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
-    NSBackingStoreType, NSFloatingWindowLevel, NSModalResponseCancel, NSModalResponseOK,
-    NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow, NSWindowDelegate,
-    NSWindowStyleMask,
+    NSBackingStoreType, NSEventMask, NSFloatingWindowLevel, NSModalResponseCancel,
+    NSModalResponseOK, NSOpenPanel, NSPasteboard, NSPasteboardTypeString, NSSavePanel, NSWindow,
+    NSWindowDelegate, NSWindowStyleMask,
 };
 #[cfg(feature = "native-smoke")]
 use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRepPropertyKey, NSModalPanelRunLoopMode};
 #[cfg(feature = "native-smoke")]
 #[allow(deprecated)]
-use objc2_core_graphics::{
-    CGRectNull, CGWindowImageOption, CGWindowListCreateImage, CGWindowListOption,
-};
+use objc2_core_graphics::{CGWindowImageOption, CGWindowListCreateImage, CGWindowListOption};
 use objc2_foundation::{
-    NSArray, NSDate, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSRunLoop,
-    NSSize, NSString, NSURL,
+    NSArray, NSDate, NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint,
+    NSRect, NSRunLoop, NSSize, NSString, NSURL,
 };
 #[cfg(feature = "native-smoke")]
-use objc2_foundation::{NSDefaultRunLoopMode, NSDictionary, NSTimer};
+use objc2_foundation::{NSDictionary, NSTimer};
 
 use crate::native_clipboard::{native_clipboard_text_write, NativeClipboardTextWrite};
 use crate::native_file_dialog::{
@@ -85,7 +83,15 @@ define_class!(
         }
 
         #[unsafe(method(windowWillClose:))]
-        fn window_will_close(&self, _notification: &NSNotification) {
+        fn window_will_close(&self, notification: &NSNotification) {
+            let window = notification
+                .object()
+                .map(|object| Retained::as_ptr(&object).cast::<NSWindow>() as usize);
+            if let Some(handler) =
+                window.and_then(|window| self.ivars().close_handlers.get(&window))
+            {
+                handler.shutdown_dispatch();
+            }
             let remaining = self.ivars().open_windows.get().saturating_sub(1);
             self.ivars().open_windows.set(remaining);
             if remaining == 0 && !self.ivars().keep_running_without_windows {
@@ -670,6 +676,13 @@ impl FileDialogService for MacosAppKitFileDialogService {
         macos_appkit_open_file_dialog(spec)
     }
 
+    fn pick_directory_dialog(
+        &mut self,
+        spec: &crate::DirectoryDialogSpec,
+    ) -> ZsuiResult<Option<PathBuf>> {
+        macos_appkit_pick_directory_dialog(spec)
+    }
+
     fn save_file_dialog(&mut self, spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
         macos_appkit_save_file_dialog(spec)
     }
@@ -733,6 +746,41 @@ pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option
     Ok(Some(paths))
 }
 
+pub fn macos_appkit_pick_directory_dialog(
+    spec: &crate::DirectoryDialogSpec,
+) -> ZsuiResult<Option<PathBuf>> {
+    spec.validate()?;
+    let mtm = appkit_main_thread_marker("NSOpenPanel")?;
+    let owner = appkit_active_file_dialog_owner(mtm);
+    let panel = NSOpenPanel::openPanel(mtm);
+    panel.setCanChooseFiles(false);
+    panel.setCanChooseDirectories(true);
+    panel.setAllowsMultipleSelection(false);
+    panel.setCanCreateDirectories(true);
+    panel.setTitle(Some(&NSString::from_str(&spec.title)));
+    appkit_set_initial_directory(&panel, spec.current_path.as_deref());
+    #[cfg(feature = "native-smoke")]
+    let proof = appkit_schedule_directory_proof(&panel)?;
+    let response = appkit_run_file_panel(&panel, owner.as_deref(), AppKitFilePanelKind::Open)?;
+    #[cfg(feature = "native-smoke")]
+    if let Some(proof) = proof {
+        proof.finish()?;
+    }
+    if response != NSModalResponseOK {
+        return Ok(None);
+    }
+    let path = panel
+        .URL()
+        .and_then(|url| url.to_file_path())
+        .ok_or_else(|| {
+            ZsuiError::host(
+                "macos_pick_directory_dialog",
+                "NSOpenPanel accepted without a local directory",
+            )
+        })?;
+    Ok(Some(path))
+}
+
 pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
     let mtm = appkit_main_thread_marker("NSSavePanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
@@ -755,6 +803,107 @@ pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Op
             })
         })
         .transpose()
+}
+
+#[cfg(feature = "native-smoke")]
+struct AppKitDirectoryProof {
+    result: Rc<RefCell<Option<Result<(), String>>>>,
+    action_timer: Retained<NSTimer>,
+    timeout_timer: Retained<NSTimer>,
+}
+
+#[cfg(feature = "native-smoke")]
+impl AppKitDirectoryProof {
+    fn finish(self) -> ZsuiResult<()> {
+        let result = self.result.borrow_mut().take();
+        result
+            .ok_or_else(|| {
+                ZsuiError::host("macos_directory_proof", "native panel action did not run")
+            })?
+            .map_err(|error| ZsuiError::host("macos_directory_proof", error))
+    }
+}
+
+#[cfg(feature = "native-smoke")]
+impl Drop for AppKitDirectoryProof {
+    fn drop(&mut self) {
+        self.action_timer.invalidate();
+        self.timeout_timer.invalidate();
+    }
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_schedule_directory_proof(
+    panel: &NSOpenPanel,
+) -> ZsuiResult<Option<AppKitDirectoryProof>> {
+    let Some(action) = std::env::var_os("ZSUI_NATIVE_DIRECTORY_PROOF_ACTION") else {
+        return Ok(None);
+    };
+    let select = match action.to_str() {
+        Some("select") => true,
+        Some("cancel") => false,
+        _ => {
+            return Err(ZsuiError::invalid_spec(
+                "directory_proof_action",
+                "expected select or cancel",
+            ))
+        }
+    };
+    let screenshot = std::env::var_os("ZSUI_NATIVE_DIRECTORY_PROOF_SCREENSHOT")
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            ZsuiError::invalid_spec("directory_proof_screenshot", "a capture path is required")
+        })?;
+    let result = Rc::new(RefCell::new(None));
+    let completed = Rc::clone(&result);
+    let action_panel = panel.retain();
+    let action = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        let capture = appkit_capture_file_panel_compositor_png(&action_panel, &screenshot);
+        let captured = capture.is_ok();
+        *completed.borrow_mut() = Some(capture);
+        if !captured {
+            return;
+        }
+        // The modern panel's controls live in a remote view service. Deliver
+        // native input through WindowServer rather than the local proxy view.
+        action_panel.makeKeyAndOrderFront(None);
+        for down in [true, false] {
+            if let Some(event) = objc2_core_graphics::CGEvent::new_keyboard_event(
+                None,
+                if select { 36 } else { 53 },
+                down,
+            ) {
+                objc2_core_graphics::CGEvent::post(
+                    objc2_core_graphics::CGEventTapLocation::HIDEventTap,
+                    Some(&event),
+                );
+            }
+        }
+    });
+    let action_timer = unsafe { NSTimer::timerWithTimeInterval_repeats_block(1.0, true, &action) };
+    let timed_result = Rc::clone(&result);
+    let timeout_panel = panel.retain();
+    let timeout = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        *timed_result.borrow_mut() = Some(Err(
+            "native directory panel did not complete its proof action within 8 seconds".to_owned(),
+        ));
+        unsafe {
+            timeout_panel.cancel(None);
+        }
+    });
+    let timeout_timer =
+        unsafe { NSTimer::timerWithTimeInterval_repeats_block(8.0, false, &timeout) };
+    unsafe {
+        for timer in [&action_timer, &timeout_timer] {
+            NSRunLoop::mainRunLoop().addTimer_forMode(timer, NSDefaultRunLoopMode);
+            NSRunLoop::mainRunLoop().addTimer_forMode(timer, NSModalPanelRunLoopMode);
+        }
+    }
+    Ok(Some(AppKitDirectoryProof {
+        result,
+        action_timer,
+        timeout_timer,
+    }))
 }
 
 fn appkit_configure_open_panel(panel: &NSOpenPanel, spec: &FileDialogSpec) {
@@ -923,11 +1072,23 @@ fn appkit_capture_file_panel_compositor_png(
     if window_number <= 0 {
         return Err("the AppKit file panel has no compositor window number".to_string());
     }
+    let primary = objc2_app_kit::NSScreen::screens(panel.mtm())
+        .firstObject()
+        .ok_or_else(|| "the AppKit file panel has no screen".to_owned())?;
+    let frame = panel.frame();
+    let primary_frame = primary.frame();
+    let capture_bounds = NSRect::new(
+        NSPoint::new(
+            frame.origin.x,
+            primary_frame.origin.y + primary_frame.size.height - frame.origin.y - frame.size.height,
+        ),
+        frame.size,
+    );
     #[allow(deprecated)]
     let image = CGWindowListCreateImage(
-        unsafe { CGRectNull },
-        CGWindowListOption::OptionIncludingWindow,
-        window_number as u32,
+        capture_bounds,
+        CGWindowListOption::OptionOnScreenOnly,
+        0,
         CGWindowImageOption::BoundsIgnoreFraming | CGWindowImageOption::BestResolution,
     )
     .ok_or_else(|| "Core Graphics could not capture the AppKit file-panel window".to_string())?;
@@ -1134,10 +1295,7 @@ fn appkit_run_alert(alert: &NSAlert, owner: Option<&NSWindow>) -> objc2_app_kit:
     });
     alert.beginSheetModalForWindow_completionHandler(owner, Some(&completion));
 
-    let run_loop = NSRunLoop::currentRunLoop();
-    while response.get().is_none() {
-        run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
-    }
+    appkit_wait_for_sheet_response(&response, alert.mtm());
     response
         .get()
         .expect("AppKit sheet completion set an alert response")
@@ -1201,15 +1359,37 @@ fn appkit_run_file_panel(
         return Ok(NSModalResponseCancel);
     }
 
-    let run_loop = NSRunLoop::currentRunLoop();
-    while response.get().is_none() {
-        run_loop.runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(0.01));
-    }
+    // NSSavePanel also owns remote-view validation and modal-session state.
+    // Its native modal loop must run while a synchronous sheet service waits.
+    let modal_response = panel.runModal();
     panel.orderOut(None);
 
-    Ok(response
-        .get()
-        .expect("AppKit sheet completion set a modal response"))
+    Ok(response.get().unwrap_or(modal_response))
+}
+
+fn appkit_wait_for_sheet_response(
+    response: &Cell<Option<objc2_app_kit::NSModalResponse>>,
+    mtm: MainThreadMarker,
+) {
+    let application = NSApplication::sharedApplication(mtm);
+    // A sheet is document-modal, but does not start an AppKit event loop.
+    // Pump native events as well as run-loop sources while the synchronous
+    // service waits, so remote file-panel views can paint and receive input.
+    while response.get().is_none() {
+        let deadline = NSDate::dateWithTimeIntervalSinceNow(0.01);
+        let event = unsafe {
+            application.nextEventMatchingMask_untilDate_inMode_dequeue(
+                NSEventMask::Any,
+                Some(&deadline),
+                NSDefaultRunLoopMode,
+                true,
+            )
+        };
+        if let Some(event) = event {
+            application.sendEvent(&event);
+        }
+        application.updateWindows();
+    }
 }
 
 #[cfg(feature = "native-smoke")]

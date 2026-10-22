@@ -66,6 +66,30 @@ pub struct ZsTableColumn {
     width: ZsTableColumnWidth,
     alignment: HorizontalAlign,
     sortable: bool,
+    #[serde(default, skip_serializing_if = "column_resize_limits_default")]
+    resize_limits: crate::ZsResizeLimits,
+    #[serde(
+        default = "column_resizable_default",
+        skip_serializing_if = "column_is_resizable_default"
+    )]
+    resizable: bool,
+}
+
+fn column_resizable_default() -> bool {
+    true
+}
+fn column_is_resizable_default(value: &bool) -> bool {
+    *value
+}
+fn column_resize_limits_default(value: &crate::ZsResizeLimits) -> bool {
+    *value == crate::ZsResizeLimits::default()
+}
+
+/// A controlled column-width update, independent of column order.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsTableColumnResize {
+    pub column: ZsTableColumnId,
+    pub width: Dp,
 }
 
 impl ZsTableColumn {
@@ -76,6 +100,8 @@ impl ZsTableColumn {
             width: ZsTableColumnWidth::default(),
             alignment: HorizontalAlign::Start,
             sortable: false,
+            resize_limits: crate::ZsResizeLimits::default(),
+            resizable: true,
         }
     }
 
@@ -97,6 +123,31 @@ impl ZsTableColumn {
     pub fn sortable(mut self, sortable: bool) -> Self {
         self.sortable = sortable;
         self
+    }
+
+    pub fn resizable(mut self, resizable: bool) -> Self {
+        self.resizable = resizable;
+        self
+    }
+
+    pub fn resize_limits(mut self, limits: crate::ZsResizeLimits) -> Self {
+        self.resize_limits = limits;
+        self
+    }
+
+    pub const fn is_resizable(&self) -> bool {
+        self.resizable
+    }
+    pub const fn column_resize_limits(&self) -> crate::ZsResizeLimits {
+        self.resize_limits
+    }
+
+    pub fn resize_to(&mut self, width: Dp) -> Dp {
+        let width = self.resize_limits.clamp(width);
+        if self.resizable {
+            self.width = ZsTableColumnWidth::Fixed(width);
+        }
+        width
     }
 
     pub const fn id(&self) -> ZsTableColumnId {

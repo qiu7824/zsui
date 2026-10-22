@@ -13,7 +13,8 @@
       "pane_width": "workspace_pane_width"
     },
     "action_bindings": {
-      "open_change": "workspace_pane_open_changed"
+      "open_change": "workspace_pane_open_changed",
+      "resize": "workspace_pane_resized"
     },
     "accessibility": {
       "role": "group",

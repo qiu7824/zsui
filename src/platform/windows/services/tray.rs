@@ -34,9 +34,8 @@ enum WindowsWin32StatusItemCallbackDispatch {
     Failed(String),
 }
 
-static WINDOWS_WIN32_STATUS_ITEM_ROUTES: OnceLock<
-    Mutex<Vec<WindowsWin32StatusItemRouteRecord>>,
-> = OnceLock::new();
+static WINDOWS_WIN32_STATUS_ITEM_ROUTES: OnceLock<Mutex<Vec<WindowsWin32StatusItemRouteRecord>>> =
+    OnceLock::new();
 static WINDOWS_WIN32_TASKBAR_CREATED_MESSAGE: OnceLock<u32> = OnceLock::new();
 
 pub struct WindowsWin32OwnedTrayIcon {
@@ -124,15 +123,33 @@ impl WindowsWin32OwnedTrayIcon {
     }
 
     pub fn set_tooltip(&mut self, tooltip: Option<&str>) -> bool {
-        clear_wide_buffer(&mut self.data.szTip);
-        self.data.uFlags |= NIF_TIP;
-        if let Some(tooltip) = tooltip {
-            copy_wide_truncated(tooltip, &mut self.data.szTip);
+        self.try_set_tooltip(tooltip).is_ok()
+    }
+
+    /// Updates native and retained tooltip state atomically, returning host failure.
+    pub fn try_set_tooltip(&mut self, tooltip: Option<&str>) -> ZsuiResult<()> {
+        if !self.active {
+            return Err(ZsuiError::host(
+                "windows_tray_tooltip",
+                "tray icon is closed",
+            ));
         }
+        let mut data = self.data;
+        clear_wide_buffer(&mut data.szTip);
+        data.uFlags |= NIF_TIP;
+        if let Some(tooltip) = tooltip {
+            copy_wide_truncated(tooltip, &mut data.szTip);
+        }
+        if unsafe { Shell_NotifyIconW(NIM_MODIFY, &mut data) } == 0 {
+            return Err(ZsuiError::host(
+                "windows_tray_tooltip",
+                "Shell_NotifyIconW(NIM_MODIFY) failed",
+            ));
+        }
+        self.data = data;
         self.tooltip = tooltip.map(str::to_owned);
-        let updated = unsafe { Shell_NotifyIconW(NIM_MODIFY, &mut self.data) != 0 };
         set_windows_win32_status_item_route(self.route_record());
-        updated
+        Ok(())
     }
 
     pub fn set_menu(&mut self, menu: MenuSpec) {
@@ -149,21 +166,27 @@ impl WindowsWin32OwnedTrayIcon {
         WindowsWin32OwnedPopupMenu::from_menu(&self.menu)
     }
 
-    pub fn delete(mut self) -> bool {
-        let deleted = self.delete_active();
-        self.active = false;
-        deleted
+    pub fn delete(self) -> bool {
+        self.try_delete().is_ok()
+    }
+
+    /// Explicit cleanup reports failure and never retries the same native deletion in Drop.
+    pub fn try_delete(mut self) -> ZsuiResult<()> {
+        if self.delete_active() {
+            Ok(())
+        } else {
+            Err(ZsuiError::host(
+                "windows_tray_delete",
+                "Shell_NotifyIconW(NIM_DELETE) failed",
+            ))
+        }
     }
 
     fn delete_active(&mut self) -> bool {
-        if !self.active {
+        if !std::mem::replace(&mut self.active, false) {
             return true;
         }
-        let deleted = unsafe { Shell_NotifyIconW(NIM_DELETE, &mut self.data) != 0 };
-        if deleted {
-            self.active = false;
-        }
-        deleted
+        unsafe { Shell_NotifyIconW(NIM_DELETE, &mut self.data) != 0 }
     }
 
     fn route_record(&self) -> WindowsWin32StatusItemRouteRecord {
@@ -181,7 +204,15 @@ impl WindowsWin32OwnedTrayIcon {
 impl Drop for WindowsWin32OwnedTrayIcon {
     fn drop(&mut self) {
         clear_windows_win32_status_item_route(self.owner(), self.callback_message(), self.id());
-        let _ = self.delete_active();
+        if !self.delete_active() {
+            {
+                use std::io::Write as _;
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "ZSUI tray cleanup failed: Shell_NotifyIconW(NIM_DELETE)"
+                );
+            }
+        }
     }
 }
 
@@ -330,9 +361,13 @@ impl NativeStatusItemHost for WindowsWin32StatusItemHost {
 
     fn set_status_item_tooltip(&mut self, handle: Self::Handle, tooltip: Option<String>) {
         self.record(NativeStatusItemHostOperation::SetStatusItemTooltip);
-        if let Some(item) = self.items.iter_mut().find(|item| item.id() == handle) {
-            let _ = item.set_tooltip(tooltip.as_deref());
-        }
+        self.last_error = match self.items.iter_mut().find(|item| item.id() == handle) {
+            Some(item) => item
+                .try_set_tooltip(tooltip.as_deref())
+                .err()
+                .map(|error| error.to_string()),
+            None => Some(format!("unknown tray icon {handle}")),
+        };
     }
 
     fn set_status_item_menu(&mut self, handle: Self::Handle, menu: MenuSpec) {
@@ -344,10 +379,16 @@ impl NativeStatusItemHost for WindowsWin32StatusItemHost {
 
     fn destroy_status_item(&mut self, handle: Self::Handle) {
         self.record(NativeStatusItemHostOperation::DestroyStatusItem);
-        if let Some(index) = self.items.iter().position(|item| item.id() == handle) {
-            let item = self.items.remove(index);
-            let _ = item.delete();
-        }
+        self.last_error =
+            if let Some(index) = self.items.iter().position(|item| item.id() == handle) {
+                self.items
+                    .remove(index)
+                    .try_delete()
+                    .err()
+                    .map(|error| error.to_string())
+            } else {
+                Some(format!("unknown tray icon {handle}"))
+            };
     }
 }
 
@@ -365,8 +406,7 @@ impl NativeStatusMenuCommandHost for WindowsWin32StatusItemHost {
     }
 }
 
-fn windows_win32_status_item_routes(
-) -> &'static Mutex<Vec<WindowsWin32StatusItemRouteRecord>> {
+fn windows_win32_status_item_routes() -> &'static Mutex<Vec<WindowsWin32StatusItemRouteRecord>> {
     WINDOWS_WIN32_STATUS_ITEM_ROUTES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -443,12 +483,8 @@ fn dispatch_windows_win32_status_item_callback(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> Option<WindowsWin32StatusItemCallbackDispatch> {
-    let target = windows_win32_status_item_callback_target(
-        owner,
-        callback_message,
-        wparam,
-        lparam,
-    )?;
+    let target =
+        windows_win32_status_item_callback_target(owner, callback_message, wparam, lparam)?;
     if !matches!(target.event_message, WM_RBUTTONUP | WM_CONTEXTMENU) {
         return Some(WindowsWin32StatusItemCallbackDispatch::Ignored);
     }
@@ -544,5 +580,32 @@ fn copy_wide_truncated(value: &str, target: &mut [u16]) {
 fn clear_wide_buffer(target: &mut [u16]) {
     for value in target {
         *value = 0;
+    }
+}
+
+#[cfg(test)]
+mod tray_error_tests {
+    use super::*;
+    #[test]
+    fn explicit_tray_failures_preserve_state_and_cleanup_is_idempotent() {
+        let menu = MenuSpec::new();
+        let mut icon = WindowsWin32OwnedTrayIcon {
+            data: unsafe { zeroed() },
+            icon: None,
+            tooltip: Some("retained".into()),
+            menu_command_table: WindowsWin32StatusMenuCommandTable::from_menu(&menu),
+            menu,
+            active: true,
+        };
+        assert!(icon.try_set_tooltip(Some("rejected")).is_err());
+        assert_eq!(icon.tooltip.as_deref(), Some("retained"));
+        assert!(!icon.delete_active());
+        assert!(!icon.active);
+        assert!(icon.delete_active());
+        let mut host = WindowsWin32StatusItemHost::new(null_mut());
+        host.set_status_item_tooltip(99, Some("missing".into()));
+        assert!(host.last_error().unwrap().contains("99"));
+        host.destroy_status_item(99);
+        assert!(host.last_error().unwrap().contains("99"));
     }
 }

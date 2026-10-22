@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "form",
+    "component": "stack",
+    "layout": {
+      "flex": 1,
+      "padding": 24,
+      "gap": 16
+    },
+    "children": [
+      {
+        "id": "scroll",
+        "component": "scroll",
+        "layout": {
+          "height": 420
+        },
+        "properties": {
+          "content_height": 1200
+        },
+        "property_bindings": {
+          "offset_y": "scroll_offset"
+        },
+        "action_bindings": {
+          "scroll": "scrolled"
+        },
+        "children": [
+          {
+            "id": "body",
+            "component": "text",
+            "properties": {
+              "vertical_align": "start",
+              "text": "文档内容 / Document content"
+            },
+            "layout": {
+              "height": 1200
+            }
+          }
+        ]
+      },
+      {
+        "id": "editor",
+        "component": "textbox",
+        "layout": {
+          "height": 128
+        },
+        "properties": {
+          "multiline": true,
+          "placeholder": "输入文字 / Enter text",
+          "value": ""
+        }
+      }
+    ]
+  }
+}

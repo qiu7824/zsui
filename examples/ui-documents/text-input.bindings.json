@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "scroll_offset": "number",
+    "editor_text": "string"
+  },
+  "actions": {
+    "scrolled": "number",
+    "text_changed": "string"
+  }
+}

@@ -1,4 +1,3 @@
-
 #[cfg(feature = "label")]
 use crate::platform_component_profile::{
     PlatformComponentProfile, PlatformNavigationComposition, PlatformSectionComposition,
@@ -24,58 +23,6 @@ pub fn column<Msg>(children: impl IntoIterator<Item = ViewNode<Msg>>) -> ViewNod
         direction: ViewStackDirection::Column,
     })
     .children(children)
-}
-
-/// Creates the retained native workbench surface used by products that
-/// explicitly need a conversation timeline and composer. Layout and painting
-/// remain owned by the shared workbench contract while each backend renders
-/// the resulting native plan.
-#[cfg(feature = "workbench")]
-pub fn workbench<Msg>(spec: crate::ZsWorkbenchSpec) -> ViewNode<Msg> {
-    #[cfg(feature = "accessibility")]
-    let accessible_title = spec.title.clone();
-    let node = ViewNode::new(ViewNodeKind::Workbench {
-        spec,
-        on_interaction: None,
-    })
-    .min_width(Dp::new(360.0))
-    .min_height(Dp::new(320.0));
-    #[cfg(feature = "accessibility")]
-    let node = node.accessibility(
-        crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Application)
-            .label(accessible_title),
-    );
-    node
-}
-
-/// Creates a retained native workbench from explicit shell, timeline,
-/// composer and inspector component contracts.
-///
-/// This is the application-facing constructor after the Workbench selection
-/// gate has been met. [`workbench`] stays available for code that already owns
-/// the flattened compatibility spec. Ordinary utilities and forms should
-/// compose the smaller View controls directly.
-#[cfg(feature = "workbench")]
-pub fn workbench_shell<Msg>(spec: crate::ZsWorkbenchShellSpec) -> ViewNode<Msg> {
-    workbench(spec.into_workbench())
-}
-
-/// Starts the typed MessageTimeline child contract for a WorkbenchShell.
-#[cfg(feature = "workbench")]
-pub const fn message_timeline() -> crate::ZsMessageTimelineSpec {
-    crate::ZsMessageTimelineSpec::new()
-}
-
-/// Starts the typed Composer child contract for a WorkbenchShell.
-#[cfg(feature = "workbench")]
-pub fn composer(placeholder: impl Into<String>) -> crate::ZsComposerSpec {
-    crate::ZsComposerSpec::new(placeholder)
-}
-
-/// Starts the typed InspectorPanel child contract for a WorkbenchShell.
-#[cfg(feature = "workbench")]
-pub fn inspector_panel(title: impl Into<String>) -> crate::ZsInspectorPanelSpec {
-    crate::ZsInspectorPanelSpec::new(title)
 }
 
 /// Creates a native desktop content page with platform-owned outer spacing.
@@ -105,11 +52,7 @@ pub fn section<Msg>(
     title: impl Into<String>,
     children: impl IntoIterator<Item = ViewNode<Msg>>,
 ) -> ViewNode<Msg> {
-    section_for_style(
-        PlatformComponentProfile::current().style,
-        title,
-        children,
-    )
+    section_for_style(PlatformComponentProfile::current().style, title, children)
 }
 
 /// Deterministic variant used by proof fixtures and framework tests that need
@@ -199,15 +142,16 @@ pub(crate) fn section_for_style<Msg>(
                             .bg(crate::ThemeColorToken::Border),
                     );
                 }
-                let intrinsic_height = child
-                    .style
-                    .height
-                    .or(child.style.min_height)
-                    .unwrap_or(Dp::new(
-                        crate::TextRole::Body
-                            .metrics_for(platform.typography())
-                            .line_height,
-                    ));
+                let intrinsic_height =
+                    child
+                        .style
+                        .height
+                        .or(child.style.min_height)
+                        .unwrap_or(Dp::new(
+                            crate::TextRole::Body
+                                .metrics_for(platform.typography())
+                                .line_height,
+                        ));
                 rows.push(
                     child
                         .padding(row_padding)
@@ -248,6 +192,7 @@ pub struct ZsNavigationViewSpec<Msg> {
     items: Vec<ViewNode<Msg>>,
     footer_items: Vec<ViewNode<Msg>>,
     pane_width: Option<Dp>,
+    pane_open: Option<bool>,
     minimum_content_width: Dp,
     content: Option<Box<ViewNode<Msg>>>,
 }
@@ -262,6 +207,7 @@ impl<Msg> ZsNavigationViewSpec<Msg> {
             items: Vec::new(),
             footer_items: Vec::new(),
             pane_width: None,
+            pane_open: None,
             minimum_content_width: Dp::new(0.0),
             content: None,
         }
@@ -291,6 +237,9 @@ impl<Msg> ZsNavigationViewSpec<Msg> {
         self.pane_width = Some(Dp::new(width.0.max(0.0)));
         self
     }
+
+    /// Supplies controlled open state for compact or overlay navigation.
+    pub fn pane_open(mut self, open: bool) -> Self { self.pane_open = Some(open); self }
 
     /// Declares the application's platform-neutral content width constraint.
     ///
@@ -349,6 +298,7 @@ fn navigation_view_impl<Msg>(
         items,
         footer_items,
         pane_width,
+        pane_open,
         minimum_content_width,
         content,
     } = spec;
@@ -365,12 +315,13 @@ fn navigation_view_impl<Msg>(
             subtitle,
             item_count,
             footer_count,
-            pane_open: false,
+            pane_open: pane_open.unwrap_or(false),
             pane_width,
             minimum_content_width,
         })
         .children(children);
         navigation.id = id;
+        navigation.navigation_open_source = pane_open;
         return navigation;
     }
     let spacing = crate::ZsuiSpacingTokens::for_platform(platform);
@@ -402,9 +353,7 @@ fn navigation_view_impl<Msg>(
     // interactive navigation row renderer is optional (`button`), but the
     // shell primitive still needs stable pane geometry for static views.
     let open_pane_width = pane_width.unwrap_or(navigation_profile.preferred_pane_width);
-    let item_width = Dp::new(
-        (open_pane_width.0 - navigation_profile.horizontal_inset.0).max(0.0),
-    );
+    let item_width = Dp::new((open_pane_width.0 - navigation_profile.horizontal_inset.0).max(0.0));
     let items = items
         .into_iter()
         .map(|item| item.width(item_width))
@@ -534,8 +483,7 @@ pub(crate) fn zs_navigation_view_layout(
         .round_i32()
         .clamp(0, bounds.width.max(0));
     let minimum_content_dp = minimum_content_width.0.max(0.0);
-    let mode =
-        navigation_profile.layout_mode(logical_width, open_pane_dp, minimum_content_dp);
+    let mode = navigation_profile.layout_mode(logical_width, open_pane_dp, minimum_content_dp);
     let compact_width = navigation_profile
         .compact_width()
         .to_px(dpi)
@@ -580,10 +528,7 @@ pub(crate) fn zs_navigation_view_layout(
     let content_bounds = Rect {
         x: content_x,
         y: content_y,
-        width: bounds
-            .width
-            .saturating_sub(inline_pane_width)
-            .max(0),
+        width: bounds.width.saturating_sub(inline_pane_width).max(0),
         height: bounds
             .y
             .saturating_add(bounds.height)
@@ -654,7 +599,10 @@ pub(crate) fn zs_navigation_view_layout(
     let item_bounds = Rect {
         x: pane.x.saturating_add(item_inset),
         y: item_top,
-        width: pane.width.saturating_sub(item_inset.saturating_mul(2)).max(0),
+        width: pane
+            .width
+            .saturating_sub(item_inset.saturating_mul(2))
+            .max(0),
         height: pane
             .y
             .saturating_add(pane.height)
@@ -941,11 +889,8 @@ mod data_tests {
     #[test]
     fn gtk_boxed_rows_reserve_their_outer_padding() {
         let child = row([spacer::<()>().height(Dp::new(34.0))]);
-        let section = section_for_style(
-            crate::ZsBaseControlPlatformStyle::Gtk,
-            "Settings",
-            [child],
-        );
+        let section =
+            section_for_style(crate::ZsBaseControlPlatformStyle::Gtk, "Settings", [child]);
         let rows = &section.children[1];
         let first_row = &rows.children[0];
         assert_eq!(first_row.style.padding, Some(Dp::new(12.0)));
@@ -955,17 +900,13 @@ mod data_tests {
     #[test]
     fn section_intrinsic_height_prevents_non_flex_content_from_collapsing() {
         let section = |platform| {
-            section_for_style::<()>(
-                platform,
-                "Breadcrumb",
-                [spacer().height(Dp::new(32.0))],
-            )
+            section_for_style::<()>(platform, "Breadcrumb", [spacer().height(Dp::new(32.0))])
         };
         let height = |platform| {
             section(platform)
                 .style
-            .min_height
-            .expect("section must expose its intrinsic minimum height")
+                .min_height
+                .expect("section must expose its intrinsic minimum height")
         };
 
         assert_eq!(
@@ -1089,126 +1030,6 @@ mod data_tests {
     }
 
     #[test]
-    #[cfg(feature = "workbench")]
-    fn named_workbench_components_build_one_retained_shell_surface() {
-        let timeline = message_timeline().message(
-            crate::ZsWorkbenchMessageSpec::new(
-                "message",
-                crate::ZsWorkbenchMessageRole::Assistant,
-            )
-            .author("ZSUI")
-            .block(crate::ZsWorkbenchContentBlock::paragraph("Ready"))
-            .action(crate::ZsWorkbenchActionSpec::new(
-                "copy",
-                "Copy",
-                crate::ZsIcon::Copy,
-            )),
-        );
-        let shell = crate::ZsWorkbenchShellSpec::new(
-            "Workbench",
-            crate::ZsWorkbenchSidebarSpec::new("Threads")
-                .primary_action(crate::ZsWorkbenchActionSpec::new(
-                    "new",
-                    "New",
-                    crate::ZsIcon::Add,
-                ))
-                .group(
-                    crate::ZsWorkbenchConversationGroupSpec::new("today", "Today").conversation(
-                        crate::ZsWorkbenchConversationSpec::new("thread", "Thread")
-                            .selected(true),
-                    ),
-                ),
-            composer("Write a message")
-                .draft("Hello")
-                .action(crate::ZsWorkbenchActionSpec::new(
-                    "attach",
-                    "Attach",
-                    crate::ZsIcon::Attach,
-                )),
-        )
-        .toolbar_action(crate::ZsWorkbenchActionSpec::new(
-            "search",
-            "Search",
-            crate::ZsIcon::Search,
-        ))
-        .timeline(timeline)
-        .inspector(
-            inspector_panel("Inspector")
-                .selected_tab("details")
-                .tab(crate::ZsWorkbenchActionSpec::new(
-                    "details",
-                    "Details",
-                    crate::ZsIcon::Inspector,
-                )),
-        );
-        #[allow(unused_mut)]
-        let mut view = workbench_shell::<()>(shell);
-
-        assert!(matches!(
-            &view.kind,
-            ViewNodeKind::Workbench { spec, .. }
-                if spec.messages.len() == 1 && spec.inspector.is_some()
-        ));
-        #[cfg(feature = "accessibility")]
-        {
-            view.layout(&mut crate::ViewLayoutCx::new(
-                crate::Rect {
-                    x: 0,
-                    y: 0,
-                    width: 1400,
-                    height: 800,
-                },
-                crate::Dpi::standard(),
-            ));
-            let semantics = view.interaction_plan().accessibility_nodes;
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::Application
-                    && node.label.as_deref() == Some("Workbench")
-            }));
-            assert!(semantics
-                .iter()
-                .any(|node| node.role == crate::ZsAccessibilityRole::Navigation));
-            assert!(semantics
-                .iter()
-                .any(|node| node.role == crate::ZsAccessibilityRole::Log));
-            assert!(semantics
-                .iter()
-                .any(|node| node.role == crate::ZsAccessibilityRole::TextBox));
-            assert!(semantics
-                .iter()
-                .any(|node| node.role == crate::ZsAccessibilityRole::Complementary));
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::Article
-                    && node.label.as_deref() == Some("ZSUI. Ready")
-            }));
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::ListItem
-                    && node.label.as_deref() == Some("Thread")
-                    && node.selected == Some(true)
-            }));
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::Tab
-                    && node.label.as_deref() == Some("Details")
-                    && node.selected == Some(true)
-            }));
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::TabPanel
-                    && node.label.as_deref() == Some("Details")
-            }));
-            assert!(semantics.iter().any(|node| {
-                node.role == crate::ZsAccessibilityRole::Button
-                    && node.label.as_deref() == Some("Send")
-                    && node.enabled
-            }));
-            assert!(semantics
-                .iter()
-                .filter(|node| node.role == crate::ZsAccessibilityRole::Button)
-                .count()
-                >= 6);
-        }
-    }
-
-    #[test]
     fn navigation_view_owns_platform_selection_and_keeps_common_overrides() {
         let item = crate::WidgetId::new(501);
         let footer = crate::WidgetId::new(502);
@@ -1321,8 +1142,7 @@ mod data_tests {
     fn public_navigation_view_keeps_platform_selection_out_of_its_payload() {
         let shell = crate::WidgetId::new(506);
         let navigation = navigation_view(
-            ZsNavigationViewSpec::<()>::new("Library", "12 items")
-                .content(shell, spacer()),
+            ZsNavigationViewSpec::<()>::new("Library", "12 items").content(shell, spacer()),
         );
 
         assert_eq!(navigation.platform_style_override, None);
@@ -1358,10 +1178,7 @@ mod data_tests {
             None,
             Dp::new(560.0),
         );
-        assert_eq!(
-            windows_expanded.mode,
-            ZsNavigationViewLayoutMode::Expanded
-        );
+        assert_eq!(windows_expanded.mode, ZsNavigationViewLayoutMode::Expanded);
         assert_eq!(windows_expanded.pane_bounds.unwrap().width, 320);
         assert_eq!(windows_expanded.content_bounds.x, 320);
 
@@ -1371,10 +1188,7 @@ mod data_tests {
             None,
             Dp::new(560.0),
         );
-        assert_eq!(
-            windows_compact.mode,
-            ZsNavigationViewLayoutMode::Compact
-        );
+        assert_eq!(windows_compact.mode, ZsNavigationViewLayoutMode::Compact);
         assert_eq!(windows_compact.pane_bounds.unwrap().width, 48);
         assert_eq!(windows_compact.content_bounds.x, 48);
 
@@ -1384,10 +1198,7 @@ mod data_tests {
             None,
             Dp::new(560.0),
         );
-        assert_eq!(
-            windows_minimal.mode,
-            ZsNavigationViewLayoutMode::Collapsed
-        );
+        assert_eq!(windows_minimal.mode, ZsNavigationViewLayoutMode::Collapsed);
         assert_eq!(windows_minimal.pane_bounds, None);
         assert_eq!(windows_minimal.header_bounds.unwrap().height, 52);
         assert_eq!(windows_minimal.content_bounds.y, 52);
@@ -1398,10 +1209,7 @@ mod data_tests {
             None,
             Dp::new(560.0),
         );
-        assert_eq!(
-            macos_collapsed.mode,
-            ZsNavigationViewLayoutMode::Collapsed
-        );
+        assert_eq!(macos_collapsed.mode, ZsNavigationViewLayoutMode::Collapsed);
         let macos_expanded = layout(
             800,
             crate::ZsBaseControlPlatformStyle::Macos,

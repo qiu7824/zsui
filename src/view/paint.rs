@@ -114,20 +114,15 @@ impl<Msg: Clone> ViewNode<Msg> {
                 })
                 .unwrap_or(0);
             let resolved_content_px = plan.content_bounds.height.max(natural_content_px);
-            self.resolved_scroll_content_height = Dp::new(
-                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
-            );
+            self.resolved_scroll_content_height =
+                Dp::new(resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
             let max_offset = scroll_max_offset_y(
                 Some(plan.content_bounds),
                 Some(self.resolved_scroll_content_height),
                 cx.dpi,
             );
-            self.adaptive_scroll_offset_y = Dp::new(
-                self.adaptive_scroll_offset_y
-                    .0
-                    .max(0.0)
-                    .min(max_offset.0),
-            );
+            self.adaptive_scroll_offset_y =
+                Dp::new(self.adaptive_scroll_offset_y.0.max(0.0).min(max_offset.0));
             (natural_content_px > plan.content_bounds.height).then_some(Rect {
                 x: plan.content_bounds.x,
                 y: plan.content_bounds.y
@@ -205,9 +200,10 @@ impl<Msg: Clone> ViewNode<Msg> {
             _ => unreachable!("flyout layout requires a flyout node"),
         };
         if open {
-            if let (Some(content), Some(target_bounds)) =
-                (overlay_children.first_mut(), page.widget_layout_bounds(target))
-            {
+            if let (Some(content), Some(target_bounds)) = (
+                overlay_children.first_mut(),
+                page.widget_layout_bounds(target),
+            ) {
                 let plan = crate::zs_flyout_render_plan(
                     cx.bounds,
                     target_bounds,
@@ -231,32 +227,26 @@ impl<Msg: Clone> ViewNode<Msg> {
     fn layout_virtual_list(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
-        let (
-            total_count,
-            row_height,
-            item_metrics,
-            overscan_rows,
-            row_indices,
-            current_offset,
-        ) = match &self.kind {
-            ViewNodeKind::VirtualList {
-                total_count,
-                row_height,
-                item_metrics,
-                overscan_rows,
-                row_indices,
-                offset_y,
-                ..
-            } => (
-                *total_count,
-                *row_height,
-                item_metrics.clone(),
-                *overscan_rows,
-                row_indices.clone(),
-                *offset_y,
-            ),
-            _ => unreachable!("virtual list layout requires a virtual list node"),
-        };
+        let (total_count, row_height, item_metrics, overscan_rows, row_indices, current_offset) =
+            match &self.kind {
+                ViewNodeKind::VirtualList {
+                    total_count,
+                    row_height,
+                    item_metrics,
+                    overscan_rows,
+                    row_indices,
+                    offset_y,
+                    ..
+                } => (
+                    *total_count,
+                    *row_height,
+                    item_metrics.clone(),
+                    *overscan_rows,
+                    row_indices.clone(),
+                    *offset_y,
+                ),
+                _ => unreachable!("virtual list layout requires a virtual list node"),
+            };
         let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
         let viewport_height =
             Dp::new(content_bounds.height.max(0) as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
@@ -318,29 +308,24 @@ impl<Msg: Clone> ViewNode<Msg> {
         self.bounds = Some(cx.bounds);
         self.layout_dpi = cx.dpi;
         let platform = self.resolved_platform_style();
-        let (
-            item_count,
-            footer_count,
-            pane_open,
-            pane_width,
-            minimum_content_width,
-        ) = match &self.kind {
-            ViewNodeKind::NavigationView {
-                item_count,
-                footer_count,
-                pane_open,
-                pane_width,
-                minimum_content_width,
-                ..
-            } => (
-                *item_count,
-                *footer_count,
-                *pane_open,
-                *pane_width,
-                *minimum_content_width,
-            ),
-            _ => unreachable!("navigation layout requires a navigation view node"),
-        };
+        let (item_count, footer_count, pane_open, pane_width, minimum_content_width) =
+            match &self.kind {
+                ViewNodeKind::NavigationView {
+                    item_count,
+                    footer_count,
+                    pane_open,
+                    pane_width,
+                    minimum_content_width,
+                    ..
+                } => (
+                    *item_count,
+                    *footer_count,
+                    *pane_open,
+                    *pane_width,
+                    *minimum_content_width,
+                ),
+                _ => unreachable!("navigation layout requires a navigation view node"),
+            };
         let layout = zs_navigation_view_layout(
             cx.bounds,
             platform,
@@ -352,7 +337,9 @@ impl<Msg: Clone> ViewNode<Msg> {
         );
         if layout.mode == ZsNavigationViewLayoutMode::Expanded {
             if let ViewNodeKind::NavigationView { pane_open, .. } = &mut self.kind {
-                *pane_open = false;
+                if self.navigation_open_source.is_none() {
+                    *pane_open = false;
+                }
             }
         }
         for child in &mut self.children {
@@ -430,11 +417,11 @@ impl<Msg: Clone> ViewNode<Msg> {
                     break;
                 }
                 let mut item_cx = cx.child(Rect {
-                        x: layout.item_bounds.x,
-                        y,
-                        width: layout.item_bounds.width,
-                        height,
-                    });
+                    x: layout.item_bounds.x,
+                    y,
+                    width: layout.item_bounds.width,
+                    height,
+                });
                 children.extend(item.layout(&mut item_cx).children);
                 y = y.saturating_add(height).saturating_add(item_gap);
             }
@@ -442,11 +429,11 @@ impl<Msg: Clone> ViewNode<Msg> {
                 let mut footer_y = footer_top;
                 for (item, height) in footer_items.iter_mut().zip(footer_heights) {
                     let mut item_cx = cx.child(Rect {
-                            x: layout.footer_bounds.x,
-                            y: footer_y,
-                            width: layout.footer_bounds.width,
-                            height,
-                        });
+                        x: layout.footer_bounds.x,
+                        y: footer_y,
+                        width: layout.footer_bounds.width,
+                        height,
+                    });
                     children.extend(item.layout(&mut item_cx).children);
                     footer_y = footer_y.saturating_add(height).saturating_add(footer_gap);
                 }
@@ -468,12 +455,8 @@ impl<Msg: Clone> ViewNode<Msg> {
             ViewNodeKind::SplitView { spec, .. } => *spec,
             _ => unreachable!("split-view layout requires a SplitView node"),
         };
-        let layout = crate::zs_split_view_layout(
-            cx.bounds,
-            spec,
-            self.resolved_platform_style(),
-            cx.dpi,
-        );
+        let layout =
+            crate::zs_split_view_layout(cx.bounds, spec, self.resolved_platform_style(), cx.dpi);
         for child in &mut self.children {
             child.clear_layout_bounds();
         }
@@ -501,28 +484,12 @@ impl<Msg: Clone> ViewNode<Msg> {
 
 impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     fn layout(&mut self, cx: &mut ViewLayoutCx) -> LayoutOutput {
+        #[cfg(feature = "resize")]
+        self.normalize_resize_constraints();
         if cx.is_root() {
             self.assign_automatic_ids();
         }
-        #[cfg(feature = "workbench")]
-        if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
-            self.bounds = Some(cx.bounds);
-            self.layout_dpi = cx.dpi;
-            self.cache_workbench_layout(cx);
-            let children = self
-                .id
-                .map(|id| {
-                    vec![LayoutNode {
-                        component: id.into(),
-                        bounds: cx.bounds,
-                    }]
-                })
-                .unwrap_or_default();
-            return LayoutOutput {
-                bounds: cx.bounds,
-                children,
-            };
-        }
+
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             self.bounds = Some(cx.bounds);
@@ -573,11 +540,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
 
         let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
         #[cfg(feature = "list")]
-        let content_bounds = horizontal_inset_bounds(
-            content_bounds,
-            self.list_item_horizontal_inset,
-            cx.dpi,
-        );
+        let content_bounds =
+            horizontal_inset_bounds(content_bounds, self.list_item_horizontal_inset, cx.dpi);
         #[cfg(feature = "scroll")]
         if let ViewNodeKind::Scroll {
             offset_y,
@@ -605,9 +569,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 .height
                 .max(natural_content_px)
                 .max(explicit_content_px);
-            self.resolved_scroll_content_height = Dp::new(
-                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
-            );
+            self.resolved_scroll_content_height =
+                Dp::new(resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
             let max_offset = scroll_max_offset_y(
                 Some(content_bounds),
                 Some(self.resolved_scroll_content_height),
@@ -638,20 +601,15 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             )
             .saturating_sub(padding.saturating_mul(2));
             let resolved_content_px = content_bounds.height.max(natural_content_px);
-            self.resolved_scroll_content_height = Dp::new(
-                resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON),
-            );
+            self.resolved_scroll_content_height =
+                Dp::new(resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
             let max_offset = scroll_max_offset_y(
                 Some(content_bounds),
                 Some(self.resolved_scroll_content_height),
                 cx.dpi,
             );
-            self.adaptive_scroll_offset_y = Dp::new(
-                self.adaptive_scroll_offset_y
-                    .0
-                    .max(0.0)
-                    .min(max_offset.0),
-            );
+            self.adaptive_scroll_offset_y =
+                Dp::new(self.adaptive_scroll_offset_y.0.max(0.0).min(max_offset.0));
             Rect {
                 x: content_bounds.x,
                 y: content_bounds.y
@@ -695,115 +653,18 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
-        #[cfg(feature = "workbench")]
-        if matches!(self.kind, ViewNodeKind::Workbench { .. }) {
-            let Some(root) = self.id else {
+        #[cfg(feature = "resize")]
+        if let ViewEvent::Resized {
+            widget,
+            target,
+            extent,
+        } = event
+        {
+            if self.id == Some(*widget) {
+                self.apply_resize(*target, *extent, cx);
                 return;
-            };
-            let Some(bounds) = self.bounds else {
-                return;
-            };
-            let interaction = if let ViewNodeKind::Workbench { spec, .. } = &self.kind {
-                let layout = self.resolved_workbench_layout(spec, bounds);
-                match event {
-                    ViewEvent::Click { widget } => layout
-                        .regions
-                        .iter()
-                        .find(|region| {
-                            region.enabled
-                                && crate::workbench::zs_workbench_region_widget_id(root, region)
-                                    == *widget
-                        })
-                        .and_then(crate::zs_workbench_event_for_region),
-                    ViewEvent::TextChanged { widget, value } => layout
-                        .regions
-                        .iter()
-                        .any(|region| {
-                            region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
-                                && crate::workbench::zs_workbench_region_widget_id(root, region)
-                                    == *widget
-                        })
-                        .then(|| crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft {
-                            draft: value.clone(),
-                        }),
-                    #[cfg(feature = "textbox")]
-                    ViewEvent::TextEdited { widget, value, .. } => layout
-                        .regions
-                        .iter()
-                        .any(|region| {
-                            region.kind == crate::ZsWorkbenchRegionKind::ComposerInput
-                                && crate::workbench::zs_workbench_region_widget_id(root, region)
-                                    == *widget
-                        })
-                        .then(|| crate::ZsWorkbenchInteractionEvent::ChangeComposerDraft {
-                            draft: value.clone(),
-                        }),
-                    #[cfg(feature = "scroll")]
-                    ViewEvent::ScrollBy { widget, delta_y } => {
-                        let delta = delta_y.to_px(self.layout_dpi).round_i32();
-                        if *widget == root {
-                            let next = (spec.message_scroll_y + delta)
-                                .clamp(0, layout.message_scroll_max);
-                            Some(crate::ZsWorkbenchInteractionEvent::ScrollMessages {
-                                offset_y: next,
-                            })
-                        } else if layout.regions.iter().any(|region| {
-                            region.kind == crate::ZsWorkbenchRegionKind::SidebarViewport
-                                && crate::workbench::zs_workbench_region_widget_id(root, region)
-                                    == *widget
-                        }) {
-                            let next = (spec.sidebar.scroll_y + delta)
-                                .clamp(0, layout.sidebar_scroll_max);
-                            Some(crate::ZsWorkbenchInteractionEvent::ScrollSidebar {
-                                offset_y: next,
-                            })
-                        } else if layout.regions.iter().any(|region| {
-                            region.kind == crate::ZsWorkbenchRegionKind::InspectorViewport
-                                && crate::workbench::zs_workbench_region_widget_id(root, region)
-                                    == *widget
-                        }) {
-                            let current = spec
-                                .inspector
-                                .as_ref()
-                                .map(|inspector| inspector.scroll_y)
-                                .unwrap_or(0);
-                            let next = (current + delta).clamp(0, layout.inspector_scroll_max);
-                            Some(crate::ZsWorkbenchInteractionEvent::ScrollInspector {
-                                offset_y: next,
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                }
-            } else {
-                None
-            };
-            if let Some(interaction) = interaction {
-                let owner_applies_interaction = self.workbench_owner_applies_interaction;
-                if let ViewNodeKind::Workbench {
-                    spec,
-                    on_interaction,
-                } = &mut self.kind
-                {
-                    if !owner_applies_interaction {
-                        crate::workbench::zs_workbench_apply_interaction(spec, &interaction);
-                    }
-                    if let Some(message) = on_interaction
-                        .as_ref()
-                        .and_then(|mapper| mapper.map(interaction))
-                    {
-                        cx.emit(message);
-                    }
-                }
-                if !owner_applies_interaction {
-                    self.refresh_workbench_layout();
-                }
             }
-            return;
         }
-
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             let mut handled = false;
@@ -920,9 +781,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             handled = true;
                         }
                     }
-                    ViewEvent::DismissPopupOverlays { except }
-                        if *open && self.id != *except =>
-                    {
+                    ViewEvent::DismissPopupOverlays { except } if *open && self.id != *except => {
                         *open = false;
                         *highlighted = None;
                         open_submenus.clear();
@@ -960,10 +819,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 route_content = *open;
                 let reason = match event {
                     ViewEvent::FlyoutDismissed { widget, reason }
-                        if *open && self.id == Some(*widget) => Some(*reason),
-                    ViewEvent::DismissPopupOverlays { except }
-                        if *open && self.id != *except =>
+                        if *open && self.id == Some(*widget) =>
                     {
+                        Some(*reason)
+                    }
+                    ViewEvent::DismissPopupOverlays { except } if *open && self.id != *except => {
                         Some(crate::ZsFlyoutDismissReason::LightDismiss)
                     }
                     _ => None,
@@ -1410,11 +1270,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         let selected_index = selected.and_then(|selected| {
                             tabs.iter().position(|candidate| candidate.id == selected)
                         });
-                        let tab_bounds = tab_layout_bounds(
-                            bounds,
-                            self.style.padding,
-                            self.layout_dpi,
-                        );
+                        let tab_bounds =
+                            tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
                         return crate::zs_tab_view_render_plan_for_tabs(
                             tab_bounds,
                             tabs,
@@ -1795,11 +1652,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
             match (&mut self.kind, event) {
                 #[cfg(feature = "label")]
-                (
-                    ViewNodeKind::NavigationView { pane_open, .. },
-                    ViewEvent::Click { .. },
-                ) => {
+                (ViewNodeKind::NavigationView { pane_open, .. }, ViewEvent::Click { .. }) => {
                     *pane_open = !*pane_open;
+                    #[cfg(feature = "resize")]
+                    if let Some(callback) = self.on_navigation_open_change.as_ref() {
+                        cx.emit(callback.map(*pane_open));
+                    }
                 }
                 #[cfg(feature = "button")]
                 (
@@ -1815,19 +1673,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     }
                 }
                 #[cfg(feature = "canvas")]
-                (
-                    ViewNodeKind::Canvas { on_click, .. },
-                    ViewEvent::Click { .. },
-                ) => {
+                (ViewNodeKind::Canvas { on_click, .. }, ViewEvent::Click { .. }) => {
                     if let Some(message) = on_click.clone() {
                         cx.emit(message);
                     }
                 }
                 #[cfg(feature = "canvas")]
-                (
-                    ViewNodeKind::Canvas { on_pointer, .. },
-                    ViewEvent::CanvasPointer { event },
-                ) => {
+                (ViewNodeKind::Canvas { on_pointer, .. }, ViewEvent::CanvasPointer { event }) => {
                     if let Some(message) = on_pointer {
                         cx.emit(message.map(*event));
                     }
@@ -2055,10 +1907,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         }
                     }
                     if let Some(message) = on_query_submit {
-                        cx.emit(message.map(crate::ZsAutoSuggestSubmission::new(
-                            query.clone(),
-                            chosen,
-                        )));
+                        cx.emit(
+                            message.map(crate::ZsAutoSuggestSubmission::new(query.clone(), chosen)),
+                        );
                     }
                     let was_expanded = *expanded;
                     *expanded = false;
@@ -2093,10 +1944,12 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         };
                         if changed {
                             if let Some(message) = on_expansion_change {
-                                cx.emit(message.map(crate::ZsTreeExpansionChange::new(
-                                    *node,
-                                    *next_expanded,
-                                )));
+                                cx.emit(
+                                    message.map(crate::ZsTreeExpansionChange::new(
+                                        *node,
+                                        *next_expanded,
+                                    )),
+                                );
                             }
                         }
                     }
@@ -2304,8 +2157,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         ..
                     },
                     ViewEvent::NumberBoxValueChanged {
-                        value: next_value,
-                        ..
+                        value: next_value, ..
                     },
                 ) => {
                     let requested_value = next_value
@@ -2622,11 +2474,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             )
                         })
                         .unwrap_or(Dp::new(0.0));
-                    let content_height = items_repeater_content_height(
-                        *total_count,
-                        *row_height,
-                        item_metrics,
-                    );
+                    let content_height =
+                        items_repeater_content_height(*total_count, *row_height, item_metrics);
                     let maximum_offset = (content_height.0 - viewport_height.0).max(0.0);
                     let ratio = if ratio.is_finite() {
                         ratio.clamp(0.0, 1.0)
@@ -2691,22 +2540,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         }
 
         match &self.kind {
-            #[cfg(feature = "workbench")]
-            ViewNodeKind::Workbench { spec, .. } => {
-                let layout = self.resolved_workbench_layout(spec, bounds);
-                let plan = crate::zs_workbench_native_draw_plan(spec, layout.as_ref());
-                for command in plan.commands {
-                    cx.draw(command);
-                }
-                cx.finish_node(self);
-                return;
-            }
             #[cfg(feature = "badge")]
             ViewNodeKind::Badge { content, tone } => {
-                let profile =
-                    crate::platform_component_profile::PlatformBadgeProfile::for_platform(
-                        self.resolved_platform_style(),
-                    );
+                let profile = crate::platform_component_profile::PlatformBadgeProfile::for_platform(
+                    self.resolved_platform_style(),
+                );
                 let (desired_width, desired_height) =
                     profile.size(*content, cx.plan.typography_scale());
                 let badge_width = desired_width
@@ -2820,23 +2658,13 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "icon")]
             ViewNodeKind::Icon { icon, size, color } => {
-                let icon_size = crate::platform_component_profile::PlatformIconProfile::for_platform(
-                    self.resolved_platform_style(),
-                )
-                .size(*size)
-                .to_px(cx.dpi)
-                .round_i32()
-                .max(1)
-                .min(bounds.width.min(bounds.height).max(1));
                 cx.draw(NativeDrawCommand::Icon(
-                    crate::NativeDrawIconCommand::new(
+                    crate::NativeDrawIconCommand::in_slot_for_platform(
                         *icon,
-                        Rect {
-                            x: bounds.x + bounds.width.saturating_sub(icon_size) / 2,
-                            y: bounds.y + bounds.height.saturating_sub(icon_size) / 2,
-                            width: icon_size,
-                            height: icon_size,
-                        },
+                        bounds,
+                        self.icon_role.unwrap_or(size.role()),
+                        self.resolved_platform_style(),
+                        cx.dpi,
                         crate::NativeIconColorMode::ThemeAware,
                     )
                     .with_color(*color),
@@ -3006,15 +2834,10 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             ViewNodeKind::Text { text, style } => {
                 let bounds = padded_bounds(bounds, self.style.padding, cx.dpi);
                 #[cfg(feature = "list")]
-                let bounds = horizontal_inset_bounds(
-                    bounds,
-                    self.list_item_horizontal_inset,
-                    cx.dpi,
-                );
+                let bounds =
+                    horizontal_inset_bounds(bounds, self.list_item_horizontal_inset, cx.dpi);
                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
-                    text,
-                    bounds,
-                    *style,
+                    text, bounds, *style,
                 )));
             }
             #[cfg(feature = "image-preview")]
@@ -3131,8 +2954,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         // AppKit uses a clean bezel without an outline, and
                         // Adwaita keeps a raised surface with a subtle edge.
                         let fill = NativeDrawFill::Role(component_profile.button.fill);
-                        let stroke =
-                            component_profile.button.stroke.map(NativeDrawFill::Role);
+                        let stroke = component_profile.button.stroke.map(NativeDrawFill::Role);
                         cx.draw(NativeDrawCommand::RoundRect {
                             rect: bounds,
                             fill,
@@ -3228,16 +3050,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             .round_i32()
                             .max(1)
                             .min(bounds.height.max(1));
-                        let padding = base
-                            .button_padding_left
-                            .to_px(cx.dpi)
-                            .round_i32()
-                            .max(0);
-                        let content_gap = metrics
-                            .content_gap
-                            .to_px(cx.dpi)
-                            .round_i32()
-                            .max(0);
+                        let padding = base.button_padding_left.to_px(cx.dpi).round_i32().max(0);
+                        let content_gap = metrics.content_gap.to_px(cx.dpi).round_i32().max(0);
                         let icon_bounds = Rect {
                             x: if *show_label {
                                 bounds.x.saturating_add(padding)
@@ -3316,13 +3130,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             ),
                         });
 
-                        let left_padding = metrics
-                            .header_padding_left
-                            .to_px(cx.dpi)
-                            .round_i32()
-                            .max(0);
-                        let chevron_gap =
-                            metrics.chevron_gap.to_px(cx.dpi).round_i32().max(0);
+                        let left_padding =
+                            metrics.header_padding_left.to_px(cx.dpi).round_i32().max(0);
+                        let chevron_gap = metrics.chevron_gap.to_px(cx.dpi).round_i32().max(0);
                         let chevron_button_size = metrics
                             .chevron_button_size
                             .to_px(cx.dpi)
@@ -3346,9 +3156,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 .saturating_add(bounds.width)
                                 .saturating_sub(right_margin)
                                 .saturating_sub(chevron_button_size),
-                            y: bounds
-                                .y
-                                .saturating_add(bounds.height.saturating_sub(chevron_button_size) / 2),
+                            y: bounds.y.saturating_add(
+                                bounds.height.saturating_sub(chevron_button_size) / 2,
+                            ),
                             width: chevron_button_size,
                             height: chevron_button_size,
                         };
@@ -3532,15 +3342,14 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     crate::ZsPasswordBoxPlatformStyle::current(),
                     cx.dpi,
                 );
-                for command in
-                    crate::zs_password_box_native_draw_plan_with_placeholder(
-                        &plan,
-                        value,
-                        *reveal_mode,
-                        false,
-                        placeholder.as_deref(),
-                    )
-                    .commands
+                for command in crate::zs_password_box_native_draw_plan_with_placeholder(
+                    &plan,
+                    value,
+                    *reveal_mode,
+                    false,
+                    placeholder.as_deref(),
+                )
+                .commands
                 {
                     cx.draw(command);
                 }
@@ -3574,11 +3383,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     } else {
                         ColorRole::Border
                     })),
-                    radius: metrics
-                        .button_radius
-                        .to_px(cx.dpi)
-                        .round_i32()
-                        .max(1),
+                    radius: metrics.button_radius.to_px(cx.dpi).round_i32().max(1),
                 });
                 if *checked {
                     let glyph_size = Dp::new(12.0)

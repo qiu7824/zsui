@@ -35,22 +35,19 @@ pub(crate) fn resolve_windows_win32_view_smoke_input(
     hwnd: windows_sys::Win32::Foundation::HWND,
     input: &crate::NativeViewSmokeInput,
 ) -> crate::NativeViewSmokeInput {
-    let points = window_view_input_routes()
-        .lock()
-        .ok()
-        .and_then(|routes| {
-            routes
-                .iter()
-                .find(|record| record.hwnd == hwnd as isize)
-                .and_then(|record| match input {
-                    crate::NativeViewSmokeInput::ClickWidget(widget)
-                    | crate::NativeViewSmokeInput::DragWidget(widget) => record
-                        .route
-                        .shared_runtime
-                        .native_proof_widget_points(*widget),
-                    _ => None,
-                })
-        });
+    let points = window_view_input_routes().lock().ok().and_then(|routes| {
+        routes
+            .iter()
+            .find(|record| record.hwnd == hwnd as isize)
+            .and_then(|record| match input {
+                crate::NativeViewSmokeInput::ClickWidget(widget)
+                | crate::NativeViewSmokeInput::DragWidget(widget) => record
+                    .route
+                    .shared_runtime
+                    .native_proof_widget_points(*widget),
+                _ => None,
+            })
+    });
     match (input, points) {
         (crate::NativeViewSmokeInput::ClickWidget(_), Some((point, _, _))) => {
             crate::NativeViewSmokeInput::Click(point)
@@ -171,7 +168,8 @@ impl WindowsWin32ViewInputRoute {
     }
 
     pub fn window_close_request_command(mut self, command: Option<Command>) -> Self {
-        self.shared_runtime.set_window_close_request_command(command);
+        self.shared_runtime
+            .set_window_close_request_command(command);
         self
     }
 
@@ -515,6 +513,9 @@ pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
     let mut routes = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned");
+    for record in routes.iter_mut().filter(|record| record.hwnd == hwnd) {
+        record.route.shared_runtime.shutdown_dispatch();
+    }
     routes.retain(|record| record.hwnd != hwnd);
     completed_window_view_input_reports()
         .lock()
@@ -533,7 +534,8 @@ fn archive_windows_win32_window_view_input_report(hwnd: HWND) {
     let Some(index) = routes.iter().position(|record| record.hwnd == hwnd) else {
         return;
     };
-    let record = routes.remove(index);
+    let mut record = routes.remove(index);
+    record.route.shared_runtime.shutdown_dispatch();
     drop(routes);
     let mut completed = completed_window_view_input_reports()
         .lock()
@@ -549,13 +551,15 @@ pub fn clear_windows_win32_window_view_input_routes() {
     let mut routes = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned");
+    for record in routes.iter_mut() {
+        record.route.shared_runtime.shutdown_dispatch();
+    }
     routes.clear();
     completed_window_view_input_reports()
         .lock()
         .expect("completed window view input report registry should not be poisoned")
         .clear();
 }
-
 
 pub fn windows_win32_window_view_input_report(
     hwnd: HWND,
@@ -628,12 +632,7 @@ pub(crate) fn windows_win32_window_semantic_accessibility_focus(
         .expect("window view input route registry should not be poisoned")
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
-        .and_then(|record| {
-            record
-                .route
-                .shared_runtime
-                .semantic_accessibility_focus()
-        })
+        .and_then(|record| record.route.shared_runtime.semantic_accessibility_focus())
 }
 
 #[cfg(feature = "accessibility")]
@@ -660,7 +659,7 @@ pub(crate) fn invoke_windows_win32_window_accessible_semantic_node(
 
 #[cfg(all(
     feature = "accessibility",
-    any(feature = "slider", feature = "number-box")
+    any(feature = "slider", feature = "number-box", feature = "resize")
 ))]
 pub(crate) fn set_windows_win32_window_accessible_semantic_numeric_value(
     hwnd: HWND,
@@ -687,11 +686,8 @@ pub(crate) fn windows_win32_window_menu_flyout_accessibility_snapshot(
         let record = routes.iter().find(|record| record.hwnd == hwnd as isize)?;
         let interaction = record.route.shared_runtime.current_interaction_plan()?;
         let widget = interaction.hit_targets.iter().find_map(|target| {
-            matches!(
-                target.kind,
-                crate::ViewHitTargetKind::MenuFlyoutItem { .. }
-            )
-            .then_some(target.widget)
+            matches!(target.kind, crate::ViewHitTargetKind::MenuFlyoutItem { .. })
+                .then_some(target.widget)
         })?;
         let (_, menu) = record
             .route
@@ -722,7 +718,12 @@ pub(crate) fn windows_win32_window_tab_accessibility_snapshots(
         .expect("window view input route registry should not be poisoned")
         .iter()
         .find(|record| record.hwnd == hwnd as isize)
-        .map(|record| record.route.shared_runtime.tab_accessibility_snapshots(&plan))
+        .map(|record| {
+            record
+                .route
+                .shared_runtime
+                .tab_accessibility_snapshots(&plan)
+        })
         .unwrap_or_default()
 }
 
@@ -754,8 +755,14 @@ pub(crate) fn select_windows_win32_window_accessible_tab(hwnd: HWND, tab: crate:
     };
     dispatch_windows_win32_window_view_input(hwnd, |route| {
         route.dispatch_click(crate::Point {
-            x: target.bounds.x.saturating_add(target.bounds.width.max(1) / 2),
-            y: target.bounds.y.saturating_add(target.bounds.height.max(1) / 2),
+            x: target
+                .bounds
+                .x
+                .saturating_add(target.bounds.width.max(1) / 2),
+            y: target
+                .bounds
+                .y
+                .saturating_add(target.bounds.height.max(1) / 2),
         })
     })
     .is_some_and(|report| report.handled)
@@ -1125,13 +1132,7 @@ fn dispatch_windows_win32_window_view_key_down_with_modifiers(
     super_key: bool,
 ) -> Option<WindowsWin32ViewInputDispatchReport> {
     dispatch_windows_win32_window_view_input(hwnd, |route| {
-        route.dispatch_key_down_with_all_modifiers(
-            virtual_key,
-            shift,
-            control,
-            alt,
-            super_key,
-        )
+        route.dispatch_key_down_with_all_modifiers(virtual_key, shift, control, alt, super_key)
     })
 }
 
@@ -1142,7 +1143,6 @@ pub fn dispatch_windows_win32_window_view_blur(
 }
 
 pub fn dispatch_windows_win32_window_view_scroll(
-
     hwnd: HWND,
     point: crate::Point,
     delta_y: crate::Dp,
@@ -1217,11 +1217,12 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     let (
         mut report,
         mut draw_plan,
-        quit_requested,
+        mut quit_requested,
         app_executor,
         app_commands,
         ui_executor,
         ui_commands,
+        dispatch_turn,
         mut poll_interval_ms,
     ) = {
         let mut routes = window_view_input_routes()
@@ -1231,8 +1232,17 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
         let report = dispatch(&mut record.route);
         let draw_plan = record.route.take_pending_draw_plan();
         let quit_requested = record.route.take_quit_requested();
-        let (app_executor, app_commands) = record.route.take_pending_app_command_dispatch();
-        let (ui_executor, ui_commands) = record.route.take_pending_ui_command_dispatch();
+        let dispatch_turn = record.route.begin_deferred_dispatch();
+        let (app_executor, app_commands) = if dispatch_turn.is_some() {
+            record.route.take_pending_app_command_dispatch()
+        } else {
+            (None, Vec::new())
+        };
+        let (ui_executor, ui_commands) = if dispatch_turn.is_some() {
+            record.route.take_pending_ui_command_dispatch()
+        } else {
+            (None, Vec::new())
+        };
         let poll_interval_ms = record.route.background_poll_interval_ms();
         (
             report,
@@ -1242,13 +1252,59 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
             app_commands,
             ui_executor,
             ui_commands,
+            dispatch_turn,
             poll_interval_ms,
         )
     };
 
-    let app_effect_executed =
-        dispatch_windows_win32_app_commands(&mut report, app_executor, app_commands);
-    dispatch_windows_win32_ui_commands(&mut report, ui_executor, ui_commands);
+    let app_effect_executed = dispatch_windows_win32_app_commands(
+        &mut report,
+        app_executor,
+        app_commands,
+        dispatch_turn.as_ref(),
+    );
+    dispatch_windows_win32_ui_commands(
+        &mut report,
+        ui_executor,
+        ui_commands,
+        dispatch_turn.as_ref(),
+    );
+
+    // Pop only when a turn has budget; nested modal loops cannot start a
+    // second dispatcher, and each result is delivered before the next request.
+    if dispatch_turn.is_some() {
+        let mut budget = crate::dispatch_queue::DispatchTurnBudget::new();
+        while budget.take() {
+            let request = {
+                let mut routes = window_view_input_routes()
+                    .lock()
+                    .expect("window view input route registry should not be poisoned");
+                routes
+                    .iter_mut()
+                    .find(|record| record.hwnd == hwnd_value)
+                    .and_then(|record| record.route.pop_pending_app_effect())
+            };
+            let Some(request) = request else {
+                break;
+            };
+            if !request.try_begin() {
+                continue;
+            }
+            let outcome = crate::app_effect::execute_native_app_effect(request.effect());
+            let mut routes = window_view_input_routes()
+                .lock()
+                .expect("window view input route registry should not be poisoned");
+            let Some(record) = routes.iter_mut().find(|record| record.hwnd == hwnd_value) else {
+                break;
+            };
+            report.merge(record.route.dispatch_app_effect_outcome(request, outcome));
+            quit_requested |= record.route.take_quit_requested();
+            if let Some(plan) = record.route.take_pending_draw_plan() {
+                draw_plan = Some(plan);
+            }
+        }
+    }
+    drop(dispatch_turn);
     if let Some(record) = window_view_input_routes()
         .lock()
         .expect("window view input route registry should not be poisoned")
@@ -1265,9 +1321,9 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
                 if let Some(refreshed_plan) = record.route.take_pending_draw_plan() {
                     draw_plan = Some(refreshed_plan);
                 }
-                poll_interval_ms = record.route.background_poll_interval_ms();
             }
         }
+        poll_interval_ms = record.route.background_poll_interval_ms();
         record.report.merge(report.clone());
     }
 
@@ -1347,6 +1403,7 @@ fn dispatch_windows_win32_app_commands(
     report: &mut WindowsWin32ViewInputDispatchReport,
     executor: Option<SharedAppCommandExecutor>,
     commands: Vec<Command>,
+    turn: Option<&crate::app_effect::EffectTurn>,
 ) -> bool {
     report
         .app_command_names
@@ -1357,6 +1414,9 @@ fn dispatch_windows_win32_app_commands(
     };
     let mut executed = false;
     for command in commands {
+        if turn.is_some_and(|turn| !turn.is_alive()) {
+            break;
+        }
         match executor.dispatch(command) {
             Ok(events) => {
                 executed = true;
@@ -1376,12 +1436,16 @@ fn dispatch_windows_win32_ui_commands(
     report: &mut WindowsWin32ViewInputDispatchReport,
     executor: Option<SharedUiCommandExecutor>,
     commands: Vec<UiCommand>,
+    turn: Option<&crate::app_effect::EffectTurn>,
 ) {
     let Some(executor) = executor else {
         report.ui_command_unhandled_count += commands.len();
         return;
     };
     for command in commands {
+        if turn.is_some_and(|turn| !turn.is_alive()) {
+            break;
+        }
         match executor.dispatch(command) {
             Ok(events) => {
                 report.ui_command_executed_count += 1;

@@ -31,6 +31,7 @@ impl DesktopRuntimeBackend for Backend {
             None,
             None,
             &[],
+            None,
         )
         .map(|_| ())
     }
@@ -53,19 +54,16 @@ impl DesktopRuntimeBackend for Backend {
                 .as_deref()
                 .map(std::path::Path::new),
             &request.options.native_view_inputs,
+            request.options.native_window_resize,
         )?;
-        let native_window_resize_error = request
-            .options
-            .native_window_resize
-            .map(|_| "GTK4 smoke resize proof is not connected".to_string());
         complete_native_smoke(
             request,
             DesktopNativeSmokeOutcome {
                 created_window_count: run.created_window_count,
                 proof_input_reports: run.proof_input_reports,
                 native_view_capture: run.native_view_capture,
-                native_window_resize: None,
-                native_window_resize_error,
+                native_window_resize: run.native_window_resize,
+                native_window_resize_error: run.native_window_resize_error,
                 menu_command_routed: run.menu_command_routed,
                 menu_surface_created: false,
                 menu_surface_height: 0,
@@ -143,6 +141,13 @@ impl DesktopRuntimeBackend for Backend {
         spec: &SaveFileDialogSpec,
     ) -> ZsuiResult<Option<std::path::PathBuf>> {
         crate::linux_gtk_services::linux_gtk_save_file_dialog(spec)
+    }
+
+    fn pick_directory(
+        &mut self,
+        spec: &crate::DirectoryDialogSpec,
+    ) -> ZsuiResult<Option<std::path::PathBuf>> {
+        crate::linux_gtk_services::linux_gtk_pick_directory_dialog(spec)
     }
 
     fn show_native_dialog(&mut self, spec: &NativeDialogSpec) -> ZsuiResult<DialogResponse> {

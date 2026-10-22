@@ -31,7 +31,7 @@ fn main() {
                 window.destroy()?;
             }
             WebviewWindowBuilder::new(app, "invoice", WebviewUrl::App(route.into()))
-                .title("发票工作台 · Tauri 2")
+                .title("发票工具 · Tauri 2")
                 .inner_size(1000.0, 700.0)
                 .min_inner_size(820.0, 560.0)
                 .center()

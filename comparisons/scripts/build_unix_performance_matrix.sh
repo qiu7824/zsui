@@ -21,11 +21,11 @@ build_copy zsui-minimal examples/ui_performance_minimal \
   --example ui_performance_minimal \
   --no-default-features \
   --features window,button,label
-build_copy zsui-common examples/invoice_workbench \
+build_copy zsui-common examples/invoice_tool \
   --manifest-path "$workspace/Cargo.toml" \
-  --example invoice_workbench \
+  --example invoice_tool \
   --no-default-features \
-  --features window,workbench,list,dialog
+  --features window,shell,list,dialog
 build_copy zsui-full examples/component_gallery \
   --manifest-path "$workspace/Cargo.toml" \
   --example component_gallery \

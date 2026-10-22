@@ -12,8 +12,7 @@ platform host into a copy of a product application.
 
 1. Read `docs/ai-agent.md` only.
 2. Select one task pack with `scripts/ai-context.ps1 -Pack <id>`.
-   Use `app-authoring` when building a product UI. Component packs such as
-   `workbench` are for modifying or verifying that framework component, not
+   Use `app-authoring` when building a product UI. Component packs are for modifying or verifying that framework component, not
    templates selected from product keywords.
 3. Read only the pack's required paths and use `rg` inside them.
 4. Load optional paths only when a concrete question remains unanswered.
@@ -50,12 +49,12 @@ platform host into a copy of a product application.
 1. Classify the task boundary. For application UI authoring, read
    `docs/ai/app-authoring.md`, extract only the required regions/actions/data
    and begin with the smallest stable View composition. Do not infer a
-   navigation or workbench shell from words such as manager, console, service,
+   navigation shell from words such as manager, console, service,
    task, status, tool or log. Examples demonstrate capabilities and are not
    product templates.
 2. Identify the feature surface: app declaration audit, Cargo feature gate,
    window, tray/status menu, menu, hotkey, clipboard, settings, generic
-   navigation/card shell layout, conversation/task workbench, document-editor
+   navigation/card shell layout, document-editor
    shell, calculator engine/shell, component catalog, dialog, shell-open, file
    picker, runtime launch, adapter metadata or mobile host.
 3. Check the shared contract in `src/` before editing platform code.
@@ -71,13 +70,6 @@ platform host into a copy of a product application.
    product implements `ProductAdapterHost`.
    For switch-style input, reuse `zs_toggle_render_plan(...)` from
    `src/widget_render.rs`; its geometry must stay shared with shell accessories.
-   Only when a product explicitly requires both a message timeline and a
-   composer, compose
-   `ZsWorkbenchShellSpec` from `ZsMessageTimelineSpec`, `ZsComposerSpec` and
-   optional `ZsInspectorPanelSpec` instead of creating product-specific
-   conversation layout code. A task list, service controller, log viewer or
-   status panel does not satisfy this gate. Keep product commands and
-   persistence outside the workbench runtime.
    Built-in visuals must consume the selected desktop component profile and
    semantic `ZsIcon` catalog. Do not add private PUA glyph strings, local
    palettes or duplicate control metrics to component modules.

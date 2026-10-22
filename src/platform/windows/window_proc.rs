@@ -210,8 +210,7 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_LBUTTONUP => {
-            if dispatch_windows_win32_window_shell_pointer_up(hwnd).is_some() {
-                ReleaseCapture();
+            let result = if dispatch_windows_win32_window_shell_pointer_up(hwnd).is_some() {
                 0
             } else if dispatch_windows_win32_window_view_pointer_up_with_button(
                 hwnd,
@@ -222,11 +221,16 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 .is_some_and(|report| report.handled)
             {
                 SetFocus(hwnd);
-                ReleaseCapture();
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
+            };
+            // A captured target may disappear during a controlled rebuild.
+            // Always end this window's capture on the matching button release.
+            if windows_sys::Win32::UI::Input::KeyboardAndMouse::GetCapture() == hwnd {
+                ReleaseCapture();
             }
+            result
         }
         WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN => {
             let button = windows_pointer_button(msg, wparam);

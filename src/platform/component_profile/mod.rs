@@ -77,8 +77,6 @@ pub(crate) struct PlatformComponentProfile {
     pub badge: PlatformBadgeProfile,
     #[cfg(feature = "split-view")]
     pub split_view: PlatformSplitViewProfile,
-    #[cfg(feature = "icon")]
-    pub icon: PlatformIconProfile,
     pub base_control: PlatformBaseControlProfile,
     #[cfg(feature = "label")]
     pub section: PlatformSectionProfile,
@@ -134,8 +132,7 @@ pub(crate) struct PlatformComponentProfile {
     pub document_shell: PlatformDocumentShellProfile,
     #[cfg(feature = "calculator")]
     pub calculator_shell: PlatformCalculatorShellProfile,
-    #[cfg(feature = "workbench")]
-    pub workbench: PlatformWorkbenchProfile,
+
     pub shell: PlatformShellProfile,
 }
 
@@ -205,29 +202,6 @@ pub(crate) struct PlatformSplitViewProfile {
     pub divider_color: ColorRole,
 }
 
-#[cfg(feature = "icon")]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct PlatformIconProfile {
-    pub small: Dp,
-    pub standard: Dp,
-    pub large: Dp,
-}
-
-#[cfg(feature = "icon")]
-impl PlatformIconProfile {
-    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
-        PlatformComponentProfile::for_style(platform).icon
-    }
-
-    pub(crate) const fn size(self, size: crate::ZsIconSize) -> Dp {
-        match size {
-            crate::ZsIconSize::Small => self.small,
-            crate::ZsIconSize::Standard => self.standard,
-            crate::ZsIconSize::Large => self.large,
-        }
-    }
-}
-
 impl PlatformComponentProfile {
     pub(crate) const fn for_style(style: ZsPlatformStyle) -> Self {
         match style {
@@ -239,6 +213,14 @@ impl PlatformComponentProfile {
 
     pub(crate) const fn current() -> Self {
         Self::for_style(ZsPlatformStyle::current())
+    }
+}
+
+pub(crate) const fn icon_role_size(platform: ZsPlatformStyle, role: crate::ZsIconRole) -> Dp {
+    match platform {
+        ZsPlatformStyle::Windows => windows::icon_role_size(role),
+        ZsPlatformStyle::Macos => macos::icon_role_size(role),
+        ZsPlatformStyle::Gtk => gtk::icon_role_size(role),
     }
 }
 
@@ -1278,35 +1260,6 @@ pub(crate) struct PlatformShellProfile {
     pub draw_row_separators: bool,
 }
 
-/// Target-owned geometry for the reusable WorkbenchShell component family.
-///
-/// Applications configure semantic regions and state only. These metrics keep
-/// the WinUI, AppKit and GNOME information architectures distinct without
-/// placing platform branches in the shared workbench runtime.
-#[cfg(feature = "workbench")]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct PlatformWorkbenchProfile {
-    pub sidebar_width: Dp,
-    pub collapsed_sidebar_width: Dp,
-    pub top_bar_height: Dp,
-    pub composer_height: Dp,
-    pub inspector_width: Dp,
-    pub inspector_breakpoint: Dp,
-    pub content_max_width: Dp,
-    pub content_horizontal_inset: Dp,
-    pub composer_vertical_inset: Dp,
-    pub message_gap: Dp,
-    pub message_vertical_inset: Dp,
-    pub floating_radius: Dp,
-}
-
-#[cfg(feature = "workbench")]
-impl PlatformWorkbenchProfile {
-    pub(crate) const fn for_platform(platform: ZsPlatformStyle) -> Self {
-        PlatformComponentProfile::for_style(platform).workbench
-    }
-}
-
 impl PlatformShellProfile {
     pub(crate) fn navigation_width(self, logical_window_width: f32) -> Dp {
         match self.navigation {
@@ -1337,17 +1290,7 @@ mod tests {
         assert_eq!(windows.style_tokens.radius.medium, Dp::new(8.0));
         assert_eq!(macos.style_tokens.spacing.page_padding, Dp::new(20.0));
         assert_eq!(gtk.style_tokens.controls.standard_height, Dp::new(34.0));
-        #[cfg(feature = "workbench")]
-        {
-            assert_eq!(windows.workbench.sidebar_width, Dp::new(272.0));
-            assert_eq!(macos.workbench.sidebar_width, Dp::new(240.0));
-            assert_eq!(gtk.workbench.sidebar_width, Dp::new(280.0));
-            assert_eq!(windows.workbench.top_bar_height, Dp::new(64.0));
-            assert_eq!(macos.workbench.top_bar_height, Dp::new(52.0));
-            assert_eq!(gtk.workbench.top_bar_height, Dp::new(56.0));
-            assert_ne!(windows.workbench, macos.workbench);
-            assert_ne!(macos.workbench, gtk.workbench);
-        }
+
         assert_eq!(
             windows.typography.metrics(TextRole::Body),
             ZsTypographyMetrics::new(14.0, 20.0, TextWeight::Regular)

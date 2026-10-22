@@ -4340,8 +4340,11 @@ fn table_column_widths(
         .collect::<Vec<_>>();
     let desired_total = desired.iter().copied().fold(0_i32, i32::saturating_add);
     if desired_total < available_width {
-        if let Some(last) = desired.last_mut() {
-            *last = last.saturating_add(available_width - desired_total);
+        if let Some(index) = columns
+            .iter()
+            .rposition(|column| matches!(column.width(), crate::ZsTableColumnWidth::Fill(_)))
+        {
+            desired[index] = desired[index].saturating_add(available_width - desired_total);
         }
     }
     let mut remaining = available_width;

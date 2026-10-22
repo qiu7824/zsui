@@ -21,5 +21,6 @@
       "icon": "Info"
     }
   ],
-  "gallery_navigation_selected": "inputs"
+  "gallery_navigation_selected": "inputs",
+  "gallery_navigation_width": 252
 }

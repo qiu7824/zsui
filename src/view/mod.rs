@@ -41,6 +41,8 @@ use crate::{ZsVideoFit, ZsVideoPlaybackState, ZsVideoSource};
 use serde::{Deserialize, Serialize};
 
 include!("node.rs");
+#[cfg(feature = "resize")]
+include!("resize.rs");
 include!("widgets/mod.rs");
 include!("event.rs");
 include!("focus.rs");

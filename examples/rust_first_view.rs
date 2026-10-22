@@ -4,8 +4,8 @@ use std::{env, fs};
 
 use zsui::{
     button, column, native_window, row, styled_text, textbox, toggle, AppCx, Command, CommandId,
-    Dp, NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, Point, SemanticTextStyle,
-    UiCommand, ViewNode, WidgetId,
+    Dp, NativeWindowRuntimeDriver, NativeWindowSmokeRunOptions, SemanticTextStyle, UiCommand,
+    ViewNode, WidgetId,
 };
 
 const SAVE: WidgetId = WidgetId::new(1);
@@ -80,11 +80,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             NativeWindowSmokeRunOptions::new(1200)
                 .screenshot_file(format!("{artifact_dir}/window.png"))
                 .require_screenshot(true)
-                .native_view_click(Point { x: 260, y: 68 })
+                .native_view_click_widget(NAME)
                 .native_view_text_input(" Native")
-                .native_view_click(Point { x: 476, y: 112 })
-                .native_view_click(Point { x: 80, y: 156 }),
+                .native_view_click_widget(DARK_MODE)
+                .native_view_click_widget(SAVE),
         )?;
+        assert!(report.native_view_text_input_count > 0);
+        assert_eq!(report.native_view_toggle_count, 1);
+        assert!(report.native_view_message_count >= 3);
+        assert_eq!(report.native_view_unhandled_click_count, 0);
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }

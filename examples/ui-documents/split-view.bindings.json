@@ -5,6 +5,7 @@
     "workspace_pane_width": "number"
   },
   "actions": {
-    "workspace_pane_open_changed": "boolean"
+    "workspace_pane_open_changed": "boolean",
+    "workspace_pane_resized": "number"
   }
 }

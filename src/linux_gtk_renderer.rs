@@ -46,7 +46,12 @@ pub(crate) fn install_linux_gtk_draw_plan(
     #[cfg(feature = "text-input-core")]
     runtime.set_text_shaping_backend(linux_gtk_text_shaping_backend(drawing_area.pango_context()));
     runtime.defer_app_command_execution();
+    runtime.defer_ui_command_execution();
     let runtime = Rc::new(RefCell::new(runtime));
+    window.connect_destroy({
+        let runtime = Rc::clone(&runtime);
+        move |_| runtime.borrow_mut().shutdown_dispatch()
+    });
     #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
     sync_linux_gtk_text_accessibility(&drawing_area, &runtime);
     let runtime_timer = Rc::new(RefCell::new(None));
@@ -107,6 +112,10 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     .flatten(),
             );
             let mut sink = LinuxGtkDrawSink::new(area, context, palette, plan.typography_scale());
+            // DrawingArea snapshots do not include the window's CSS backdrop.
+            // Paint the framework surface before transparent text/icon content.
+            sink.set_source(palette.surface);
+            let _ = context.paint();
             sink.draw_plan(&plan);
         }
     });
@@ -235,6 +244,17 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 },
                 linux_gtk_pointer_modifiers(motion.current_event_state()),
             );
+            #[cfg(feature = "resize")]
+            area.set_cursor_from_name(Some(
+                match runtime.borrow().resize_cursor_at(crate::Point {
+                    x: gtk_coordinate(x),
+                    y: gtk_coordinate(y),
+                }) {
+                    Some(crate::ZsResizeAxis::Horizontal) => "col-resize",
+                    Some(crate::ZsResizeAxis::Vertical) => "row-resize",
+                    None => "default",
+                },
+            ));
             if report.handled {
                 apply_linux_gtk_input_report(
                     report,
@@ -577,6 +597,18 @@ impl std::fmt::Debug for LinuxGtkDrawViewHost {
 }
 
 impl LinuxGtkDrawViewHost {
+    pub(crate) fn surface_size(&self) -> crate::Size {
+        crate::Size {
+            width: self.area.width(),
+            height: self.area.height(),
+        }
+    }
+
+    pub(crate) fn observe_size_changes(&self, observe: impl Fn(crate::Size) + 'static) {
+        self.area
+            .connect_resize(move |_, width, height| observe(crate::Size { width, height }));
+    }
+
     pub(crate) fn accessibility_node_count(&self) -> usize {
         #[cfg(all(feature = "accessibility", feature = "text-input-core"))]
         {
@@ -966,14 +998,55 @@ fn apply_linux_gtk_input_report_with_redraw_request(
     application: Option<&gtk::Application>,
     request_redraw: bool,
 ) -> crate::native::NativeViewInputDispatchReport {
-    let (executor, commands) = runtime.borrow_mut().take_pending_app_command_dispatch();
-    let effect_executed =
-        crate::native::dispatch_deferred_native_view_app_commands(&mut report, executor, commands);
-    if effect_executed {
-        runtime
-            .borrow_mut()
-            .refresh_live_view_after_app_effect(&mut report);
+    let dispatch_turn = runtime.borrow_mut().begin_deferred_dispatch();
+    if dispatch_turn.is_some() {
+        let (executor, commands) = runtime.borrow_mut().take_pending_app_command_dispatch();
+        let effect_executed = crate::native::dispatch_deferred_native_view_app_commands(
+            &mut report,
+            executor,
+            commands,
+            dispatch_turn.as_ref(),
+        );
+        if effect_executed {
+            runtime
+                .borrow_mut()
+                .refresh_live_view_after_app_effect(&mut report);
+        }
+        let (ui_executor, ui_commands) = runtime.borrow_mut().take_pending_ui_command_dispatch();
+        if let Some(executor) = ui_executor {
+            for command in ui_commands {
+                if dispatch_turn.as_ref().is_none_or(|turn| !turn.is_alive()) {
+                    break;
+                }
+                if let Err(error) = executor.dispatch(command) {
+                    report.errors.push(error.to_string());
+                }
+            }
+        }
+        let mut budget = crate::dispatch_queue::DispatchTurnBudget::new();
+        while budget.take() {
+            let request = runtime.borrow_mut().pop_pending_app_effect();
+            let Some(request) = request else {
+                break;
+            };
+            if !request.try_begin() {
+                continue;
+            }
+            let outcome = crate::app_effect::execute_native_app_effect(request.effect());
+            let effect_report = runtime
+                .borrow_mut()
+                .dispatch_app_effect_outcome(request, outcome);
+            report.handled |= effect_report.handled;
+            report.message_count += effect_report.message_count;
+            report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
+            report.quit_requested |= effect_report.quit_requested;
+            report.errors.extend(effect_report.errors);
+            if let Some(plan) = effect_report.redraw_plan {
+                report.redraw_plan = Some(plan);
+            }
+        }
     }
+    drop(dispatch_turn);
     if let Some(updated) = report.redraw_plan.take() {
         *plan.borrow_mut() = updated;
         if request_redraw {
@@ -1556,44 +1629,96 @@ impl<'a> LinuxGtkDrawSink<'a> {
     }
 
     fn draw_icon(&self, command: &NativeDrawIconCommand) {
+        if command.bounds.width <= 0 || command.bounds.height <= 0 {
+            return;
+        }
         let size = command.bounds.width.min(command.bounds.height).max(1);
+        let raster_size = size
+            .saturating_mul(self.area.scale_factor().max(1))
+            .min(512);
         let theme = gtk::IconTheme::for_display(&self.area.display());
-        let flags = if command.color_mode == NativeIconColorMode::ThemeAware {
+        let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
+        let flags = if theme_aware {
             gtk::IconLookupFlags::FORCE_SYMBOLIC
         } else {
             gtk::IconLookupFlags::empty()
         };
-        let paintable = theme.lookup_icon(
-            command.icon.gtk_symbolic_name(),
-            &[],
-            size,
-            1,
-            gtk::TextDirection::None,
-            flags,
-        );
-        let pixbuf = paintable
-            .file()
-            .and_then(|file| file.path())
-            .and_then(|path| {
-                gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()
-            });
+        let pixbuf = if theme.has_icon(command.icon.gtk_symbolic_name()) {
+            let paintable = theme.lookup_icon(
+                command.icon.gtk_symbolic_name(),
+                &[],
+                raster_size,
+                1,
+                gtk::TextDirection::None,
+                flags,
+            );
+            paintable
+                .file()
+                .and_then(|file| file.path())
+                .and_then(|path| {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(
+                        path,
+                        raster_size,
+                        raster_size,
+                        true,
+                    )
+                    .ok()
+                })
+        } else {
+            None
+        };
         let pixbuf = pixbuf.or_else(|| {
             let loader = gtk::gdk_pixbuf::PixbufLoader::with_type("svg").ok()?;
-            loader.set_size(size, size);
+            loader.set_size(raster_size, raster_size);
             loader
                 .write(crate::bundled_fluent_icon_svg(command.icon))
                 .ok()?;
             loader.close().ok()?;
             loader.pixbuf()
         });
-        if let Some(pixbuf) = pixbuf {
-            self.context.set_source_pixbuf(
-                &pixbuf,
-                f64::from(command.bounds.x),
-                f64::from(command.bounds.y),
+        let Some(pixbuf) = pixbuf else {
+            crate::symbolic_icons::draw_symbolic_icon(
+                &self.context,
+                command,
+                self.palette.resolve(command.color),
             );
+            return;
+        };
+        let bounds = command.fitted_bounds(crate::Size {
+            width: pixbuf.width(),
+            height: pixbuf.height(),
+        });
+        if self.context.save().is_err() {
+            return;
+        }
+        self.context.rectangle(
+            f64::from(command.bounds.x),
+            f64::from(command.bounds.y),
+            f64::from(command.bounds.width),
+            f64::from(command.bounds.height),
+        );
+        self.context.clip();
+        self.context
+            .translate(f64::from(bounds.x), f64::from(bounds.y));
+        self.context.scale(
+            f64::from(bounds.width) / f64::from(pixbuf.width().max(1)),
+            f64::from(bounds.height) / f64::from(pixbuf.height().max(1)),
+        );
+        self.context.set_source_pixbuf(&pixbuf, 0.0, 0.0);
+        if theme_aware {
+            let mask = self.context.source();
+            let color = self.palette.resolve(command.color);
+            self.context.set_source_rgba(
+                f64::from(color.r) / 255.0,
+                f64::from(color.g) / 255.0,
+                f64::from(color.b) / 255.0,
+                f64::from(color.a) / 255.0,
+            );
+            let _ = self.context.mask(&mask);
+        } else {
             let _ = self.context.paint();
         }
+        let _ = self.context.restore();
     }
 
     fn draw_image(&self, command: &NativeDrawImageCommand) {

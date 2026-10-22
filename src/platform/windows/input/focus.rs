@@ -19,7 +19,7 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(all(
         feature = "accessibility",
-        any(feature = "slider", feature = "number-box")
+        any(feature = "slider", feature = "number-box", feature = "resize")
     ))]
     fn dispatch_accessibility_set_numeric_value(
         &mut self,
@@ -46,9 +46,7 @@ impl WindowsWin32ViewInputRoute {
         &mut self,
         widget: crate::WidgetId,
     ) -> WindowsWin32ViewInputDispatchReport {
-        let report = self
-            .shared_runtime
-            .dispatch_accessibility_focus(widget);
+        let report = self.shared_runtime.dispatch_accessibility_focus(widget);
         self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
     }
 
@@ -118,11 +116,9 @@ impl WindowsWin32ViewInputRoute {
         selection: crate::native_text_edit::NativeTextSelection,
         align_to_top: bool,
     ) -> WindowsWin32ViewInputDispatchReport {
-        let report = self.shared_runtime.dispatch_accessibility_scroll_text_range(
-            widget,
-            selection,
-            align_to_top,
-        );
+        let report = self
+            .shared_runtime
+            .dispatch_accessibility_scroll_text_range(widget, selection, align_to_top);
         self.adapt_shared_report(report, WindowsSharedInputKind::Accessibility)
     }
 

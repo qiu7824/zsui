@@ -42,7 +42,7 @@ struct Arguments {
     smoke_click_nodes: Vec<String>,
     smoke_scroll: Option<(Point, i32)>,
     smoke_items_repeater_drag: Option<String>,
-    smoke_workbench_composer: Option<String>,
+    smoke_text_editor: Option<String>,
     benchmark_empty: bool,
     benchmark_seconds: Option<u64>,
 }
@@ -134,7 +134,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &arguments.smoke_click_nodes,
             arguments.smoke_scroll,
             arguments.smoke_items_repeater_drag.as_deref(),
-            arguments.smoke_workbench_composer.as_deref(),
+            arguments.smoke_text_editor.as_deref(),
         )?;
     } else {
         builder.run()?;
@@ -161,7 +161,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut smoke_click_nodes = Vec::new();
     let mut smoke_scroll = None;
     let mut smoke_items_repeater_drag = None;
-    let mut smoke_workbench_composer = None;
+    let mut smoke_text_editor = None;
     let mut benchmark_empty = false;
     let mut benchmark_seconds = None;
     let mut arguments = arguments.into_iter();
@@ -228,10 +228,11 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     "--smoke-items-repeater-drag requires a stable node ID".to_owned()
                 })?);
             }
-            "--smoke-workbench-composer" => {
-                smoke_workbench_composer = Some(arguments.next().ok_or_else(|| {
-                    "--smoke-workbench-composer requires a stable node ID".to_owned()
-                })?);
+            "--smoke-text-editor" => {
+                smoke_text_editor =
+                    Some(arguments.next().ok_or_else(|| {
+                        "--smoke-text-editor requires a stable node ID".to_owned()
+                    })?);
             }
             "--help" | "-h" => return Err(usage().to_owned()),
             value if value.starts_with('-') => {
@@ -252,8 +253,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     if smoke_items_repeater_drag.is_some() && smoke_output.is_none() {
         return Err("--smoke-items-repeater-drag requires --smoke".to_owned());
     }
-    if smoke_workbench_composer.is_some() && smoke_output.is_none() {
-        return Err("--smoke-workbench-composer requires --smoke".to_owned());
+    if smoke_text_editor.is_some() && smoke_output.is_none() {
+        return Err("--smoke-text-editor requires --smoke".to_owned());
     }
     if (reload_document_from.is_some() || reload_bindings_from.is_some())
         && reload_after_ms >= smoke_duration_ms
@@ -280,7 +281,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         smoke_click_nodes,
         smoke_scroll,
         smoke_items_repeater_drag,
-        smoke_workbench_composer,
+        smoke_text_editor,
         benchmark_empty,
         benchmark_seconds,
     })
@@ -319,7 +320,7 @@ fn usage() -> &'static str {
      [--reload-document-from path] [--reload-bindings-from path] [--reload-after-ms milliseconds] \
      [--smoke-click x y]... [--smoke-click-node node-id]... [--smoke-scroll x y delta-y] \
      [--smoke-items-repeater-drag node-id] \
-     [--smoke-workbench-composer node-id] \
+     [--smoke-text-editor node-id] \
      [--benchmark-empty] [--benchmark-seconds seconds]"
 }
 
@@ -363,7 +364,7 @@ fn run_smoke(
     smoke_click_nodes: &[String],
     smoke_scroll: Option<(Point, i32)>,
     smoke_items_repeater_drag: Option<&str>,
-    smoke_workbench_composer: Option<&str>,
+    smoke_text_editor: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(output_directory)?;
     let screenshot = output_directory.join("window.png");
@@ -399,45 +400,28 @@ fn run_smoke(
     if let Some((point, delta_y)) = smoke_scroll {
         options = options.native_view_scroll(point, delta_y);
     }
-    if let Some(node_id) = smoke_workbench_composer {
-        let root = zsui::ui_document::UiNodeId::new(node_id)
+    if let Some(node_id) = smoke_text_editor {
+        let widget = zsui::ui_document::UiNodeId::new(node_id)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?
             .widget_id();
-        if !source.snapshot().nodes.iter().any(|node| {
-            node.id == node_id && node.component == "workbench_shell" && node.widget_id == root.0
-        }) {
-            return Err(Box::new(ZsuiError::host(
-                "ui_viewer_smoke",
-                format!("node {node_id:?} is not a workbench_shell"),
-            )));
-        }
         let interaction = builder.native_view_interaction_plan().ok_or_else(|| {
             ZsuiError::host(
                 "ui_viewer_smoke",
                 "the Viewer did not expose a View interaction plan",
             )
         })?;
-        let editors = interaction
+        let editor = interaction
             .hit_targets
             .iter()
-            .filter(|target| target.kind == zsui::ViewHitTargetKind::TextEditor)
-            .copied()
-            .collect::<Vec<_>>();
-        if editors.len() != 1 {
-            return Err(Box::new(ZsuiError::host(
-                "ui_viewer_smoke",
-                format!(
-                    "workbench_shell {node_id:?} exposed {} Composer TextEditors instead of one",
-                    editors.len()
-                ),
-            )));
-        }
-        let editor = editors.into_iter().next().ok_or_else(|| {
-            ZsuiError::host(
-                "ui_viewer_smoke",
-                format!("workbench_shell {node_id:?} did not expose a Composer TextEditor"),
-            )
-        })?;
+            .find(|target| {
+                target.widget == widget && target.kind == zsui::ViewHitTargetKind::TextEditor
+            })
+            .ok_or_else(|| {
+                ZsuiError::host(
+                    "ui_viewer_smoke",
+                    format!("node {node_id:?} did not expose a multiline text editor"),
+                )
+            })?;
         options = options
             .native_view_click_widget(editor.widget)
             .native_view_text_input("中文 אבג e\u{301} 👩\u{200d}💻")
@@ -528,7 +512,7 @@ fn run_smoke(
             "the native Viewer did not route the ItemsRepeater thumb drag through typed viewport state",
         )));
     }
-    if smoke_workbench_composer.is_some()
+    if smoke_text_editor.is_some()
         && (runtime.native_view_text_input_count == 0
             || runtime.native_view_text_navigation_count < 2
             || runtime.native_view_text_drag_count == 0
@@ -537,7 +521,7 @@ fn run_smoke(
         return Err(Box::new(ZsuiError::host(
             "ui_viewer_smoke",
             format!(
-                "the native Viewer did not route Composer text, navigation and selection through the shared text runtime (text={}, navigation={}, drag={}, selection={})",
+                "the native Viewer did not route editor text, navigation and selection through the shared text runtime (text={}, navigation={}, drag={}, selection={})",
                 runtime.native_view_text_input_count,
                 runtime.native_view_text_navigation_count,
                 runtime.native_view_text_drag_count,
@@ -701,20 +685,17 @@ mod tests {
     }
 
     #[test]
-    fn parser_accepts_workbench_composer_proof() {
+    fn parser_accepts_text_editor_proof() {
         let arguments = parse_arguments([
             "ui.json".to_owned(),
             "--smoke".to_owned(),
             "proof".to_owned(),
-            "--smoke-workbench-composer".to_owned(),
-            "workbench".to_owned(),
+            "--smoke-text-editor".to_owned(),
+            "editor".to_owned(),
         ])
         .unwrap();
 
-        assert_eq!(
-            arguments.smoke_workbench_composer.as_deref(),
-            Some("workbench")
-        );
+        assert_eq!(arguments.smoke_text_editor.as_deref(), Some("editor"));
     }
 
     #[test]

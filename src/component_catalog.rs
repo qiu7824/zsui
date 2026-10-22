@@ -300,12 +300,7 @@ const SPLIT_VIEW_GAPS: &[&str] = &[
     "accessibility group relationship",
     "AppKit and Linux target interaction proof",
 ];
-const WORKBENCH_GAPS: &[&str] = &[
-    "three-target composer IME, selection and accessibility proof",
-    "hover pressed focus-visible state matrix",
-    "dark and high-contrast target smoke",
-    "AppKit and Linux target interaction proof",
-];
+
 macro_rules! component {
     ($name:literal, $analogue:literal, $category:ident, $status:ident, $feature:expr, $path:literal, $gaps:expr) => {
         ZsuiComponentDescriptor {
@@ -744,42 +739,6 @@ pub const ZSUI_COMPONENT_CATALOG: &[ZsuiComponentDescriptor] = &[
         "src/view/widgets/data.rs + three desktop component profiles",
         PLATFORM_GAPS
     ),
-    component!(
-        "workbench_shell",
-        "NavigationView + CommandBar",
-        Composite,
-        FirstPass,
-        Some("workbench"),
-        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
-        WORKBENCH_GAPS
-    ),
-    component!(
-        "message_timeline",
-        "ItemsRepeater + ScrollViewer",
-        Composite,
-        FirstPass,
-        Some("workbench"),
-        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
-        WORKBENCH_GAPS
-    ),
-    component!(
-        "composer",
-        "RichEditBox + CommandBar",
-        Composite,
-        FirstPass,
-        Some("workbench"),
-        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
-        WORKBENCH_GAPS
-    ),
-    component!(
-        "inspector_panel",
-        "SplitView Pane",
-        Composite,
-        FirstPass,
-        Some("workbench"),
-        "src/workbench.rs + src/view/widgets/data.rs + three desktop component profiles",
-        WORKBENCH_GAPS
-    ),
 ];
 
 #[cfg(test)]
@@ -809,7 +768,7 @@ mod tests {
         assert!(!summary.missing_component_names.contains(&"canvas"));
         assert!(!summary.missing_component_names.contains(&"flyout"));
         assert!(!summary.missing_component_names.contains(&"video"));
-        assert_eq!(summary.first_pass_count, 51);
+        assert_eq!(summary.first_pass_count, 47);
         assert_eq!(summary.contract_only_count, 0);
     }
 

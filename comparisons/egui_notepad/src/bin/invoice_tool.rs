@@ -27,7 +27,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "发票工作台 · egui",
+        "发票工具 · egui",
         options,
         Box::new(move |context| {
             context.egui_ctx.set_theme(egui::Theme::Light);
@@ -91,7 +91,7 @@ impl InvoiceApp {
         ui.add_space(16.0);
         ui.label(RichText::new("票据工坊").size(19.0).strong());
         ui.label(
-            RichText::new("INVOICE WORKBENCH")
+            RichText::new("INVOICE TOOL")
                 .size(10.0)
                 .color(Color32::GRAY),
         );

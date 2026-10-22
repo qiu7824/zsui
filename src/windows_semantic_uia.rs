@@ -214,6 +214,9 @@ fn control_type(role: crate::ZsAccessibilityRole) -> i32 {
         crate::ZsAccessibilityRole::ListItem => UIA_ListItemControlTypeId.0,
         crate::ZsAccessibilityRole::ProgressBar => UIA_ProgressBarControlTypeId.0,
         crate::ZsAccessibilityRole::Slider => UIA_SliderControlTypeId.0,
+        crate::ZsAccessibilityRole::Splitter => {
+            windows::Win32::UI::Accessibility::UIA_SeparatorControlTypeId.0
+        }
         crate::ZsAccessibilityRole::SpinButton => UIA_SpinnerControlTypeId.0,
         crate::ZsAccessibilityRole::Tab => UIA_TabItemControlTypeId.0,
         crate::ZsAccessibilityRole::TabList => UIA_TabControlTypeId.0,
@@ -246,6 +249,7 @@ fn keyboard_focusable(role: crate::ZsAccessibilityRole) -> bool {
             | crate::ZsAccessibilityRole::DatePicker
             | crate::ZsAccessibilityRole::ListItem
             | crate::ZsAccessibilityRole::Slider
+            | crate::ZsAccessibilityRole::Splitter
             | crate::ZsAccessibilityRole::SpinButton
             | crate::ZsAccessibilityRole::Tab
             | crate::ZsAccessibilityRole::TextBox
@@ -676,7 +680,7 @@ impl IRangeValueProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
         if !value.is_finite() || value < range.minimum || value > range.maximum {
             return Err(invalid_argument());
         }
-        #[cfg(any(feature = "slider", feature = "number-box"))]
+        #[cfg(any(feature = "slider", feature = "number-box", feature = "resize"))]
         {
             return crate::windows_win32_host::set_windows_win32_window_accessible_semantic_numeric_value(
                 self.hwnd as _,
@@ -686,7 +690,7 @@ impl IRangeValueProvider_Impl for WindowsSemanticUiaNodeProvider_Impl {
             .then_some(())
             .ok_or_else(invalid_operation);
         }
-        #[cfg(not(any(feature = "slider", feature = "number-box")))]
+        #[cfg(not(any(feature = "slider", feature = "number-box", feature = "resize")))]
         Err(invalid_operation())
     }
 
@@ -738,7 +742,9 @@ pub(crate) fn handle_get_object(
     wparam: windows_sys::Win32::Foundation::WPARAM,
     lparam: windows_sys::Win32::Foundation::LPARAM,
 ) -> Option<windows_sys::Win32::Foundation::LRESULT> {
-    if lparam != UiaRootObjectId as isize {
+    // WM_GETOBJECT object IDs occupy the low DWORD even on 64-bit Windows.
+    // https://learn.microsoft.com/windows/win32/winauto/wm-getobject
+    if lparam as u32 != UiaRootObjectId as u32 {
         return None;
     }
     let semantic_nodes =

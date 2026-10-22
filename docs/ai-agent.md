@@ -39,7 +39,7 @@ and is not part of normal task context.
 - Win32, AppKit, Linux Direct and the optional GTK4 compatibility host satisfy
   the v0.2 desktop runtime gate with fixed target proof. Their post-v0.2 feature
   breadth may still differ.
-- The component catalog currently tracks 51 families: all 51 have runtime
+- The component catalog currently tracks 47 families: all 47 have runtime
   surfaces, with none contract-only or not started. WebView is intentionally outside the
   v0.2 product boundary; composite shells do not change the catalog count.
 
@@ -57,7 +57,6 @@ and is not part of normal task context.
 | `long-list` | Virtual rows, background pagination, prefetch and LRU caching |
 | `image-preview` | Retained raster frames, background PNG decode and no-flicker presentation |
 | `navigation-shell` | Left navigation, grouped cards, settings rows, scroll |
-| `workbench` | Conversation/task shell, composer, inspector, message blocks |
 | `document-shell` | Document chrome, text lifecycle, native editor inset, notepad example |
 | `performance` | Equal-complexity Minimal/Common/Full/Viewer release matrix and framework comparisons |
 | `calculator` | Decimal engine, keypad shell, calculator example/measurement |
@@ -74,7 +73,7 @@ platform backends for a pure layout or engine task.
 
 Application-building tasks select `app-authoring`, not a framework component
 pack. Start from `zsui::prelude` / `zsui::stable` and the minimum View tree.
-Select `navigation-shell`, `workbench` or `document-shell` only when the brief
+Select `navigation-shell` or `document-shell` only when the brief
 explicitly requires that composition's defining regions. Words such as
 “manager”, “console”, “service”, “task”, “status” and “log” do not select a
 shell. Do not add regions, actions, example data or window dimensions that are

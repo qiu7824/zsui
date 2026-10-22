@@ -649,7 +649,7 @@ window("ZSUI 稳定 API")
 
 普通工具窗、服务控制面板和少量操作组成的窗口，默认使用 `column`、`row`、`text`、
 `button`、`toggle` 等基础组件。不要因为名称中出现“管理器”“控制台”“服务”“任务”或
-“日志”就套用导航、工作台、检查器或编辑器外壳；复合外壳只有在产品明确需要其完整
+“日志”就套用导航、检查器或编辑器外壳；复合外壳只有在产品明确需要其完整
 工作流时才启用。
 
 ```powershell
@@ -658,7 +658,7 @@ cargo run --example compact_service_panel `
   --features window,button,label,toggle
 ```
 
-这个示例只保留状态与操作两个区域，不复制 Gallery 或 Workbench 的窗口尺寸、占位内容
+这个示例只保留状态与操作两个区域，不复制 Gallery 的窗口尺寸、占位内容
 和附加导航。AI 编写应用时遵循[应用编写契约](docs/ai/app-authoring.md)，框架组件开发仍
 按对应 context pack 执行。
 
@@ -689,7 +689,6 @@ zsui = { version = "0.2.0", default-features = false, features = [
 
 ```toml
 zsui = { version = "0.2.0", default-features = false, features = [
-    "workbench",
     "document-shell",
     "calculator",
     "window",
@@ -772,7 +771,7 @@ Windows、AppKit 或 Linux 枚举。发布运行时把条目映射为稳定的�
 `minimum_content_width` 只表达应用约束，不覆盖各平台的字体、间距、折叠与选中样式。
 `scroll` 以一个内容子树、显式内容高度、受控偏移和 number 动作构成闭环，布局
 会夹取越界偏移；绑定后的状态在 View 重建后继续保留，不使用全局注册表。v0.2 的
-51 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
+47 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
 富文本对象、任意模板与大型数据源编辑属于后续增量能力。
 
 多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
@@ -785,7 +784,6 @@ ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；�
 | 能力 | 当前内容 | Feature |
 | --- | --- | --- |
 | 导航/卡片外壳 | 左侧导航、右侧内容、分组卡片、设置项、说明、操作区、滚动条 | `settings` / `full` |
-| 工作台 | 会话导航、消息块、代码/工具块、编辑区、检查器 | `workbench` |
 | 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域、UTF-8/UTF-16 文本加载与事务式保存 | `document-shell` |
 | 计算器 | Decimal 运算、内存、历史、三平台自适应键盘布局、语义图标 | `calculator` |
 | 基础 View | 文本与输入、选择控件、弹层反馈、导航、日期时间、进度、列表、树和数据表格 | 按控件启用 |
@@ -793,7 +791,7 @@ ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；�
 | 视频/摄像头预览 | 线程安全的最新帧源、无界队列抑制、播放状态与按需刷新、Contain/Cover/Stretch | `video` |
 | 分页虚拟列表 | 可见区绘制、方向感知预取、请求去重、LRU 页缓存、同步重排锚点 | `paged-list` |
 
-组件目录记录 51 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
+组件目录记录 47 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
 内容，并由 Windows、macOS 与 Linux 的独立组件 profile 决定放置、圆角、箭头和间距。
 控件均通过独立 Cargo feature 按需启用，并复用强类型状态、布局、绘制和事件协议。
 Accordion 使用稳定项目 ID、单选/多选展开策略和完整的下一展开集合，并允许内容继续
@@ -865,20 +863,13 @@ cargo run --example image_preview --no-default-features --features window,button
 设备枚举、权限、解码、网络重连和音频输出仍由应用或可选媒体适配器负责，不会进入
 只使用普通控件的依赖图。接口与边界见[视频表面](docs/video.md)。
 
-### 工作台
+### 应用性能对比
 
-仅当产品明确需要消息时间线和编辑器时使用 Workbench；“任务”“服务”“控制台”“日志”
-等名称本身不构成选择条件。工具状态的可见文字由应用显式提供，框架只持有状态语义。
-
-```powershell
-cargo run --example workbench_shell --features full
-```
-
-发票重命名工作台还提供 ZSUI、eframe/egui、Iced、Slint 和 Tauri 2 的同功能
-[截图与 release 测量对比](docs/invoice-workbench-comparison.md)：
+发票重命名工具还提供 ZSUI、eframe/egui、Iced、Slint 和 Tauri 2 的同功能
+[截图与 release 测量对比](docs/invoice-tool-comparison.md)：
 
 ```powershell
-cargo run --release --example invoice_workbench
+cargo run --release --example invoice_tool --no-default-features --features window,shell
 ```
 
 框架性能另按 Minimal、Common、Full Native App 和 Viewer 四个同复杂度档位分别
@@ -956,7 +947,7 @@ Win32、AppKit 和 Linux 后端读写 UTF-8 文本及经过尺寸与字节数校
 ## 目录
 
 - `src/`：公共 API、运行时、布局、协议和平台后端
-- `examples/`：可运行的窗口、控件、工作台、记事本和计算器
+- `examples/`：可运行的窗口、控件、记事本和计算器
 - `docs/`：架构、目标机验证、应用测量和 AI 文档
 - `scripts/check-feature-matrix.ps1`：全部公开 feature 检查
 
@@ -983,7 +974,7 @@ Linux/macOS 桌面目标。
 ## v0.2 之后
 
 - v0.2 的桌面发布门槛已经覆盖三平台原生窗口、最终表面、共享布局/输入、菜单、
-  剪贴板、文件面板、IME 协议、辅助功能桥接、51 个组件运行面和可裁剪构建。
+  剪贴板、文件面板、IME 协议、辅助功能桥接、47 个组件运行面和可裁剪构建。
 - 后续版本可继续扩展 UIA 富文本属性与嵌入对象范围、富文本编辑、任意数据模板、
   大型 TreeView/DataGrid 虚拟化和更完整的拖放/触摸交互；这些增量不改变 v0.2 API 闭环。
 - 真实中文输入法候选窗、VoiceOver/Narrator/Orca 以及更多桌面环境仍采用发布前人工

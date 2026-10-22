@@ -80,8 +80,8 @@ function Build-PerformanceMatrix {
     ) (Join-Path $examples "ui_performance_minimal.exe") (Join-Path $binaryDir "zsui-minimal.exe")
     Invoke-CargoBuildAndCopy "ZSUI Common" @(
         "build", "--release", "--locked", "--manifest-path", $manifests.zsui,
-        "--example", "invoice_workbench", "--no-default-features", "--features", "window,workbench,list,dialog"
-    ) (Join-Path $examples "invoice_workbench.exe") (Join-Path $binaryDir "zsui-common.exe")
+        "--example", "invoice_tool", "--no-default-features", "--features", "window,shell,list,dialog"
+    ) (Join-Path $examples "invoice_tool.exe") (Join-Path $binaryDir "zsui-common.exe")
     Invoke-CargoBuildAndCopy "ZSUI Full Native App" @(
         "build", "--release", "--locked", "--manifest-path", $manifests.zsui,
         "--example", "component_gallery", "--no-default-features", "--features", "component-gallery-demo"

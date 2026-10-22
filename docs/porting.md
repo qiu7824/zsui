@@ -221,7 +221,7 @@ public APIs, RAII ownership for native handles, `Result<T, ZsuiError>` error
 reporting, explicit context/state flow and typed capability traits.
 Before claiming component parity, compare the backend against
 `zsui_component_catalog()`. A contract-only component or a composite
-`workbench` draw plan does not prove native input, accessibility or target
+draw plan does not prove native input, accessibility or target
 interaction support for its underlying WinUI analogue.
 It should also preserve the one-line `zsui::native_window(...).run()?` entry
 shape for ordinary apps, keep buffered no-flicker self-draw behavior as

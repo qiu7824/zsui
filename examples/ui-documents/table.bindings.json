@@ -8,6 +8,7 @@
   "actions": {
     "inventory_selected_changed": "table_row_id",
     "inventory_sort_changed": "table_sort",
-    "inventory_invoked": "table_row_id"
+    "inventory_invoked": "table_row_id",
+    "inventory_columns_changed": "table_column_array"
   }
 }

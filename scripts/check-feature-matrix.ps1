@@ -16,6 +16,7 @@ $singleFeatures = @(
     "accordion",
     "badge",
     "split-view",
+    "resize",
     "breadcrumb",
     "canvas",
     "flyout",
@@ -61,7 +62,6 @@ $singleFeatures = @(
     "style",
     "localization",
     "shell",
-    "workbench",
     "document-shell",
     "calculator",
     "tray",
@@ -105,6 +105,7 @@ $singleFeatures = @(
 )
 
 $featureSets = @(
+    "windows-win32,split-view,shell,table,icon,textbox,native-smoke,accessibility",
     "button,accordion,breadcrumb,canvas,flyout,menu-flyout,context-menu,label,grid",
     "textbox,password-box,tooltip,dialog,toast,info-bar,teaching-tip,checkbox,toggle,toggle-button,slider,number-box,radio,progress,progress-ring,auto-suggest,command-palette,combo,date-picker,time-picker,color-picker,tabs",
     "list,grid-view,tree,table",
@@ -114,7 +115,6 @@ $featureSets = @(
     "window,product-adapter,button,label",
     "localization,button,label",
     "all-widgets,style,dark-mode",
-    "workbench,window",
     "document-shell,windows-win32",
     "notepad-demo,style",
     "notepad-demo-gtk,style",

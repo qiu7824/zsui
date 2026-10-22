@@ -21,6 +21,22 @@ on:
       - "Cargo.lock"
       - ".github/workflows/native-proof.yml"
   workflow_dispatch:
+    inputs:
+      controls_only:
+        description: Run icon, resize and reliable desktop input proofs
+        type: boolean
+        default: false
+      controls_backend:
+        description: Native controls backend
+        type: choice
+        default: all
+        options:
+          - all
+          - windows-win32
+          - macos-appkit
+          - linux-direct
+          - linux-direct-lite
+          - linux-gtk
 
 permissions:
   contents: read
@@ -31,6 +47,7 @@ concurrency:
 
 jobs:
   windows-viewer-proof:
+    if: ${{ !inputs.controls_only }}
     name: Win32 Viewer and Component Proof
     runs-on: windows-2025
     timeout-minutes: 30
@@ -596,9 +613,9 @@ jobs:
         run: |
           $root = "target/native-proof/windows-2025-x86_64/ui-viewer-reload"
           New-Item -ItemType Directory -Force -Path $root | Out-Null
-          Copy-Item examples/ui-documents/viewer-reload-workbench.json "$root/view.json"
-          Copy-Item examples/ui-documents/viewer-reload-workbench.bindings.json "$root/view.bindings.json"
-          Copy-Item examples/ui-documents/viewer-reload-workbench.values.json "$root/view.values.json"
+          Copy-Item examples/ui-documents/viewer-reload-form.json "$root/view.json"
+          Copy-Item examples/ui-documents/viewer-reload-form.bindings.json "$root/view.bindings.json"
+          Copy-Item examples/ui-documents/viewer-reload-form.values.json "$root/view.values.json"
 
       - name: Run real Win32 Viewer reload proof
         id: win32-viewer
@@ -619,8 +636,8 @@ jobs:
               "--smoke", "$root/proof",
               "--smoke-duration-ms", "3500",
               "--require-binding-reset",
-              "--reload-document-from", "examples/ui-documents/viewer-reload-workbench-next.json",
-              "--reload-bindings-from", "examples/ui-documents/viewer-reload-workbench-next.bindings.json",
+              "--reload-document-from", "examples/ui-documents/viewer-reload-form-next.json",
+              "--reload-bindings-from", "examples/ui-documents/viewer-reload-form-next.bindings.json",
               "--reload-after-ms", "700"
             ) `
             -Wait `
@@ -639,7 +656,7 @@ jobs:
         shell: pwsh
         run: |
           $root = "target/native-proof/windows-2025-x86_64"
-          foreach ($scene in @("ui-viewer-items-repeater", "ui-viewer-image", "ui-viewer-settings-card", "ui-viewer-workbench", "ui-viewer-workbench-dark", "ui-viewer-workbench-high-contrast")) {
+          foreach ($scene in @("ui-viewer-items-repeater", "ui-viewer-image", "ui-viewer-settings-card", "ui-viewer-text-input", "ui-viewer-text-input-dark", "ui-viewer-text-input-high-contrast")) {
             New-Item -ItemType Directory -Force -Path (Join-Path $root $scene) | Out-Null
           }
 
@@ -679,13 +696,13 @@ jobs:
           )
 
           foreach ($theme in @(
-            @{ Name = "dark"; Output = "ui-viewer-workbench-dark" },
-            @{ Name = "high-contrast"; Output = "ui-viewer-workbench-high-contrast" }
+            @{ Name = "dark"; Output = "ui-viewer-text-input-dark" },
+            @{ Name = "high-contrast"; Output = "ui-viewer-text-input-high-contrast" }
           )) {
             Invoke-ViewerProof $theme.Output @(
-              "examples/ui-documents/workbench.json",
-              "--bindings", "examples/ui-documents/workbench.bindings.json",
-              "--values", "examples/ui-documents/workbench.values.json",
+              "examples/ui-documents/text-input.json",
+              "--bindings", "examples/ui-documents/text-input.bindings.json",
+              "--values", "examples/ui-documents/text-input.values.json",
               "--width", "1280",
               "--height", "800",
               "--theme", $theme.Name,
@@ -715,16 +732,16 @@ jobs:
             "--smoke-click-node", "apply-appearance"
           )
 
-          Invoke-ViewerProof "ui-viewer-workbench" @(
-            "examples/ui-documents/workbench.json",
-            "--bindings", "examples/ui-documents/workbench.bindings.json",
-            "--values", "examples/ui-documents/workbench.values.json",
+          Invoke-ViewerProof "ui-viewer-text-input" @(
+            "examples/ui-documents/text-input.json",
+            "--bindings", "examples/ui-documents/text-input.bindings.json",
+            "--values", "examples/ui-documents/text-input.values.json",
             "--width", "1280",
             "--height", "800",
-            "--smoke", "$root/ui-viewer-workbench",
+            "--smoke", "$root/ui-viewer-text-input",
             "--smoke-duration-ms", "900",
             "--smoke-scroll", "600", "400", "96",
-            "--smoke-workbench-composer", "workbench"
+            "--smoke-text-editor", "editor"
           )
 
       - name: Run Win32 Notepad IME proof
@@ -778,24 +795,24 @@ jobs:
           $source = $proof.source
           Assert-True ($source.revision -eq 2) "Viewer did not accept exactly one reload"
           Assert-True ($source.document_schema_version -eq 1) "unexpected document schema version"
-          Assert-True ($source.node_count -eq 4) "unexpected reloaded workbench node count"
+          Assert-True ($source.node_count -eq 4) "unexpected reloaded form node count"
           Assert-True ($null -eq $source.last_error) "Viewer retained a source error"
           $nodeIds = @($source.nodes | ForEach-Object id)
-          foreach ($id in @("workbench", "timeline", "composer", "inspector")) {
+          foreach ($id in @("form", "scroll", "body", "editor")) {
             Assert-True ($nodeIds -contains $id) "missing stable node $id"
           }
 
           $reload = $source.last_reload
           Assert-True ($reload.from_revision -eq 1) "unexpected reload source revision"
           Assert-True ($reload.to_revision -eq 2) "unexpected reload target revision"
-          Assert-True (@($reload.preserved_node_ids).Count -eq 4) "not all workbench nodes were preserved"
+          Assert-True (@($reload.preserved_node_ids).Count -eq 4) "not all form nodes were preserved"
           Assert-True (@($reload.added_node_ids).Count -eq 0) "reload unexpectedly added nodes"
           Assert-True (@($reload.state_resets).Count -eq 0) "reload unexpectedly reset node state"
           Assert-True (@($reload.preserved_property_bindings).Count -eq 1) "unexpected preserved binding count"
-          Assert-True ($reload.preserved_property_bindings[0] -eq "timeline_offset") "timeline offset binding was not preserved"
+          Assert-True ($reload.preserved_property_bindings[0] -eq "scroll_offset") "scroll offset binding was not preserved"
           Assert-True (@($reload.binding_state_resets).Count -eq 1) "unexpected binding reset count"
           $reset = $reload.binding_state_resets[0]
-          Assert-True ($reset.binding -eq "composer_draft") "unexpected reset binding"
+          Assert-True ($reset.binding -eq "editor_text") "unexpected reset binding"
           Assert-True ($reset.previous_type -eq "string") "unexpected previous binding type"
           Assert-True ($null -eq $reset.current_type) "removed binding unexpectedly has a current type"
           Assert-True ($reset.reason -eq "binding_removed") "unexpected binding reset reason"
@@ -821,9 +838,9 @@ jobs:
             "ui-viewer-items-repeater" = 20
             "ui-viewer-image" = 8
             "ui-viewer-settings-card" = 8
-            "ui-viewer-workbench" = 20
-            "ui-viewer-workbench-dark" = 20
-            "ui-viewer-workbench-high-contrast" = 20
+            "ui-viewer-text-input" = 2
+            "ui-viewer-text-input-dark" = 2
+            "ui-viewer-text-input-high-contrast" = 2
           }
           foreach ($scene in $minimumNodes.Keys) {
             $sceneRoot = Join-Path $componentRoot $scene
@@ -837,6 +854,13 @@ jobs:
             Assert-True ($sceneRuntime.native_accessibility_backend -eq "win32_uia") "$scene did not expose Win32 UIA"
             Assert-True ($sceneRuntime.native_accessibility_node_count -ge $minimumNodes[$scene]) "$scene exposed too few UIA nodes"
             Assert-True ($sceneRuntime.native_view_unhandled_click_count -eq 0) "$scene reported an unhandled click"
+            if ($scene.StartsWith("ui-viewer-text-input")) {
+              Assert-True ($sceneProof.source.node_count -eq 4) "$scene used the wrong input document"
+              $inputNodeIds = @($sceneProof.source.nodes | ForEach-Object id)
+              foreach ($id in @("form", "scroll", "body", "editor")) {
+                Assert-True ($inputNodeIds -contains $id) "$scene is missing stable node $id"
+              }
+            }
           }
 
           $repeater = Get-Content (Join-Path $componentRoot "ui-viewer-items-repeater/proof.json") -Raw | ConvertFrom-Json
@@ -848,23 +872,23 @@ jobs:
           Assert-True ($settings.runtime.native_view_click_count -eq 1) "SettingsCard proof did not click its stable action node"
           Assert-True ($settings.runtime.native_view_message_count -eq 1) "SettingsCard proof did not emit one typed action"
 
-          $workbench = Get-Content (Join-Path $componentRoot "ui-viewer-workbench/proof.json") -Raw | ConvertFrom-Json
-          $workbenchRuntime = $workbench.runtime
-          Assert-True ($workbenchRuntime.native_view_scroll_count -eq 1) "MessageTimeline did not route its native scroll"
-          Assert-True ($workbenchRuntime.native_view_unhandled_scroll_count -eq 0) "MessageTimeline scroll was unhandled"
-          Assert-True ($workbenchRuntime.native_view_text_input_count -gt 0) "Composer did not route native text"
-          Assert-True ($workbenchRuntime.native_view_text_navigation_count -ge 2) "Composer did not route native text navigation"
-          Assert-True ($workbenchRuntime.native_view_text_drag_count -gt 0) "Composer did not route pointer selection"
-          Assert-True ($workbenchRuntime.native_view_text_selection_change_count -gt 0) "Composer selection did not change"
-          Assert-True ($workbenchRuntime.native_view_unhandled_key_count -eq 0) "Composer reported an unhandled key"
-          $script = $workbenchRuntime.native_view_text_input_script_evidence[0]
-          Assert-True ($script.contains_cjk -and $script.contains_right_to_left -and $script.contains_combining_mark -and $script.contains_joiner) "Composer complex-script proof is incomplete"
+          $textInput = Get-Content (Join-Path $componentRoot "ui-viewer-text-input/proof.json") -Raw | ConvertFrom-Json
+          $textInputRuntime = $textInput.runtime
+          Assert-True ($textInputRuntime.native_view_scroll_count -eq 1) "ScrollView did not route its native scroll"
+          Assert-True ($textInputRuntime.native_view_unhandled_scroll_count -eq 0) "ScrollView scroll was unhandled"
+          Assert-True ($textInputRuntime.native_view_text_input_count -gt 0) "TextEditor did not route native text"
+          Assert-True ($textInputRuntime.native_view_text_navigation_count -ge 2) "TextEditor did not route native text navigation"
+          Assert-True ($textInputRuntime.native_view_text_drag_count -gt 0) "TextEditor did not route pointer selection"
+          Assert-True ($textInputRuntime.native_view_text_selection_change_count -gt 0) "TextEditor selection did not change"
+          Assert-True ($textInputRuntime.native_view_unhandled_key_count -eq 0) "TextEditor reported an unhandled key"
+          $script = $textInputRuntime.native_view_text_input_script_evidence[0]
+          Assert-True ($script.contains_cjk -and $script.contains_right_to_left -and $script.contains_combining_mark -and $script.contains_joiner) "TextEditor complex-script proof is incomplete"
 
-          $dark = Get-Content (Join-Path $componentRoot "ui-viewer-workbench-dark/proof.json") -Raw | ConvertFrom-Json
-          Assert-True ($dark.theme -eq "Dark") "Workbench dark proof did not retain its explicit theme"
-          $contrast = Get-Content (Join-Path $componentRoot "ui-viewer-workbench-high-contrast/proof.json") -Raw | ConvertFrom-Json
-          Assert-True ($contrast.theme -eq "HighContrast") "Workbench high-contrast proof did not retain its explicit theme"
-          Assert-True ($contrast.runtime.high_contrast_draw_plan_window_count -eq 1) "Workbench high-contrast draw plan was not active"
+          $dark = Get-Content (Join-Path $componentRoot "ui-viewer-text-input-dark/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($dark.theme -eq "Dark") "Text input dark proof did not retain its explicit theme"
+          $contrast = Get-Content (Join-Path $componentRoot "ui-viewer-text-input-high-contrast/proof.json") -Raw | ConvertFrom-Json
+          Assert-True ($contrast.theme -eq "HighContrast") "Text input high-contrast proof did not retain its explicit theme"
+          Assert-True ($contrast.runtime.high_contrast_draw_plan_window_count -eq 1) "Text input high-contrast draw plan was not active"
 
           $notepadPng = Join-Path $componentRoot "notepad-interaction.png"
           $notepadBytes = [IO.File]::ReadAllBytes($notepadPng)
@@ -893,6 +917,7 @@ jobs:
           retention-days: 30
 
   macos-appkit-proof:
+    if: ${{ !inputs.controls_only }}
     name: AppKit Runtime Proof
     runs-on: macos-15
     timeout-minutes: 30
@@ -1123,9 +1148,9 @@ jobs:
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-items-repeater
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-image
           mkdir -p target/native-proof/macos-15-arm64/ui-viewer-settings-card
-          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench
-          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench-dark
-          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-workbench-high-contrast
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-text-input
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-text-input-dark
+          mkdir -p target/native-proof/macos-15-arm64/ui-viewer-text-input-high-contrast
           ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
               --bindings examples/ui-documents/scrolling.bindings.json \
@@ -1164,27 +1189,27 @@ jobs:
               --smoke-click-node apply-appearance \
             2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-settings-card/viewer.log
           ./target/release/zsui-viewer \
-              examples/ui-documents/workbench.json \
-              --bindings examples/ui-documents/workbench.bindings.json \
-              --values examples/ui-documents/workbench.values.json \
+              examples/ui-documents/text-input.json \
+              --bindings examples/ui-documents/text-input.bindings.json \
+              --values examples/ui-documents/text-input.values.json \
               --width 1280 \
               --height 800 \
-              --smoke target/native-proof/macos-15-arm64/ui-viewer-workbench \
+              --smoke target/native-proof/macos-15-arm64/ui-viewer-text-input \
               --smoke-duration-ms 900 \
               --smoke-scroll 600 400 96 \
-              --smoke-workbench-composer workbench \
-            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-workbench/viewer.log
+              --smoke-text-editor editor \
+            2>&1 | tee target/native-proof/macos-15-arm64/ui-viewer-text-input/viewer.log
           for theme in dark high-contrast; do
             ./target/release/zsui-viewer \
-                examples/ui-documents/workbench.json \
-                --bindings examples/ui-documents/workbench.bindings.json \
-                --values examples/ui-documents/workbench.values.json \
+                examples/ui-documents/text-input.json \
+                --bindings examples/ui-documents/text-input.bindings.json \
+                --values examples/ui-documents/text-input.values.json \
                 --width 1280 \
                 --height 800 \
                 --theme "$theme" \
-                --smoke "target/native-proof/macos-15-arm64/ui-viewer-workbench-$theme" \
+                --smoke "target/native-proof/macos-15-arm64/ui-viewer-text-input-$theme" \
                 --smoke-duration-ms 700 \
-              2>&1 | tee "target/native-proof/macos-15-arm64/ui-viewer-workbench-$theme/viewer.log"
+              2>&1 | tee "target/native-proof/macos-15-arm64/ui-viewer-text-input-$theme/viewer.log"
           done
 
       - name: Summarize AppKit Viewer proof failure
@@ -1450,9 +1475,9 @@ jobs:
           minimum_nodes = {
               "ui-viewer-image": 8,
               "ui-viewer-settings-card": 8,
-              "ui-viewer-workbench": 20,
-              "ui-viewer-workbench-dark": 20,
-              "ui-viewer-workbench-high-contrast": 20,
+              "ui-viewer-text-input": 2,
+              "ui-viewer-text-input-dark": 2,
+              "ui-viewer-text-input-high-contrast": 2,
           }
           component_proofs = {}
           for scene, minimum in minimum_nodes.items():
@@ -1469,27 +1494,30 @@ jobs:
               assert scene_runtime["native_accessibility_backend"] == "appkit_nsaccessibility"
               assert scene_runtime["native_accessibility_node_count"] >= minimum
               assert scene_runtime["native_view_unhandled_click_count"] == 0
+              if scene.startswith("ui-viewer-text-input"):
+                  assert scene_proof["source"]["node_count"] == 4
+                  assert {node["id"] for node in scene_proof["source"]["nodes"]} == {"form", "scroll", "body", "editor"}
               component_proofs[scene] = scene_proof
 
           settings_runtime = component_proofs["ui-viewer-settings-card"]["runtime"]
           assert settings_runtime["native_view_click_count"] == 1
           assert settings_runtime["native_view_message_count"] == 1
 
-          workbench_runtime = component_proofs["ui-viewer-workbench"]["runtime"]
-          assert workbench_runtime["native_view_scroll_count"] == 1
-          assert workbench_runtime["native_view_unhandled_scroll_count"] == 0
-          assert workbench_runtime["native_view_text_input_count"] > 0
-          assert workbench_runtime["native_view_text_navigation_count"] >= 2
-          assert workbench_runtime["native_view_text_drag_count"] > 0
-          assert workbench_runtime["native_view_text_selection_change_count"] > 0
-          assert workbench_runtime["native_view_unhandled_key_count"] == 0
-          script = workbench_runtime["native_view_text_input_script_evidence"][0]
+          text_input_runtime = component_proofs["ui-viewer-text-input"]["runtime"]
+          assert text_input_runtime["native_view_scroll_count"] == 1
+          assert text_input_runtime["native_view_unhandled_scroll_count"] == 0
+          assert text_input_runtime["native_view_text_input_count"] > 0
+          assert text_input_runtime["native_view_text_navigation_count"] >= 2
+          assert text_input_runtime["native_view_text_drag_count"] > 0
+          assert text_input_runtime["native_view_text_selection_change_count"] > 0
+          assert text_input_runtime["native_view_unhandled_key_count"] == 0
+          script = text_input_runtime["native_view_text_input_script_evidence"][0]
           assert script["contains_cjk"]
           assert script["contains_right_to_left"]
           assert script["contains_combining_mark"]
           assert script["contains_joiner"]
-          assert component_proofs["ui-viewer-workbench-dark"]["theme"] == "Dark"
-          contrast = component_proofs["ui-viewer-workbench-high-contrast"]
+          assert component_proofs["ui-viewer-text-input-dark"]["theme"] == "Dark"
+          contrast = component_proofs["ui-viewer-text-input-high-contrast"]
           assert contrast["theme"] == "HighContrast"
           assert contrast["runtime"]["high_contrast_draw_plan_window_count"] == 1
 
@@ -1518,6 +1546,7 @@ jobs:
           retention-days: 30
 
   linux-direct-proof:
+    if: ${{ !inputs.controls_only }}
     name: Linux Native Runtime Proof
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -2238,9 +2267,9 @@ jobs:
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-items-repeater
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-image
           mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-settings-card
-          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench
-          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-dark
-          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-high-contrast
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input-dark
+          mkdir -p target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input-high-contrast
           dbus-run-session -- xvfb-run -a \
             ./target/release/zsui-viewer \
               examples/ui-documents/scrolling.json \
@@ -2284,28 +2313,28 @@ jobs:
             2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-settings-card/viewer.log
           dbus-run-session -- xvfb-run -a \
             ./target/release/zsui-viewer \
-              examples/ui-documents/workbench.json \
-              --bindings examples/ui-documents/workbench.bindings.json \
-              --values examples/ui-documents/workbench.values.json \
+              examples/ui-documents/text-input.json \
+              --bindings examples/ui-documents/text-input.bindings.json \
+              --values examples/ui-documents/text-input.values.json \
               --width 1280 \
               --height 800 \
-              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench \
+              --smoke target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input \
               --smoke-duration-ms 900 \
               --smoke-scroll 600 400 96 \
-              --smoke-workbench-composer workbench \
-            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench/viewer.log
+              --smoke-text-editor editor \
+            2>&1 | tee target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input/viewer.log
           for theme in dark high-contrast; do
             dbus-run-session -- xvfb-run -a \
               ./target/release/zsui-viewer \
-                examples/ui-documents/workbench.json \
-                --bindings examples/ui-documents/workbench.bindings.json \
-                --values examples/ui-documents/workbench.values.json \
+                examples/ui-documents/text-input.json \
+                --bindings examples/ui-documents/text-input.bindings.json \
+                --values examples/ui-documents/text-input.values.json \
                 --width 1280 \
                 --height 800 \
                 --theme "$theme" \
-                --smoke "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-$theme" \
+                --smoke "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input-$theme" \
                 --smoke-duration-ms 700 \
-              2>&1 | tee "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-workbench-$theme/viewer.log"
+              2>&1 | tee "target/native-proof/ubuntu-24.04-x86_64/ui-viewer-text-input-$theme/viewer.log"
           done
 
       - name: Summarize Linux Viewer proof failure
@@ -2559,9 +2588,9 @@ jobs:
           minimum_nodes = {
               "ui-viewer-image": 8,
               "ui-viewer-settings-card": 8,
-              "ui-viewer-workbench": 20,
-              "ui-viewer-workbench-dark": 20,
-              "ui-viewer-workbench-high-contrast": 20,
+              "ui-viewer-text-input": 2,
+              "ui-viewer-text-input-dark": 2,
+              "ui-viewer-text-input-high-contrast": 2,
           }
           component_proofs = {}
           for scene, minimum in minimum_nodes.items():
@@ -2578,27 +2607,30 @@ jobs:
               assert scene_runtime["native_accessibility_backend"] == "accesskit_atspi"
               assert scene_runtime["native_accessibility_node_count"] >= minimum
               assert scene_runtime["native_view_unhandled_click_count"] == 0
+              if scene.startswith("ui-viewer-text-input"):
+                  assert scene_proof["source"]["node_count"] == 4
+                  assert {node["id"] for node in scene_proof["source"]["nodes"]} == {"form", "scroll", "body", "editor"}
               component_proofs[scene] = scene_proof
 
           settings_runtime = component_proofs["ui-viewer-settings-card"]["runtime"]
           assert settings_runtime["native_view_click_count"] == 1
           assert settings_runtime["native_view_message_count"] == 1
 
-          workbench_runtime = component_proofs["ui-viewer-workbench"]["runtime"]
-          assert workbench_runtime["native_view_scroll_count"] == 1
-          assert workbench_runtime["native_view_unhandled_scroll_count"] == 0
-          assert workbench_runtime["native_view_text_input_count"] > 0
-          assert workbench_runtime["native_view_text_navigation_count"] >= 2
-          assert workbench_runtime["native_view_text_drag_count"] > 0
-          assert workbench_runtime["native_view_text_selection_change_count"] > 0
-          assert workbench_runtime["native_view_unhandled_key_count"] == 0
-          script = workbench_runtime["native_view_text_input_script_evidence"][0]
+          text_input_runtime = component_proofs["ui-viewer-text-input"]["runtime"]
+          assert text_input_runtime["native_view_scroll_count"] == 1
+          assert text_input_runtime["native_view_unhandled_scroll_count"] == 0
+          assert text_input_runtime["native_view_text_input_count"] > 0
+          assert text_input_runtime["native_view_text_navigation_count"] >= 2
+          assert text_input_runtime["native_view_text_drag_count"] > 0
+          assert text_input_runtime["native_view_text_selection_change_count"] > 0
+          assert text_input_runtime["native_view_unhandled_key_count"] == 0
+          script = text_input_runtime["native_view_text_input_script_evidence"][0]
           assert script["contains_cjk"]
           assert script["contains_right_to_left"]
           assert script["contains_combining_mark"]
           assert script["contains_joiner"]
-          assert component_proofs["ui-viewer-workbench-dark"]["theme"] == "Dark"
-          contrast = component_proofs["ui-viewer-workbench-high-contrast"]
+          assert component_proofs["ui-viewer-text-input-dark"]["theme"] == "Dark"
+          contrast = component_proofs["ui-viewer-text-input-high-contrast"]
           assert contrast["theme"] == "HighContrast"
           assert contrast["runtime"]["high_contrast_draw_plan_window_count"] == 1
 
@@ -2708,6 +2740,7 @@ jobs:
           retention-days: 30
 
   linux-wayland-atspi-proof:
+    if: ${{ !inputs.controls_only }}
     name: Wayland Runtime, AT-SPI and Menu Proof
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -3462,3 +3495,271 @@ jobs:
           path: target/native-proof/ubuntu-24.04-wayland-x86_64
           if-no-files-found: error
           retention-days: 30
+
+  desktop-controls-proof:
+    name: Controls (${{ matrix.backend }})
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.controls_only }}
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        backend: ${{ fromJSON(inputs.controls_backend == 'all' && '["windows-win32","macos-appkit","linux-direct","linux-direct-lite","linux-gtk"]' || format('["{0}"]', inputs.controls_backend)) }}
+    runs-on: ${{ matrix.backend == 'windows-win32' && 'windows-2025' || matrix.backend == 'macos-appkit' && 'macos-15' || 'ubuntu-24.04' }}
+    timeout-minutes: 35
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '1'
+      PROOF_ROOT: target/native-proof/controls-${{ matrix.backend }}
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+    - name: Install Linux native dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
+        fc-cache --force
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+    - name: Restore Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: desktop-controls-${{ matrix.backend }}
+        cache-on-failure: true
+    - name: Build control and reliability proofs
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$PROOF_ROOT"
+        cargo build --locked --no-default-features --features "${{ matrix.backend }},split-view,shell,table,icon,button,textbox,native-smoke,accessibility" --example resizable_layout --example desktop_reliability 2>&1 | tee "$PROOF_ROOT/build.log"
+    - name: Run Win32 control and directory proofs
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference='Stop'
+        Add-Type -AssemblyName UIAutomationClient
+        Add-Type -AssemblyName UIAutomationTypes
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ZsuiDialogProbe { [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam); }'
+        $taskRoot=Join-Path $PWD $env:PROOF_ROOT
+        $binRoot=Join-Path $PWD 'target/debug/examples'
+        function Wait-Window($process) {
+         for($i=0;$i -lt 100;$i++) { $process.Refresh(); if($process.HasExited){throw 'Proof process exited before its window appeared'}; if($process.MainWindowHandle -ne [IntPtr]::Zero){return [System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)}; Start-Sleep -Milliseconds 50 }
+         throw 'Proof window timed out'
+        }
+        function Condition($property,$value) { return New-Object System.Windows.Automation.PropertyCondition($property,$value) }
+        foreach($Mode in @('resize','directory')) {
+        if($Mode -eq 'resize') {
+         foreach($scene in @('navigation','panels','table')) {
+          $output=Join-Path $taskRoot ('proof\uia\'+$scene)
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $process=Start-Process -FilePath (Join-Path $binRoot 'resizable_layout.exe') -ArgumentList @('--scene',$scene,'--smoke','--external-input','--duration-ms','5000','--output',$output) -PassThru -WindowStyle Hidden
+          try {
+           $root=Wait-Window $process; Write-Output ("Root: "+$root.Current.Name+" / "+$root.Current.ClassName+" / "+$root.Current.FrameworkId)
+           $condition=Condition ([System.Windows.Automation.AutomationElement]::ControlTypeProperty) ([System.Windows.Automation.ControlType]::Separator)
+           $expected=@{navigation=1;panels=2;table=3}[$scene]
+           $handles=$null
+           for($i=0;$i -lt 60;$i++){ $root=[System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle); $handles=$root.FindAll([System.Windows.Automation.TreeScope]::Descendants,$condition); if($handles.Count -eq $expected){break};Start-Sleep -Milliseconds 50 }
+           if($handles.Count -ne $expected){ $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { [PSCustomObject]@{Name=$_.Current.Name;Type=$_.Current.ControlType.ProgrammaticName;Id=$_.Current.AutomationId;Class=$_.Current.ClassName} } | Format-Table -AutoSize | Out-String | Write-Output; throw "Expected $expected splitters, found $($handles.Count)"}
+           $evidence=@()
+           foreach($handle in $handles) {
+            if(-not $handle.Current.IsKeyboardFocusable){throw 'Splitter is not keyboard focusable'}
+            $range=[System.Windows.Automation.RangeValuePattern]$handle.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
+            $before=$range.Current.Value
+            if($range.Current.IsReadOnly -or $range.Current.SmallChange -ne 8 -or $range.Current.LargeChange -ne 32){throw 'Invalid splitter range contract'}
+            $requested=$before+32
+            $handle.SetFocus()
+            $range.SetValue($requested)
+            for($i=0;$i -lt 50;$i++){ if($range.Current.Value -eq $requested){break};Start-Sleep -Milliseconds 40 }
+            if($range.Current.Value -ne $requested){throw 'UIA range action did not reach retained application state'}
+            $evidence+=@{id=$handle.Current.AutomationId;name=$handle.Current.Name;before=$before;after=$range.Current.Value;minimum=$range.Current.Minimum;maximum=$range.Current.Maximum}
+           }
+           if(-not $process.WaitForExit(9000)){throw 'Proof window did not close'}
+           if($process.ExitCode -ne 0){throw "Proof exited with $($process.ExitCode)"}
+           $result=Get-Content -LiteralPath (Join-Path $output 'proof.json') -Raw -Encoding utf8 | ConvertFrom-Json
+           if($result.resize_messages -ne $expected -or $result.sort_requests -ne 0){throw 'Unexpected retained resize/sort messages'}
+           $evidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $output 'uia.json') -Encoding utf8
+           Write-Output "$scene UIA splitters passed ($expected)"
+          } finally { if(-not $process.HasExited){$null=$process.CloseMainWindow();$null=$process.WaitForExit(2000);if(-not $process.HasExited){$process.Kill()}} }
+         }
+        } else {
+         $selected=Join-Path $taskRoot 'proof\selected-folder'
+         New-Item -ItemType Directory -Path $selected -Force | Out-Null
+         foreach($action in @('cancel','select')) {
+          $output=Join-Path $taskRoot ('proof\directory\'+$action)
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $process=Start-Process -FilePath (Join-Path $binRoot 'desktop_reliability.exe') -ArgumentList @('--scene','directory','--smoke','--duration-ms','6500','--initial-directory',$selected,'--output',$output) -PassThru -WindowStyle Hidden
+          try {
+           $root=Wait-Window $process; Write-Output ("Root: "+$root.Current.Name+" / "+$root.Current.ClassName+" / "+$root.Current.FrameworkId)
+           $pidCondition=Condition ([System.Windows.Automation.AutomationElement]::ProcessIdProperty) $process.Id
+           $buttonId=if($action -eq 'cancel'){'2'}else{'1'}
+           $buttonCondition=Condition ([System.Windows.Automation.AutomationElement]::AutomationIdProperty) $buttonId
+           $button=$null
+           for($i=0;$i -lt 100;$i++) {
+            $windows=[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,$pidCondition)
+            foreach($window in $windows){$candidate=$window.FindFirst([System.Windows.Automation.TreeScope]::Descendants,$buttonCondition);if($null -ne $candidate -and $candidate.Current.IsEnabled){$button=$candidate;break}}
+            if($null -ne $button){break};Start-Sleep -Milliseconds 50
+           }
+           if($null -eq $button){throw 'Folder picker confirmation button was not available'}
+           if($button.Current.ClassName -ne 'Button' -or $button.Current.NativeWindowHandle -eq 0){throw 'Expected a native dialog button'}
+           $null=[ZsuiDialogProbe]::SendMessage([IntPtr]$button.Current.NativeWindowHandle,0xF5,[IntPtr]::Zero,[IntPtr]::Zero)
+           if(-not $process.WaitForExit(10000)){throw 'Directory proof did not close'}
+           if($process.ExitCode -ne 0){throw "Directory proof exited with $($process.ExitCode)"}
+           $result=Get-Content -LiteralPath (Join-Path $output 'proof.json') -Raw -Encoding utf8 | ConvertFrom-Json
+           if($action -eq 'cancel'){if($null -ne $result.directory_result.Ok){throw 'Cancellation returned a selection'}}
+           else {if([IO.Path]::GetFullPath($result.directory_result.Ok) -ne [IO.Path]::GetFullPath($selected)){throw 'Selected directory differs from initial folder'}}
+           Write-Output "Directory $action passed"
+          } finally {if(-not $process.HasExited){$null=$process.CloseMainWindow();$null=$process.WaitForExit(2000);if(-not $process.HasExited){$process.Kill()}}}
+         }
+        }
+
+
+
+
+
+
+
+        }
+
+        foreach($scene in @('navigation','panels','table','icons')) {
+         foreach($theme in @('light','dark','high-contrast')) {
+          $out=Join-Path $taskRoot ($scene+'-'+$theme)
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          & (Join-Path $binRoot 'resizable_layout.exe') --scene $scene --theme $theme --smoke --duration-ms 3000 --output $out *> (Join-Path $out 'run.log')
+          if($LASTEXITCODE -ne 0){throw "Native controls proof failed: $scene/$theme"}
+         }
+        }
+        & (Join-Path $binRoot 'desktop_reliability.exe') --smoke --duration-ms 3500 --output (Join-Path $taskRoot 'long-input') *> (Join-Path $taskRoot 'long-input.log')
+        if($LASTEXITCODE -ne 0){throw 'Native long-input proof failed'}
+    - name: Run AppKit control and directory proofs
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        run_probe() {
+          python3 - "$@" <<'PY'
+        import subprocess,sys
+        subprocess.run(sys.argv[1:],check=True,timeout=30)
+        PY
+        }
+        root="$PWD/$PROOF_ROOT"; mkdir -p "$root"
+        for scene in navigation panels table icons; do
+          for theme in light dark high-contrast; do
+            out="$root/$scene-$theme"; mkdir -p "$out"
+            run_probe ./target/debug/examples/resizable_layout --scene "$scene" --theme "$theme" --smoke --duration-ms 3000 --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
+          done
+        done
+        run_probe ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
+        selected="$root/selected-folder"; mkdir -p "$selected"
+        for action in cancel select; do
+          out="$root/directory-$action"; mkdir -p "$out"
+          ZSUI_NATIVE_DIRECTORY_PROOF_ACTION="$action" ZSUI_NATIVE_DIRECTORY_PROOF_SCREENSHOT="$out/picker.png" \
+            run_probe ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 6500 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
+         done
+    - name: Run Linux control and directory proofs
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
+        export WINIT_UNIX_BACKEND=x11
+        root="$PWD/$PROOF_ROOT"
+        mkdir -p "$root"
+        dbus-run-session -- xvfb-run -a bash -euo pipefail <<'PROOF'
+        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
+        root="$PWD/$PROOF_ROOT"
+        dbus-update-activation-environment DISPLAY XAUTHORITY
+        /usr/libexec/xdg-desktop-portal-gtk > "$root/portal-gtk.log" 2>&1 &
+        portal_gtk=$!
+        /usr/libexec/xdg-desktop-portal > "$root/portal.log" 2>&1 &
+        portal=$!
+        trap 'kill "$portal" "$portal_gtk" 2>/dev/null || true' EXIT
+        for attempt in $(seq 1 100); do
+          if gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --only-properties >/dev/null 2>&1; then break; fi
+          sleep 0.1
+        done
+        for scene in navigation panels table icons; do
+          for theme in light dark high-contrast; do
+            out="$root/$scene-$theme"; mkdir -p "$out"
+            ./target/debug/examples/resizable_layout --scene "$scene" --theme "$theme" --smoke --duration-ms 3000 --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
+          done
+        done
+        ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
+        selected="$root/selected-folder"; mkdir -p "$selected"
+        send_dialog_key() {
+          if xdotool key --window "$dialog" "$@"; then return 0; fi
+          ! xwininfo -id "$dialog" >/dev/null 2>&1
+        }
+        for action in cancel select; do
+          out="$root/directory-$action"; mkdir -p "$out"
+          ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 9000 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 &
+          proof_pid=$!
+          dialog=
+          for attempt in $(seq 1 120); do
+            dialog=$(xdotool search --onlyvisible --name '^Choose directory$' 2>/dev/null | head -n 1 || true)
+            test -n "$dialog" && break
+            kill -0 "$proof_pid" 2>/dev/null || break
+            sleep 0.1
+          done
+          if test -z "$dialog"; then kill "$proof_pid" 2>/dev/null || true; cat "$out/run.log"; exit 1; fi
+          sleep 0.3
+          import -window "$dialog" "$out/picker.png"
+          if test "$action" = cancel; then
+            send_dialog_key Escape
+          else
+            send_dialog_key ctrl+l
+            sleep 0.15
+            send_dialog_key ctrl+a
+            xdotool type --window "$dialog" --clearmodifiers --delay 1 "$selected"
+            sleep 0.15
+            send_dialog_key Return
+            sleep 0.5
+            if xwininfo -id "$dialog" >/dev/null 2>&1; then send_dialog_key Return; fi
+          fi
+          if ! timeout 20s tail --pid="$proof_pid" -f /dev/null; then kill "$proof_pid" 2>/dev/null || true; exit 1; fi
+          wait "$proof_pid"
+        done
+        PROOF
+    - name: Validate retained application state and captures
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import json,os
+        from pathlib import Path
+        root=Path(os.environ['PROOF_ROOT']).resolve()
+        for scene,count in [('navigation',1),('panels',2),('table',3),('icons',0)]:
+            for theme in ['light','dark','high-contrast']:
+                output=root/f'{scene}-{theme}'
+                proof=json.loads((output/'proof.json').read_text(encoding='utf-8-sig'))
+                assert proof['resize_messages']==count and proof['sort_requests']==0, proof
+                assert proof['runtime']['screenshot_captured'], proof
+                assert proof['screenshot_nonblank'] is True, proof
+                assert (output/'window.png').stat().st_size>1024
+        input_proof=json.loads((root/'long-input/proof.json').read_text(encoding='utf-8-sig'))
+        assert input_proof['path'].endswith('document.txt中文🙂tail')
+        assert input_proof['actions']==1 and input_proof['selection_changes']>0
+        assert input_proof['runtime']['native_view_ime_commit_count']>0
+        for action in ['cancel','select']:
+            output=root/f'directory-{action}'
+            selected=root/'selected-folder'
+            if os.name=='nt':
+                output=root/'proof/directory'/action
+                selected=root/'proof/selected-folder'
+            proof=json.loads((output/'proof.json').read_text(encoding='utf-8-sig'))
+            result=proof['directory_result']
+            assert isinstance(result,dict) and 'Ok' in result, result
+            if action=='cancel': assert result['Ok'] is None
+            else: assert Path(result['Ok']).resolve()==selected.resolve(), result
+        print('Icon themes, all resize surfaces, long input and directory select/cancel passed')
+        PY
+    - name: Upload control proof
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: zsui-desktop-controls-${{ matrix.backend }}
+        path: ${{ env.PROOF_ROOT }}/
+        if-no-files-found: error
+        retention-days: 14

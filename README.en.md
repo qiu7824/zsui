@@ -456,7 +456,7 @@ Localization is an independent `localization` service feature. Applications own
 their `ZsLocalizer`, use stable message IDs, Fluent parameters and plural rules,
 Unicode locale fallback, and normal typed state updates for runtime language
 changes. See the [localization guide](docs/localization.md).
-The component catalog tracks 49 desktop component families. All 49 have
+The component catalog tracks 47 desktop component families. All 47 have
 runtime surfaces, typed document contracts, and feature-gated builds. The optional
 `canvas` feature provides a retained custom-drawing surface with local `Dp`
 geometry, semantic colors and typed activation without exposing renderer or
@@ -551,29 +551,9 @@ features, and the default build does not bundle the full component set. Add
 Use `--smoke` for an auto-closing native screenshot check or `--manifest` for
 the non-window JSON summary.
 
-The optional `workbench` feature provides a reusable desktop conversation and
-task workspace: collapsible navigation, grouped conversation history, a
-message timeline, paragraph/code/tool/notice blocks, message actions, a
-multiline composer surface, mode/model actions and an optional inspector pane.
-Applications own the data and commands; ZSUI owns stable DPI-aware layout,
-draw plans, hit regions and local selection/scroll state.
-
-```rust
-native_window("Workbench")
-    .size(1280, 800)
-    .workbench(spec)
-    .run()?;
-```
-
-Run the standalone workbench gallery with
-`cargo run --example workbench_shell --features full`; add `--smoke` for a
-real Win32 screenshot or `--manifest` for its structural report. Use
-`zsui_component_catalog_summary()` to inspect the current WinUI-style component
-coverage without treating declaration-only components as implemented.
-
-The invoice rename workbench has matching ZSUI, eframe/egui, Iced, Slint and
+The invoice rename tool has matching ZSUI, eframe/egui, Iced, Slint and
 Tauri 2 implementations. See the
-[`release screenshots and measurements`](docs/invoice-workbench-comparison.md).
+[`release screenshots and measurements`](docs/invoice-tool-comparison.md).
 The broader [UI performance matrix](docs/ui-performance-matrix.md) builds
 Minimal, Common, Full Native App, and Viewer as separate equal-complexity
 release workloads and reports startup, first frame, empty/full/hidden/peak
@@ -615,7 +595,7 @@ reproducible local Windows Calculator comparison, including separate
 process-group and component memory counters when `ApplicationFrameHost` owns
 the visible system window.
 
-Built-in workbench visuals consume the shared Fluent token layer rather than
+Built-in component visuals consume the shared Fluent token layer rather than
 embedding product colors or icon code points. The Windows renderer uses Segoe
 UI Variable Text, the Windows 11 12/16 and 14/20 type ramp, semantic surface and
 border colors, 4 epx control corners, 8 epx card corners and semantic `ZsIcon`
@@ -653,8 +633,7 @@ assert!(report.is_valid());
 - `ZsShellLayoutSpec` / `ZsNavigationScaffoldSpec` for product-neutral
   WinUI-style navigation/card layouts with grouped cards, content rows,
   description text, row accessories and action-button areas
-- `ZsWorkbenchSpec` / `ZsWorkbenchRuntime` for reusable conversation and task
-  workspaces with navigation, message blocks, composer and inspector regions
+
 - `zsui_component_catalog()` / `zsui_component_catalog_summary()` for
   machine-readable component readiness and missing-control inventory
 - `Command` / `AppEvent`
@@ -741,10 +720,7 @@ assert!(report.is_valid());
   including left navigation, right content headers, grouped cards, rows,
   descriptions, inline controls, action areas, viewport masks and scrollbars
   projected to `NativeDrawPlan`
-- workbench composite layout plans in `src/workbench.rs`, including grouped
-  conversation navigation, user/assistant/tool surfaces, code and notice
-  blocks, composer actions, inspector tabs, DPI scaling, hit testing and local
-  interaction state
+
 - document editor shell plans in `src/document_shell.rs`, including a document
   tab, compact command bar, rounded native-editor inset, status surface,
   semantic icons and stable pointer hit regions
@@ -818,8 +794,7 @@ feature it falls back to in-memory clipboard storage.
   adaptive `navigation_view` with `.content(WidgetId, ViewNode)`; ZSUI owns the
   WinUI Auto, AppKit constraint-collapse and Libadwaita split-view composition
   without a platform enum or `cfg` in application code.
-- `examples/workbench_shell.rs`: reusable desktop conversation/task workbench
-  with real Win32 screenshot and machine-readable manifest modes.
+
 - `examples/zsui_notepad.rs`: hybrid Fluent document shell and native Windows
   text service with a release-size and runtime-memory comparison script.
 - `examples/zsui_calculator.rs`: one shared desktop calculator using the

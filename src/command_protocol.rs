@@ -165,14 +165,54 @@ impl PartialEq for SharedUiCommandExecutor {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandQueue {
     pending: VecDeque<UiCommand>,
+    capacity: usize,
+    rejected: usize,
 }
 
+impl Default for CommandQueue {
+    fn default() -> Self {
+        Self::with_capacity(crate::DEFAULT_DISPATCH_QUEUE_CAPACITY)
+    }
+}
 impl CommandQueue {
+    /// Creates a bounded FIFO. Zero capacity rejects all commands.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            pending: VecDeque::new(),
+            capacity,
+            rejected: 0,
+        }
+    }
+    /// Legacy admission API. Inspect `rejected_count` or use `try_push` for backpressure.
     pub fn push(&mut self, command: UiCommand) {
+        if let Err(error) = self.try_push(command) {
+            if self.rejected == 1 {
+                eprintln!("ZSUI: {error}");
+            }
+        }
+    }
+    /// Accepts a command without blocking, or reports that it was not queued.
+    pub fn try_push(&mut self, command: UiCommand) -> Result<(), crate::QueueFull> {
+        if self.pending.len() >= self.capacity {
+            self.rejected = self.rejected.saturating_add(1);
+            return Err(crate::QueueFull {
+                queue: "UI command",
+                capacity: self.capacity,
+            });
+        }
         self.pending.push_back(command);
+        Ok(())
+    }
+    /// Total rejected admissions, including calls to the legacy `push` helper.
+    pub fn rejected_count(&self) -> usize {
+        self.rejected
+    }
+    /// Maximum number of queued commands.
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     pub fn pop(&mut self) -> Option<UiCommand> {
