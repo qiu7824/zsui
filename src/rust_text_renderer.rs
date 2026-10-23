@@ -12,14 +12,26 @@ use cosmic_text::{
     Metrics, Shaping, Weight, Wrap,
 };
 use serde::{Deserialize, Serialize};
+use skrifa::{
+    instance::{LocationRef, NormalizedCoord, Size as OutlineSize},
+    outline::{
+        DrawSettings, Engine, HintingInstance, HintingOptions, OutlineGlyphCollection, OutlinePen,
+        SmoothMode, Target,
+    },
+    raw::TableProvider,
+    FontRef as OutlineFontRef, GlyphId, MetadataProvider, Tag as OutlineTag,
+};
 #[cfg(feature = "rust-text-proof")]
-use swash::zeno::{Command, PathData as _};
+use swash::zeno::PathData as _;
 use swash::{
     scale::{
         image::{Content, Image},
         Render, ScaleContext, Source, StrikeWith,
     },
-    zeno::{Angle, Format, Transform, Vector},
+    zeno::{
+        bounds as zeno_bounds, Angle, Command, Fill, Format, Mask, Origin, Placement, Transform,
+        Vector,
+    },
     Setting, Tag,
 };
 
@@ -31,6 +43,13 @@ const DEFAULT_GLYPH_CACHE_LIMIT: usize = 2_048;
 const DEFAULT_GLYPH_CACHE_BYTE_LIMIT: usize = 4 * 1024 * 1024;
 const DEFAULT_LAYOUT_CACHE_LIMIT: usize = 256;
 const DEFAULT_LAYOUT_CACHE_BYTE_LIMIT: usize = 2 * 1024 * 1024;
+/// Building a hinting instance runs a face's `fpgm` and `prep` programs, so a
+/// few recent face/size/variation instances are kept for glyph-cache misses.
+const HINTING_INSTANCE_CACHE_LIMIT: usize = 8;
+/// `gasp` range behaviour bit requesting ClearType symmetric smoothing.
+const GASP_SYMMETRIC_SMOOTHING: u16 = 0x0008;
+/// Horizontal distance from a pixel's centre to the centre of an outer stripe.
+const SUBPIXEL_STRIPE_OFFSET: f32 = 1.0 / 3.0;
 
 /// Line-baseline policy is platform-owned even when shaping and rasterization
 /// are shared. It prevents a portable renderer from imposing one platform's
@@ -53,6 +72,9 @@ pub enum ZsTextRasterMode {
     Grayscale,
     /// Independent red, green and blue coverage values for an RGB stripe panel.
     SubpixelRgb,
+    /// Independent coverage values for a panel whose stripes run blue, green,
+    /// red from left to right.
+    SubpixelBgr,
 }
 
 /// Explicit compositor calibration. Values are recorded in proof output so a
@@ -118,6 +140,14 @@ impl ZsTextRasterProfile {
     pub const fn subpixel_rgb() -> Self {
         Self {
             mode: ZsTextRasterMode::SubpixelRgb,
+            gamma: 1.0,
+            contrast: 1.0,
+        }
+    }
+
+    pub const fn subpixel_bgr() -> Self {
+        Self {
+            mode: ZsTextRasterMode::SubpixelBgr,
             gamma: 1.0,
             contrast: 1.0,
         }
@@ -639,7 +669,11 @@ struct CachedGlyphImage {
 /// clearing it never invalidates an already-owned [`ZsRustTextLayout`].
 pub struct ZsRustTextEngine {
     font_system: FontSystem,
+    /// Weight aliases registered for fallback matching, mapped to the real
+    /// face that renders them.
+    weight_aliases: HashMap<fontdb::ID, fontdb::ID>,
     scale_context: ScaleContext,
+    hinting_instances: HintingInstanceCache,
     layout_cache: HashMap<ZsTextLayoutCacheKey, CachedTextLayout>,
     layout_cache_limit: usize,
     layout_cache_byte_limit: usize,
@@ -677,9 +711,20 @@ impl Default for ZsRustTextEngine {
 
 impl ZsRustTextEngine {
     pub fn new() -> Self {
+        #[cfg_attr(not(windows), allow(unused_mut))]
+        let (locale, mut db) = FontSystem::new().into_locale_and_db();
+        #[cfg(windows)]
+        let weight_aliases = {
+            share_face_data(&mut db);
+            add_nearest_weight_aliases(&mut db)
+        };
+        #[cfg(not(windows))]
+        let weight_aliases = HashMap::new();
         Self {
-            font_system: FontSystem::new(),
+            font_system: FontSystem::new_with_locale_and_db(locale, db),
+            weight_aliases,
             scale_context: ScaleContext::new(),
+            hinting_instances: HintingInstanceCache::default(),
             layout_cache: HashMap::new(),
             layout_cache_limit: DEFAULT_LAYOUT_CACHE_LIMIT,
             layout_cache_byte_limit: DEFAULT_LAYOUT_CACHE_BYTE_LIMIT,
@@ -713,7 +758,11 @@ impl ZsRustTextEngine {
         self
     }
 
-    pub const fn with_line_metric_policy(mut self, policy: ZsTextLineMetricPolicy) -> Self {
+    pub fn with_line_metric_policy(mut self, policy: ZsTextLineMetricPolicy) -> Self {
+        if self.line_metric_policy != policy {
+            // The policy also selects outline hinting, so retained rasters are stale.
+            self.clear_glyph_cache();
+        }
         self.line_metric_policy = policy;
         self
     }
@@ -904,6 +953,7 @@ impl ZsRustTextEngine {
                         });
                     let strength = windows_synthetic_bold_strength_dp(
                         &mut self.font_system,
+                        &self.weight_aliases,
                         glyph,
                         requested_weight,
                         cluster_is_whitespace,
@@ -1315,6 +1365,8 @@ impl ZsRustTextEngine {
         let image = render_glyph(
             &mut self.font_system,
             &mut self.scale_context,
+            &mut self.hinting_instances,
+            self.line_metric_policy,
             key,
             mode,
             synthetic_bold_px,
@@ -1576,6 +1628,7 @@ fn gpos_kern_pair_values(
 /// The 2% em expansion is also the advance added by DirectWrite's simulation.
 fn windows_synthetic_bold_strength_dp(
     font_system: &mut FontSystem,
+    weight_aliases: &HashMap<fontdb::ID, fontdb::ID>,
     glyph: &LayoutGlyph,
     requested_weight: Weight,
     cluster_is_whitespace: bool,
@@ -1590,12 +1643,15 @@ fn windows_synthetic_bold_strength_dp(
     {
         return 0.0;
     }
-    let Some((actual_weight, family_name)) = font_system.db().face(glyph.font_id).map(|face| {
-        (
-            face.weight,
-            face.families.first().map(|family| family.0.clone()),
-        )
-    }) else {
+    let real_face = |id: fontdb::ID| weight_aliases.get(&id).copied().unwrap_or(id);
+    let Some((actual_weight, family_name)) =
+        font_system.db().face(real_face(glyph.font_id)).map(|face| {
+            (
+                face.weight,
+                face.families.first().map(|family| family.0.clone()),
+            )
+        })
+    else {
         return 0.0;
     };
     if actual_weight.0 >= SEMIBOLD_WEIGHT {
@@ -1611,6 +1667,7 @@ fn windows_synthetic_bold_strength_dp(
         if font_system
             .db()
             .query(&query)
+            .map(real_face)
             .and_then(|id| font_system.db().face(id))
             .is_some_and(|face| face.weight.0 >= SEMIBOLD_WEIGHT)
         {
@@ -1631,29 +1688,18 @@ fn windows_synthetic_bold_strength_dp(
     glyph.font_size.max(0.0) * SYNTHETIC_BOLD_EM
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_glyph(
     font_system: &mut FontSystem,
     context: &mut ScaleContext,
+    hinting_instances: &mut HintingInstanceCache,
+    line_metric_policy: ZsTextLineMetricPolicy,
     key: CacheKey,
     mode: ZsTextRasterMode,
     synthetic_bold_px: f32,
 ) -> Option<Image> {
     let font = font_system.get_font(key.font_id, key.font_weight)?;
-    let weight_axis = font
-        .as_swash()
-        .variations()
-        .find_by_tag(Tag::from_be_bytes(*b"wght"));
-    let mut scaler = context
-        .builder(font.as_swash())
-        .size(f32::from_bits(key.font_size_bits))
-        .hint(!key.flags.contains(CacheKeyFlags::DISABLE_HINTING));
-    if let Some(axis) = weight_axis {
-        scaler = scaler.variations(std::iter::once(Setting {
-            tag: Tag::from_be_bytes(*b"wght"),
-            value: f32::from(key.font_weight.0).clamp(axis.min_value(), axis.max_value()),
-        }));
-    }
-    let mut scaler = scaler.build();
+    let hint = !key.flags.contains(CacheKeyFlags::DISABLE_HINTING);
     let offset = if key.flags.contains(CacheKeyFlags::PIXEL_FONT) {
         Vector::new(
             key.x_bin.as_float().round() + 1.0,
@@ -1662,23 +1708,362 @@ fn render_glyph(
     } else {
         Vector::new(key.x_bin.as_float(), key.y_bin.as_float())
     };
-    Render::new(&[
-        Source::ColorOutline(0),
-        Source::ColorBitmap(StrikeWith::BestFit),
-        Source::Outline,
-    ])
-    .format(match mode {
+    let transform = key
+        .flags
+        .contains(CacheKeyFlags::FAKE_ITALIC)
+        .then(|| Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0)));
+    let raster = GlyphRaster {
+        key,
+        hint,
+        mode,
+        offset,
+        transform,
+        synthetic_bold_px: synthetic_bold_px.max(0.0),
+    };
+    if has_color_glyphs(context, &font) {
+        if let Some(image) = render_swash_glyph(
+            context,
+            &font,
+            &raster,
+            &[
+                Source::ColorOutline(0),
+                Source::ColorBitmap(StrikeWith::BestFit),
+            ],
+        ) {
+            return Some(image);
+        }
+    }
+    // Synthetic bold relies on swash's outline emboldening; every other
+    // scalable outline is hinted here so the target can follow the platform.
+    if raster.synthetic_bold_px == 0.0 {
+        let face_index = font_system.db().face(key.font_id)?.index;
+        if let Some(image) = render_outline_glyph(
+            &font,
+            face_index,
+            hinting_instances,
+            line_metric_policy,
+            &raster,
+        ) {
+            return Some(image);
+        }
+    }
+    render_swash_glyph(context, &font, &raster, &[Source::Outline])
+}
+
+/// Per-glyph raster request shared by the skrifa and swash paths.
+struct GlyphRaster {
+    key: CacheKey,
+    hint: bool,
+    mode: ZsTextRasterMode,
+    offset: Vector,
+    transform: Option<Transform>,
+    synthetic_bold_px: f32,
+}
+
+fn has_color_glyphs(context: &mut ScaleContext, font: &cosmic_text::Font) -> bool {
+    // An unhinted scaler is enough to inspect the face's color tables.
+    let scaler = context.builder(font.as_swash()).build();
+    scaler.has_color_outlines() || scaler.has_color_bitmaps()
+}
+
+fn render_swash_glyph(
+    context: &mut ScaleContext,
+    font: &cosmic_text::Font,
+    raster: &GlyphRaster,
+    sources: &[Source],
+) -> Option<Image> {
+    let key = raster.key;
+    let weight_axis = font
+        .as_swash()
+        .variations()
+        .find_by_tag(Tag::from_be_bytes(*b"wght"));
+    let mut scaler = context
+        .builder(font.as_swash())
+        .size(f32::from_bits(key.font_size_bits))
+        .hint(raster.hint);
+    if let Some(axis) = weight_axis {
+        scaler = scaler.variations(std::iter::once(Setting {
+            tag: Tag::from_be_bytes(*b"wght"),
+            value: f32::from(key.font_weight.0).clamp(axis.min_value(), axis.max_value()),
+        }));
+    }
+    let mut scaler = scaler.build();
+    Render::new(sources)
+        .format(raster_format(raster.mode))
+        .offset(raster.offset)
+        .transform(raster.transform)
+        .embolden(raster.synthetic_bold_px)
+        .render(&mut scaler, key.glyph_id)
+}
+
+/// Hints and rasterizes one monochrome outline. swash always asks TrueType
+/// bytecode for symmetric smoothing; drawing through skrifa lets the hinting
+/// target follow the line-metric policy instead.
+fn render_outline_glyph(
+    font: &cosmic_text::Font,
+    face_index: u32,
+    hinting_instances: &mut HintingInstanceCache,
+    line_metric_policy: ZsTextLineMetricPolicy,
+    raster: &GlyphRaster,
+) -> Option<Image> {
+    let key = raster.key;
+    let face = OutlineFontRef::from_index(font.data(), face_index).ok()?;
+    let outlines = face.outline_glyphs();
+    let glyph = outlines.get(GlyphId::new(u32::from(key.glyph_id)))?;
+    let size_px = f32::from_bits(key.font_size_bits);
+    let location = face
+        .axes()
+        .location([(OutlineTag::new(b"wght"), f32::from(key.font_weight.0))]);
+    let mut path = GlyphPath::default();
+    let hinted = raster.hint
+        && hinting_instances
+            .get(
+                key.font_id,
+                &outlines,
+                size_px,
+                location.coords(),
+                symmetric_smoothing(line_metric_policy, &face, size_px),
+            )
+            .is_some_and(|instance| {
+                glyph
+                    .draw(DrawSettings::hinted(instance, false), &mut path)
+                    .is_ok()
+            });
+    if !hinted {
+        // A face whose bytecode fails is still drawn, just without hinting.
+        path.commands.clear();
+        glyph
+            .draw(
+                DrawSettings::unhinted(OutlineSize::new(size_px), &location),
+                &mut path,
+            )
+            .ok()?;
+    }
+    Some(rasterize_glyph_path(
+        &path.commands,
+        raster.mode,
+        raster.offset,
+        raster.transform,
+    ))
+}
+
+fn rasterize_glyph_path(
+    commands: &[Command],
+    mode: ZsTextRasterMode,
+    offset: Vector,
+    transform: Option<Transform>,
+) -> Image {
+    let format = raster_format(mode);
+    let mut image = Image::new();
+    let mut mask = Mask::new(commands);
+    mask.format(format)
+        .origin(Origin::BottomLeft)
+        .transform(transform)
+        .render_offset(offset);
+    let bounds = zeno_bounds(commands, Fill::NonZero, transform);
+    image.placement = if mode == ZsTextRasterMode::Grayscale || bounds.is_empty() {
+        mask.offset(offset)
+            .inspect(|format, width, height| {
+                image.data.resize(format.buffer_size(width, height), 0);
+            })
+            .render_into(&mut image.data[..], None)
+    } else {
+        // The outer stripes sample a third of a pixel beyond the outline, so
+        // widen the mask instead of clipping the first and last stems.
+        let left = (bounds.min.x + offset.x - SUBPIXEL_STRIPE_OFFSET).floor();
+        let right = (bounds.max.x + offset.x + SUBPIXEL_STRIPE_OFFSET).ceil();
+        let bottom = (bounds.min.y + offset.y).floor();
+        let top = (bounds.max.y + offset.y).ceil();
+        let placement = Placement {
+            left: left as i32,
+            top: top as i32,
+            width: (right - left) as u32,
+            height: (top - bottom) as u32,
+        };
+        image
+            .data
+            .resize(format.buffer_size(placement.width, placement.height), 0);
+        mask.size(placement.width, placement.height)
+            .offset(Vector::new(-left, -bottom))
+            .render_into(&mut image.data[..], None);
+        placement
+    };
+    image.content = match mode {
+        ZsTextRasterMode::Grayscale => Content::Mask,
+        ZsTextRasterMode::SubpixelRgb | ZsTextRasterMode::SubpixelBgr => Content::SubpixelMask,
+    };
+    image.source = Source::Outline;
+    image
+}
+
+/// Mask format whose red, green and blue bytes sample the panel's physical
+/// stripes. zeno shifts the outline by each channel's offset before measuring
+/// coverage, so a positive shift samples the left third of the pixel.
+fn raster_format(mode: ZsTextRasterMode) -> Format {
+    match mode {
         ZsTextRasterMode::Grayscale => Format::Alpha,
-        ZsTextRasterMode::SubpixelRgb => Format::Subpixel,
-    })
-    .offset(offset)
-    .transform(
-        key.flags
-            .contains(CacheKeyFlags::FAKE_ITALIC)
-            .then(|| Transform::skew(Angle::from_degrees(14.0), Angle::from_degrees(0.0))),
-    )
-    .embolden(synthetic_bold_px.max(0.0))
-    .render(&mut scaler, key.glyph_id)
+        ZsTextRasterMode::SubpixelRgb => {
+            Format::CustomSubpixel([SUBPIXEL_STRIPE_OFFSET, 0.0, -SUBPIXEL_STRIPE_OFFSET])
+        }
+        ZsTextRasterMode::SubpixelBgr => {
+            Format::CustomSubpixel([-SUBPIXEL_STRIPE_OFFSET, 0.0, SUBPIXEL_STRIPE_OFFSET])
+        }
+    }
+}
+
+/// Whether TrueType bytecode may assume vertical supersampling. When it may,
+/// ClearType-era faces keep fractional horizontal stems, which an area
+/// rasterizer paints as a soft second row under every stroke. FreeType-style
+/// hosts always report it; the Windows policy follows DirectWrite, which asks
+/// the face's `gasp` table per size.
+fn symmetric_smoothing(
+    policy: ZsTextLineMetricPolicy,
+    face: &OutlineFontRef<'_>,
+    size_px: f32,
+) -> bool {
+    match policy {
+        ZsTextLineMetricPolicy::CenteredGlyphBox => true,
+        ZsTextLineMetricPolicy::WindowsDirectWrite => face.gasp().ok().is_none_or(|gasp| {
+            gasp_requests_symmetric_smoothing(
+                gasp.gasp_ranges()
+                    .iter()
+                    .map(|range| (range.range_max_ppem(), range.range_gasp_behavior().bits())),
+                size_px,
+            )
+        }),
+    }
+}
+
+/// Looks up the `gasp` range covering `size_px`; ranges are sorted by their
+/// inclusive maximum ppem. Faces without a covering range keep the default.
+fn gasp_requests_symmetric_smoothing(
+    ranges: impl IntoIterator<Item = (u16, u16)>,
+    size_px: f32,
+) -> bool {
+    let ppem = size_px.round().clamp(0.0, f32::from(u16::MAX)) as u16;
+    ranges
+        .into_iter()
+        .find(|(max_ppem, _)| ppem <= *max_ppem)
+        .is_none_or(|(_, behavior)| behavior & GASP_SYMMETRIC_SMOOTHING != 0)
+}
+
+fn hinting_options(symmetric_smoothing: bool) -> HintingOptions {
+    // The smooth LCD target with linear metrics is the one swash uses, so the
+    // symmetric-smoothing bit is the only difference between the two paths.
+    HintingOptions {
+        engine: Engine::AutoFallback,
+        target: Target::Smooth {
+            mode: SmoothMode::Lcd,
+            symmetric_rendering: symmetric_smoothing,
+            preserve_linear_metrics: true,
+        },
+    }
+}
+
+/// Recently used skrifa hinting instances, keyed by face, size, variation
+/// coordinates and symmetric-smoothing mode.
+#[derive(Default)]
+struct HintingInstanceCache {
+    entries: Vec<CachedHintingInstance>,
+    clock: u64,
+}
+
+struct CachedHintingInstance {
+    font_id: fontdb::ID,
+    size_bits: u32,
+    coords: Vec<NormalizedCoord>,
+    symmetric_smoothing: bool,
+    instance: HintingInstance,
+    last_used: u64,
+}
+
+impl HintingInstanceCache {
+    fn get(
+        &mut self,
+        font_id: fontdb::ID,
+        outlines: &OutlineGlyphCollection<'_>,
+        size_px: f32,
+        coords: &[NormalizedCoord],
+        symmetric_smoothing: bool,
+    ) -> Option<&HintingInstance> {
+        self.clock = self.clock.wrapping_add(1);
+        let size_bits = size_px.to_bits();
+        let cached = self.entries.iter().position(|entry| {
+            entry.font_id == font_id
+                && entry.size_bits == size_bits
+                && entry.symmetric_smoothing == symmetric_smoothing
+                && entry.coords == coords
+        });
+        let index = match cached {
+            Some(index) => index,
+            None => {
+                let instance = HintingInstance::new(
+                    outlines,
+                    OutlineSize::new(size_px),
+                    LocationRef::new(coords),
+                    hinting_options(symmetric_smoothing),
+                )
+                .ok()?;
+                let entry = CachedHintingInstance {
+                    font_id,
+                    size_bits,
+                    coords: coords.to_vec(),
+                    symmetric_smoothing,
+                    instance,
+                    last_used: 0,
+                };
+                if self.entries.len() < HINTING_INSTANCE_CACHE_LIMIT {
+                    self.entries.push(entry);
+                    self.entries.len() - 1
+                } else {
+                    let oldest = self
+                        .entries
+                        .iter()
+                        .enumerate()
+                        .min_by_key(|(_, entry)| entry.last_used)
+                        .map_or(0, |(index, _)| index);
+                    self.entries[oldest] = entry;
+                    oldest
+                }
+            }
+        };
+        let entry = &mut self.entries[index];
+        entry.last_used = self.clock;
+        Some(&entry.instance)
+    }
+}
+
+/// Collects a skrifa outline as zeno path commands.
+#[derive(Default)]
+struct GlyphPath {
+    commands: Vec<Command>,
+}
+
+impl OutlinePen for GlyphPath {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.commands.push(Command::MoveTo(Vector::new(x, y)));
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        self.commands.push(Command::LineTo(Vector::new(x, y)));
+    }
+
+    fn quad_to(&mut self, cx0: f32, cy0: f32, x: f32, y: f32) {
+        self.commands
+            .push(Command::QuadTo(Vector::new(cx0, cy0), Vector::new(x, y)));
+    }
+
+    fn curve_to(&mut self, cx0: f32, cy0: f32, cx1: f32, cy1: f32, x: f32, y: f32) {
+        self.commands.push(Command::CurveTo(
+            Vector::new(cx0, cy0),
+            Vector::new(cx1, cy1),
+            Vector::new(x, y),
+        ));
+    }
+
+    fn close(&mut self) {
+        self.commands.push(Command::Close);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1760,6 +2145,79 @@ fn blend_channel(destination: u8, source: u8, alpha: u8) -> u8 {
 
 fn multiply_alpha(left: u8, right: u8) -> u8 {
     ((u16::from(left) * u16::from(right) + 127) / 255) as u8
+}
+
+/// Maps every font file once. cosmic-text inspects each non-matching
+/// candidate's variation axes whenever it ranks fonts for a new family and
+/// weight; with file-backed sources each check opened and mapped the file
+/// again. Weight aliases created afterwards clone the shared source and reuse
+/// the same mapping.
+#[cfg(windows)]
+fn share_face_data(db: &mut fontdb::Database) {
+    let ids = db.faces().map(|face| face.id).collect::<Vec<_>>();
+    for id in ids {
+        // SAFETY: this is the memory mapping cosmic-text already applies to
+        // every face it renders; installed system font files are not
+        // rewritten while they are mapped.
+        unsafe {
+            db.make_shared_face_data(id);
+        }
+    }
+}
+
+/// Weights requested through [`cosmic_weight`].
+#[cfg_attr(not(windows), allow(dead_code))]
+const REQUESTED_FACE_WEIGHTS: [u16; 4] = [400, 500, 600, 700];
+
+/// cosmic-text only accepts a script or common fallback face whose weight
+/// equals the request. Families such as Microsoft YaHei UI ship Light,
+/// Regular and Bold faces only, so a Semibold run skipped them and each CJK
+/// glyph landed in whichever font happened to have a 600 face (DengXian Bold,
+/// Yu Gothic UI Semibold). For every family, style and stretch group, register
+/// each missing requested weight as an alias of the face CSS/DirectWrite
+/// matching selects (600 -> Bold, 500 -> Regular). The returned map resolves
+/// an alias to the face that actually renders it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn add_nearest_weight_aliases(db: &mut fontdb::Database) -> HashMap<fontdb::ID, fontdb::ID> {
+    let mut groups: Vec<(String, fontdb::Style, fontdb::Stretch)> = Vec::new();
+    for face in db.faces() {
+        let Some((family, _)) = face.families.first() else {
+            continue;
+        };
+        if !groups.iter().any(|(candidate, style, stretch)| {
+            candidate == family && *style == face.style && *stretch == face.stretch
+        }) {
+            groups.push((family.clone(), face.style, face.stretch));
+        }
+    }
+    let mut planned = Vec::new();
+    for (family, style, stretch) in &groups {
+        let families = [Family::Name(family)];
+        for weight in REQUESTED_FACE_WEIGHTS {
+            let query = fontdb::Query {
+                families: &families,
+                weight: Weight(weight),
+                stretch: *stretch,
+                style: *style,
+            };
+            let Some(id) = db.query(&query) else {
+                continue;
+            };
+            if db.face(id).is_some_and(|face| {
+                face.weight.0 != weight && face.style == *style && face.stretch == *stretch
+            }) {
+                planned.push((id, weight));
+            }
+        }
+    }
+    let mut aliases = HashMap::new();
+    for (real, weight) in planned {
+        if let Some(mut info) = db.face(real).cloned() {
+            info.weight = Weight(weight);
+            aliases.insert(db.push_face_info(info), real);
+        }
+    }
+    aliases
 }
 
 fn cosmic_weight(weight: TextWeight) -> Weight {
@@ -2046,6 +2504,92 @@ fn svg_path(commands: &[Command]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_requested_weights_alias_the_css_nearest_face() {
+        let mut db = fontdb::Database::new();
+        let face = |weight: u16| fontdb::FaceInfo {
+            id: fontdb::ID::dummy(),
+            source: fontdb::Source::Binary(Arc::new(Vec::<u8>::new())),
+            index: 0,
+            families: vec![(
+                "Han Sans UI".to_string(),
+                fontdb::Language::English_UnitedStates,
+            )],
+            post_script_name: format!("HanSansUI-{weight}"),
+            style: fontdb::Style::Normal,
+            weight: Weight(weight),
+            stretch: fontdb::Stretch::Normal,
+            monospaced: false,
+        };
+        let light = db.push_face_info(face(290));
+        let regular = db.push_face_info(face(400));
+        let bold = db.push_face_info(face(700));
+
+        let aliases = add_nearest_weight_aliases(&mut db);
+        let real_for = |weight: u16| {
+            aliases
+                .iter()
+                .find(|(alias, _)| db.face(**alias).is_some_and(|face| face.weight.0 == weight))
+                .map(|(_, real)| *real)
+        };
+        assert_eq!(aliases.len(), 2, "only 500 and 600 are missing");
+        assert_eq!(real_for(500), Some(regular));
+        assert_eq!(real_for(600), Some(bold));
+        assert_ne!(real_for(500), Some(light));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn semibold_cjk_fallback_uses_one_family_with_its_bold_face() {
+        let mut engine = ZsRustTextEngine::new();
+        let text = "计划 0/2";
+        let style = |weight| TextStyle {
+            font_family: "Segoe UI".to_string(),
+            size: 14.0,
+            line_height: 20.0,
+            semantic_role: Some(crate::TextRole::Body),
+            weight,
+            color: Color::rgb(0, 0, 0),
+            horizontal_align: HorizontalAlign::Start,
+            vertical_align: VerticalAlign::Center,
+            wrap: TextWrap::NoWrap,
+            ellipsis: false,
+        };
+        let mut cjk_faces = |weight| {
+            let layout = engine.layout(text, &style(weight), 400, 40, 1.0);
+            layout
+                .glyphs()
+                .iter()
+                .filter(|glyph| {
+                    text.get(glyph.cluster_start..glyph.cluster_end)
+                        .is_some_and(|cluster| cluster.chars().any(|c| c >= '\u{4E00}'))
+                })
+                .map(|glyph| {
+                    let real = engine
+                        .weight_aliases
+                        .get(&glyph.key.font_id)
+                        .copied()
+                        .unwrap_or(glyph.key.font_id);
+                    let face = engine.font_system.db().face(real).expect("glyph face");
+                    (face.families[0].0.clone(), face.weight.0)
+                })
+                .collect::<Vec<_>>()
+        };
+        let regular = cjk_faces(TextWeight::Regular);
+        if regular.is_empty() {
+            return; // no CJK font installed on this host
+        }
+        let semibold = cjk_faces(TextWeight::Semibold);
+        assert_eq!(semibold.len(), regular.len());
+        for ((family, weight), (regular_family, _)) in semibold.iter().zip(&regular) {
+            assert_eq!(
+                family, regular_family,
+                "semibold CJK must not switch typefaces"
+            );
+            assert!(*weight >= 600, "{family} rendered at {weight}");
+        }
+    }
     use std::sync::{Mutex, MutexGuard};
 
     fn text_engine_test_guard() -> MutexGuard<'static, ()> {
@@ -2080,6 +2624,132 @@ mod tests {
             ZsTextRasterProfile::subpixel_rgb(),
         );
         assert_eq!(pixel, [255, 255, 0, 255]);
+    }
+
+    fn rectangle_path(left: f32, right: f32, top: f32) -> Vec<Command> {
+        vec![
+            Command::MoveTo(Vector::new(left, 0.0)),
+            Command::LineTo(Vector::new(left, top)),
+            Command::LineTo(Vector::new(right, top)),
+            Command::LineTo(Vector::new(right, 0.0)),
+            Command::Close,
+        ]
+    }
+
+    /// Red, green and blue coverage of a subpixel mask's first row.
+    fn subpixel_row(image: &Image) -> Vec<[u8; 3]> {
+        image.data[..image.placement.width as usize * 4]
+            .chunks_exact(4)
+            .map(|pixel| [pixel[0], pixel[1], pixel[2]])
+            .collect()
+    }
+
+    #[test]
+    fn subpixel_masks_sample_the_panel_stripe_order() {
+        // A stem whose left edge is halfway across a pixel. On an RGB panel
+        // the edge covers that pixel's right (blue) stripe more than its left
+        // (red) stripe, and the opposite on a BGR panel.
+        let path = rectangle_path(2.5, 6.0, 3.0);
+        let rgb = rasterize_glyph_path(&path, ZsTextRasterMode::SubpixelRgb, Vector::ZERO, None);
+        let bgr = rasterize_glyph_path(&path, ZsTextRasterMode::SubpixelBgr, Vector::ZERO, None);
+        let bounds = |image: &Image| {
+            let placement = image.placement;
+            (
+                placement.left,
+                placement.top,
+                placement.width,
+                placement.height,
+            )
+        };
+        assert_eq!(rgb.content, Content::SubpixelMask);
+        assert_eq!(bounds(&rgb), bounds(&bgr));
+
+        let edge = (2 - rgb.placement.left) as usize;
+        let [red, green, blue] = subpixel_row(&rgb)[edge];
+        assert!(blue > green && green > red, "RGB edge {red},{green},{blue}");
+        let [red, green, blue] = subpixel_row(&bgr)[edge];
+        assert!(red > green && green > blue, "BGR edge {red},{green},{blue}");
+    }
+
+    #[test]
+    fn subpixel_masks_keep_the_outer_stripes_of_the_outermost_stems() {
+        // Every channel sees the whole 2px-wide stem once the mask is padded
+        // for the stripe offsets; clipping would lose an outer stripe.
+        let path = rectangle_path(1.1, 3.1, 2.0);
+        for mode in [ZsTextRasterMode::SubpixelRgb, ZsTextRasterMode::SubpixelBgr] {
+            let image = rasterize_glyph_path(&path, mode, Vector::ZERO, None);
+            let row = subpixel_row(&image);
+            for channel in 0..3 {
+                let coverage = row
+                    .iter()
+                    .map(|pixel| u32::from(pixel[channel]))
+                    .sum::<u32>();
+                assert!(
+                    coverage.abs_diff(2 * 255) <= 4,
+                    "{mode:?} channel {channel} covers {coverage}"
+                );
+            }
+        }
+        let grayscale =
+            rasterize_glyph_path(&path, ZsTextRasterMode::Grayscale, Vector::ZERO, None);
+        assert_eq!(grayscale.content, Content::Mask);
+        assert_eq!(grayscale.placement.left, 1);
+        assert_eq!(grayscale.placement.width, 3);
+    }
+
+    #[test]
+    fn gasp_ranges_select_symmetric_smoothing_per_size() {
+        // Microsoft YaHei UI: no symmetric smoothing from 9 to 21 ppem.
+        let ranges = [(8, 0x000e), (21, 0x0007), (u16::MAX, 0x000b)];
+        assert!(gasp_requests_symmetric_smoothing(ranges, 8.0));
+        assert!(!gasp_requests_symmetric_smoothing(ranges, 14.0));
+        assert!(!gasp_requests_symmetric_smoothing(ranges, 21.0));
+        assert!(gasp_requests_symmetric_smoothing(ranges, 28.0));
+        // A face without a covering range keeps the rasterizer default.
+        assert!(gasp_requests_symmetric_smoothing([], 21.0));
+        assert!(gasp_requests_symmetric_smoothing([(12, 0x0007)], 21.0));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_policy_draws_cjk_horizontal_strokes_on_whole_pixels() {
+        let _guard = text_engine_test_guard();
+        let mut engine = ZsRustTextEngine::new()
+            .with_line_metric_policy(ZsTextLineMetricPolicy::WindowsDirectWrite);
+        let style = TextStyle::line("Microsoft YaHei UI", 14.0, Color::rgb(0, 0, 0));
+        let layout = engine.layout("三", &style, 64, 40, 1.5);
+        let Some(glyph) = layout.glyphs().first() else {
+            return;
+        };
+        let real_face = engine
+            .weight_aliases
+            .get(&glyph.key.font_id)
+            .copied()
+            .unwrap_or(glyph.key.font_id);
+        if engine
+            .font_system
+            .db()
+            .face(real_face)
+            .is_none_or(|face| face.families[0].0 != "Microsoft YaHei UI")
+        {
+            return; // the font is not installed on this host
+        }
+        let image = engine
+            .glyph_image(glyph.key, ZsTextRasterMode::Grayscale, 0.0)
+            .expect("glyph raster");
+        let width = image.placement.width as usize;
+        let mut strokes = 0;
+        for row in image.data.chunks_exact(width) {
+            let coverage = row.iter().copied().max().unwrap_or(0);
+            // DirectWrite fits each stroke to whole pixels at 21 ppem, so no
+            // row carries only the soft edge of a fractional stroke.
+            assert!(
+                coverage < 16 || coverage >= 220,
+                "partially covered stroke row: {row:?}"
+            );
+            strokes += usize::from(coverage >= 220);
+        }
+        assert_eq!(strokes, 3, "三 has three one-pixel strokes");
     }
 
     #[test]

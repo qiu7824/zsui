@@ -1,0 +1,11 @@
+[package]
+name = "zsui-native-proof"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone comparator for ZSUI native UI proof artifacts."
+license = "MPL-2.0"
+
+[dependencies]
+png = "0.18"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

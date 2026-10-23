@@ -28,7 +28,7 @@ TextStyle + text + constraints + DPI
        Arc<ZsRustTextLayout> geometry
           |                     |
           v                     v
- measure/caret/IME       Swash glyph raster
+ measure/caret/IME      hinted glyph raster
                                 |
                                 v
                   native buffered compositor
@@ -68,7 +68,11 @@ least-recently-used, clearing glyph images does not invalidate an owned layout,
 and `ZsTextCacheStats` exposes hit/miss/eviction counters for framework
 diagnostics. The Win32 adapter initializes this context on first measure or
 draw, and `WindowsGdiRenderer::text_layout()` returns a facade backed by the
-same per-window resource cache. Linux Direct Lite also owns one shared context
+same per-window resource cache. View layout measurement uses that same
+per-window cache: the window's View route owns it and the painter adopts it,
+so one `FontSystem` serves measuring and painting for the window's lifetime.
+Measurement resolves the installed UI and icon families (probed once through a
+memory DC), the same faces the painter draws with. Linux Direct Lite also owns one shared context
 for menu measurement, final-surface drawing, typography metrics and text-input
 caret/selection geometry; it no longer constructs a second `FontSystem`,
 `Buffer` or `SwashCache` path beside the ZSUI engine.
@@ -79,7 +83,7 @@ caret/selection geometry; it no longer constructs a second `FontSystem`,
 | --- | --- | --- |
 | `windows-gdi` | Bounded GDI fallback | Existing buffered Win32 DIB |
 | `windows-directwrite` | Opt-in system comparison/oracle | Existing buffered Win32 DIB |
-| `windows-rust-text` | Default ZSUI Rust pipeline using HarfRust and Swash | Existing buffered Win32 DIB |
+| `windows-rust-text` | Default ZSUI Rust pipeline using HarfRust, skrifa and Swash | Existing buffered Win32 DIB |
 | `linux-direct-lite` | The same retained ZSUI Rust pipeline | Final tiny-skia/Softbuffer surface |
 | `rust-text-proof` | Development-only proof data/functions on top of `rust-text` | No application presentation |
 | `windows-text-proof` | DirectWrite reference plus `rust-text-proof` | PNG, JSON and SVG evidence |
@@ -93,9 +97,33 @@ conventions merely because they reuse the portable engine.
 
 Backends may composite a retained layout directly into a larger BGRA software
 surface with a physical origin and clip. This path reuses the glyph cache and
-does not allocate a temporary text bitmap for every draw command. Windows may
-select subpixel RGB; Linux Lite deliberately selects grayscale while retaining
-its GTK typography metrics and native window/input/service behavior.
+does not allocate a temporary text bitmap for every draw command. Windows
+follows the user's font-smoothing settings: ClearType selects subpixel RGB or
+BGR from the configured stripe order, while standard or disabled smoothing
+(common in remote sessions) selects grayscale; icon glyphs are always
+grayscale. Linux Lite deliberately selects grayscale while retaining its GTK
+typography metrics and native window/input/service behavior.
+
+## Glyph rasterization
+
+Monochrome outlines are hinted through skrifa and rasterized by zeno; color
+glyph layers and bitmaps, and the rare synthetic-bold glyph, keep swash's
+renderer. Hinting uses the smooth LCD target with linear metrics, so advances
+never change. The remaining choice is the TrueType `GETINFO` symmetric
+smoothing bit, which tells bytecode whether the rasterizer also antialiases
+vertically. When it is set, ClearType-era faces keep fractional horizontal
+stems, and an area rasterizer paints a soft second row under every stroke.
+FreeType reports it unconditionally, and Linux Lite keeps that convention. The
+Windows line-metric policy follows DirectWrite instead: the face's `gasp` range
+for the current ppem decides. Microsoft YaHei UI therefore draws whole-pixel
+horizontal strokes up to 21 ppem, exactly as DirectWrite's natural ClearType
+mode does, while Segoe UI above 19 ppem and Segoe UI Variable from 8 to 50
+ppem request symmetric smoothing on both renderers.
+
+Subpixel masks measure each channel at its physical stripe: on an RGB panel the
+red channel samples the left third of a pixel and blue the right third. The
+mask is widened by that third of a pixel so the outer stripes of a glyph's
+first and last stems are not clipped.
 
 `rust-text` is a production capability. `rust-text-proof` and
 `windows-text-proof` are framework-development features used by examples, tools

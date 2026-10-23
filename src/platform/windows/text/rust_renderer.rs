@@ -1,11 +1,16 @@
 use std::{ffi::c_void, fmt, mem::size_of, ptr::null_mut};
 
 use windows_sys::Win32::{
-    Foundation::HANDLE,
+    Foundation::{BOOL, HANDLE},
     Graphics::Gdi::{
         BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush,
         SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
         RGBQUAD, SRCCOPY,
+    },
+    UI::WindowsAndMessaging::{
+        SystemParametersInfoW, FE_FONTSMOOTHINGCLEARTYPE, FE_FONTSMOOTHINGORIENTATIONBGR,
+        FE_FONTSMOOTHINGORIENTATIONRGB, SPI_GETFONTSMOOTHING, SPI_GETFONTSMOOTHINGORIENTATION,
+        SPI_GETFONTSMOOTHINGTYPE,
     },
 };
 
@@ -36,7 +41,7 @@ impl Default for WindowsRustTextState {
         Self {
             engine: None,
             bitmap: None,
-            profile: ZsTextRasterProfile::subpixel_rgb(),
+            profile: windows_system_text_raster_profile(),
             stats: WindowsRustTextStats::default(),
         }
     }
@@ -186,6 +191,28 @@ impl WindowsRustTextState {
         Some(engine.measure(text, style, max_width, dpi_scale))
     }
 
+    pub(crate) fn shape_line(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        dpi_scale: f32,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        let was_uninitialized = self.engine.is_none();
+        let engine = self.engine.get_or_insert_with(|| {
+            ZsRustTextEngine::new()
+                .with_line_metric_policy(ZsTextLineMetricPolicy::WindowsDirectWrite)
+        });
+        if was_uninitialized {
+            self.stats.engine_initializations = self.stats.engine_initializations.saturating_add(1);
+        }
+        let layout = engine.layout(text, style, 0, 0, dpi_scale);
+        crate::rust_text_renderer::native_shaped_line_from_layout(
+            text,
+            &layout,
+            style.size * dpi_scale,
+        )
+    }
+
     pub(crate) const fn stats(&self) -> WindowsRustTextStats {
         self.stats
     }
@@ -199,6 +226,51 @@ const fn windows_rust_text_raster_profile(
         ZsTextRasterProfile::grayscale()
     } else {
         text_profile
+    }
+}
+
+/// Follows the user's font-smoothing choice, as GDI and DirectWrite do.
+/// Settings that cannot be read keep the ClearType RGB default.
+fn windows_system_text_raster_profile() -> ZsTextRasterProfile {
+    let mut smoothing: BOOL = 1;
+    let mut smoothing_type = FE_FONTSMOOTHINGCLEARTYPE;
+    let mut orientation = FE_FONTSMOOTHINGORIENTATIONRGB;
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETFONTSMOOTHING,
+            0,
+            (&mut smoothing as *mut BOOL).cast(),
+            0,
+        );
+        SystemParametersInfoW(
+            SPI_GETFONTSMOOTHINGTYPE,
+            0,
+            (&mut smoothing_type as *mut u32).cast(),
+            0,
+        );
+        SystemParametersInfoW(
+            SPI_GETFONTSMOOTHINGORIENTATION,
+            0,
+            (&mut orientation as *mut u32).cast(),
+            0,
+        );
+    }
+    windows_text_raster_profile(smoothing != 0, smoothing_type, orientation)
+}
+
+/// ClearType selects the panel's stripe order; standard or disabled smoothing
+/// keeps one coverage value per pixel, which also suits remote sessions.
+const fn windows_text_raster_profile(
+    smoothing: bool,
+    smoothing_type: u32,
+    orientation: u32,
+) -> ZsTextRasterProfile {
+    if !smoothing || smoothing_type != FE_FONTSMOOTHINGCLEARTYPE {
+        ZsTextRasterProfile::grayscale()
+    } else if orientation == FE_FONTSMOOTHINGORIENTATIONBGR {
+        ZsTextRasterProfile::subpixel_bgr()
+    } else {
+        ZsTextRasterProfile::subpixel_rgb()
     }
 }
 
@@ -363,6 +435,47 @@ mod tests {
         assert_eq!(
             windows_rust_text_raster_profile(Some(crate::TextRole::Body), text).mode,
             ZsTextRasterMode::SubpixelRgb
+        );
+    }
+
+    #[test]
+    fn text_raster_profile_follows_system_font_smoothing() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::FE_FONTSMOOTHINGSTANDARD;
+
+        let mode = |smoothing, smoothing_type, orientation| {
+            windows_text_raster_profile(smoothing, smoothing_type, orientation).mode
+        };
+        assert_eq!(
+            mode(
+                true,
+                FE_FONTSMOOTHINGCLEARTYPE,
+                FE_FONTSMOOTHINGORIENTATIONRGB
+            ),
+            ZsTextRasterMode::SubpixelRgb
+        );
+        assert_eq!(
+            mode(
+                true,
+                FE_FONTSMOOTHINGCLEARTYPE,
+                FE_FONTSMOOTHINGORIENTATIONBGR
+            ),
+            ZsTextRasterMode::SubpixelBgr
+        );
+        assert_eq!(
+            mode(
+                true,
+                FE_FONTSMOOTHINGSTANDARD,
+                FE_FONTSMOOTHINGORIENTATIONRGB
+            ),
+            ZsTextRasterMode::Grayscale
+        );
+        assert_eq!(
+            mode(
+                false,
+                FE_FONTSMOOTHINGCLEARTYPE,
+                FE_FONTSMOOTHINGORIENTATIONRGB
+            ),
+            ZsTextRasterMode::Grayscale
         );
     }
 }

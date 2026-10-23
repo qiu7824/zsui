@@ -480,6 +480,8 @@ mod tests {
             #[cfg(feature = "accessibility")]
             accessibility_nodes: Vec::new(),
             tooltip_targets: vec![target.clone()],
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         };
         let start = Instant::now();
         let mut runtime = ZsTooltipRuntime::new(ZsTooltipTiming {

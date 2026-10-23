@@ -1,9 +1,12 @@
+use std::fmt;
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand, NativeDrawPlan,
-    NativeIconColorMode, Rect, SemanticTextStyle, WidgetId, ZsIcon, ZsPointerButton,
-    ZsPointerModifiers,
+    Color, ColorRole, Dp, Dpi, NativeDrawCommand, NativeDrawFill, NativeDrawIconCommand,
+    NativeDrawPlan, NativeIconColorMode, Rect, SemanticTextStyle, WidgetId, ZsIcon,
+    ZsPointerButton, ZsPointerModifiers,
 };
 
 /// Lifecycle phase for a Canvas pointer capture.
@@ -27,6 +30,10 @@ pub struct ZsCanvasPointerEvent {
     pub button: ZsPointerButton,
     pub modifiers: ZsPointerModifiers,
     pub inside: bool,
+    /// The topmost scene hover region under `position`, filled in when the
+    /// event reaches the Canvas, so custom-drawn controls need no hit test.
+    #[serde(default)]
+    pub region: Option<u64>,
 }
 
 impl ZsCanvasPointerEvent {
@@ -45,7 +52,13 @@ impl ZsCanvasPointerEvent {
             button,
             modifiers,
             inside,
+            region: None,
         }
+    }
+
+    pub const fn with_region(mut self, region: Option<u64>) -> Self {
+        self.region = region;
+        self
     }
 }
 
@@ -130,6 +143,24 @@ pub enum ZsCanvasPrimitive {
         rect: ZsCanvasRect,
         color: ColorRole,
     },
+    /// Text with an optional brand color and explicit size, for example on
+    /// a dark navigation rail, an avatar or an icon-font glyph. High-contrast
+    /// mode falls back to `style.color`.
+    TextRun {
+        text: String,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Option<Color>,
+        size: Option<Dp>,
+    },
+    /// A theme-aware icon tinted with an explicit brand color. High-contrast
+    /// mode falls back to `fallback`.
+    ColoredIcon {
+        icon: ZsIcon,
+        rect: ZsCanvasRect,
+        color: Color,
+        fallback: ColorRole,
+    },
 }
 
 impl ZsCanvasPrimitive {
@@ -152,19 +183,141 @@ impl ZsCanvasPrimitive {
     pub const fn icon(icon: ZsIcon, rect: ZsCanvasRect, color: ColorRole) -> Self {
         Self::Icon { icon, rect, color }
     }
+
+    /// Text drawn in `color`; `style.color` remains the high-contrast fallback.
+    pub fn colored_text(
+        text: impl Into<String>,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Color,
+    ) -> Self {
+        Self::text_run(text, rect, style, Some(color), None)
+    }
+
+    /// Text with an optional explicit color and font size in DP.
+    pub fn text_run(
+        text: impl Into<String>,
+        rect: ZsCanvasRect,
+        style: SemanticTextStyle,
+        color: Option<Color>,
+        size: Option<Dp>,
+    ) -> Self {
+        Self::TextRun {
+            text: text.into(),
+            rect,
+            style,
+            color,
+            size,
+        }
+    }
+
+    /// One glyph of the platform icon font (Segoe Fluent Icons or Segoe MDL2
+    /// Assets on Windows) centered in `rect` and sized to its shorter side.
+    pub fn glyph(glyph: char, rect: ZsCanvasRect, color: Color, fallback: ColorRole) -> Self {
+        let mut style = SemanticTextStyle::for_role(crate::TextRole::Icon);
+        style.color = fallback;
+        style.horizontal_align = crate::HorizontalAlign::Center;
+        style.ellipsis = false;
+        Self::text_run(
+            glyph.to_string(),
+            rect,
+            style,
+            Some(color),
+            Some(Dp::new(rect.width.0.min(rect.height.0).max(1.0))),
+        )
+    }
+
+    /// An icon tinted with `color`; `fallback` is used in high contrast.
+    pub const fn colored_icon(
+        icon: ZsIcon,
+        rect: ZsCanvasRect,
+        color: Color,
+        fallback: ColorRole,
+    ) -> Self {
+        Self::ColoredIcon {
+            icon,
+            rect,
+            color,
+            fallback,
+        }
+    }
 }
 
 /// Immutable custom-drawing content retained by a Canvas View node.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ZsCanvasScene {
     primitives: Vec<ZsCanvasPrimitive>,
+    /// Natural content height requested by a size-aware Canvas. Layout uses it
+    /// when the node declares no height, for example inside a Scroll.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extent_height: Option<Dp>,
+    /// Rectangles that report pointer hover through `on_canvas_hover`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hover_regions: Vec<ZsCanvasHoverRegion>,
+}
+
+/// A rectangle of a Canvas scene that reports pointer hover.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsCanvasHoverRegion {
+    pub id: u64,
+    pub rect: ZsCanvasRect,
 }
 
 impl ZsCanvasScene {
     pub const fn new() -> Self {
         Self {
             primitives: Vec::new(),
+            extent_height: None,
+            hover_regions: Vec::new(),
         }
+    }
+
+    /// Declares the natural height of this scene's content in local DP.
+    ///
+    /// Only size-aware canvases created with [`crate::canvas_with`] consult it:
+    /// layout asks the builder for the scene at the available width and uses
+    /// this height when the node has no explicit height.
+    pub fn with_extent_height(mut self, height: Dp) -> Self {
+        self.extent_height = Some(Dp::new(sanitized_extent(height.0)));
+        self
+    }
+
+    pub fn set_extent_height(&mut self, height: Dp) {
+        self.extent_height = Some(Dp::new(sanitized_extent(height.0)));
+    }
+
+    pub fn extent_height(&self) -> Option<Dp> {
+        self.extent_height
+    }
+
+    /// Declares a hover region, for example one per tab, row or button
+    /// drawn in this scene. Later regions sit above earlier ones.
+    pub fn with_hover_region(mut self, id: u64, rect: ZsCanvasRect) -> Self {
+        self.push_hover_region(id, rect);
+        self
+    }
+
+    pub fn push_hover_region(&mut self, id: u64, rect: ZsCanvasRect) {
+        self.hover_regions.push(ZsCanvasHoverRegion { id, rect });
+    }
+
+    pub fn hover_regions(&self) -> &[ZsCanvasHoverRegion] {
+        &self.hover_regions
+    }
+
+    /// The topmost hover region containing `point`, in local DP.
+    pub fn hover_region_at(&self, point: ZsCanvasPoint) -> Option<u64> {
+        self.hover_regions
+            .iter()
+            .rev()
+            .find(|region| {
+                let rect = region.rect;
+                point.x.0 >= rect.x.0
+                    && point.y.0 >= rect.y.0
+                    && point.x.0 < rect.x.0 + rect.width.0
+                    && point.y.0 < rect.y.0 + rect.height.0
+            })
+            .map(|region| region.id)
     }
 
     pub fn with(mut self, primitive: ZsCanvasPrimitive) -> Self {
@@ -193,7 +346,178 @@ impl FromIterator<ZsCanvasPrimitive> for ZsCanvasScene {
     fn from_iter<T: IntoIterator<Item = ZsCanvasPrimitive>>(iter: T) -> Self {
         Self {
             primitives: iter.into_iter().collect(),
+            extent_height: None,
+            hover_regions: Vec::new(),
         }
+    }
+}
+
+fn sanitized_extent(value: f32) -> f32 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// Final size of a Canvas in its own local DP coordinate space.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ZsCanvasSize {
+    pub width: Dp,
+    pub height: Dp,
+}
+
+impl ZsCanvasSize {
+    pub const fn new(width: Dp, height: Dp) -> Self {
+        Self { width, height }
+    }
+}
+
+/// Layout-time context handed to a size-aware Canvas builder.
+///
+/// It carries the Canvas' final local size and measures text with the same
+/// bounded, backend-produced text measurements that ordinary labels use.
+/// Measuring with `max_width` equal to the width of the Text primitive that is
+/// later drawn guarantees the geometry converges on the native text engine:
+/// the first frame may use the framework estimate, every later layout uses the
+/// renderer's own measurement.
+pub struct ZsCanvasLayoutContext<'a> {
+    size: ZsCanvasSize,
+    dpi: Dpi,
+    typography_scale: f32,
+    measurements: Option<&'a crate::view::ViewTextMeasurements>,
+}
+
+impl<'a> ZsCanvasLayoutContext<'a> {
+    pub(crate) fn new(
+        size: ZsCanvasSize,
+        dpi: Dpi,
+        typography_scale: f32,
+        measurements: Option<&'a crate::view::ViewTextMeasurements>,
+    ) -> Self {
+        Self {
+            size,
+            dpi,
+            typography_scale,
+            measurements,
+        }
+    }
+
+    /// A context without native measurements, for previews and tests. Text
+    /// measurement falls back to the framework estimate.
+    pub fn detached(size: ZsCanvasSize) -> ZsCanvasLayoutContext<'static> {
+        ZsCanvasLayoutContext {
+            size,
+            dpi: Dpi::standard(),
+            typography_scale: 1.0,
+            measurements: None,
+        }
+    }
+
+    /// Final local size of the Canvas. During natural-height measurement the
+    /// height is zero and only the width is meaningful.
+    pub fn size(&self) -> ZsCanvasSize {
+        self.size
+    }
+
+    /// Measures `text` in local DP. `max_width` only applies to
+    /// [`crate::TextWrap::Word`] styles; other styles measure a single line.
+    pub fn measure_text(
+        &self,
+        text: &str,
+        style: SemanticTextStyle,
+        max_width: Option<Dp>,
+    ) -> ZsCanvasSize {
+        let max_px = max_width
+            .filter(|_| style.wrap == crate::TextWrap::Word)
+            .map(|width| canvas_non_negative_px(width, self.dpi))
+            .unwrap_or(0);
+        if let Some(size) = self
+            .measurements
+            .and_then(|measurements| measurements.measure(text, style, max_px))
+        {
+            let scale = self.dpi.scale_factor().max(f32::EPSILON);
+            return ZsCanvasSize::new(
+                Dp::new(size.width.max(0) as f32 / scale),
+                Dp::new(size.height.max(0) as f32 / scale),
+            );
+        }
+        self.estimate_text(text, style, max_width)
+    }
+
+    fn estimate_text(
+        &self,
+        text: &str,
+        style: SemanticTextStyle,
+        max_width: Option<Dp>,
+    ) -> ZsCanvasSize {
+        let metrics = style
+            .role
+            .metrics_for(crate::ZsTypographyPlatformStyle::current());
+        let scale = self.typography_scale.max(0.0);
+        // Framework width units: one unit per Latin cell, two per CJK cell.
+        let unit = metrics.size * 0.5 * scale;
+        let weight = match style.weight {
+            crate::TextWeight::Semibold | crate::TextWeight::Bold => 1.08,
+            crate::TextWeight::Medium => 1.04,
+            crate::TextWeight::Automatic | crate::TextWeight::Regular => 1.0,
+        };
+        let line_height = metrics.line_height * scale;
+        let wrap_width = max_width
+            .filter(|_| style.wrap == crate::TextWrap::Word)
+            .map(|width| width.0.max(1.0));
+        let mut widest = 0.0_f32;
+        let mut rows = 0_u32;
+        for line in text.split('\n') {
+            let width =
+                crate::widget_render::zs_estimated_text_width_units(line) as f32 * unit * weight;
+            match wrap_width {
+                Some(limit) if width > limit => {
+                    rows += (width / limit).ceil().max(1.0) as u32;
+                    widest = widest.max(limit);
+                }
+                _ => {
+                    rows += 1;
+                    widest = widest.max(width);
+                }
+            }
+        }
+        ZsCanvasSize::new(
+            Dp::new(widest.ceil()),
+            Dp::new(line_height * rows.max(1) as f32),
+        )
+    }
+}
+
+type ZsCanvasBuildFn = dyn Fn(&ZsCanvasLayoutContext<'_>) -> ZsCanvasScene + Send + Sync;
+
+/// Rebuilds a Canvas scene from the Canvas' final layout size.
+///
+/// Layout invokes it once the Canvas has bounds (and once more at the
+/// available width when the node needs a natural height), so applications can
+/// right-align, wrap and size custom drawing without platform handles.
+#[derive(Clone)]
+pub struct ZsCanvasBuilder {
+    build: Arc<ZsCanvasBuildFn>,
+}
+
+impl ZsCanvasBuilder {
+    pub fn new(
+        build: impl Fn(&ZsCanvasLayoutContext<'_>) -> ZsCanvasScene + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            build: Arc::new(build),
+        }
+    }
+
+    pub fn build(&self, context: &ZsCanvasLayoutContext<'_>) -> ZsCanvasScene {
+        (self.build)(context)
+    }
+}
+
+impl fmt::Debug for ZsCanvasBuilder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ZsCanvasBuilder")
     }
 }
 
@@ -277,6 +601,36 @@ fn canvas_primitive_to_native(
                 NativeIconColorMode::ThemeAware,
             )
             .with_color(*color),
+        ),
+        ZsCanvasPrimitive::TextRun {
+            text,
+            rect,
+            style,
+            color,
+            size,
+        } => {
+            let mut command = crate::NativeDrawTextCommand::new(
+                text,
+                canvas_rect_to_native(bounds, *rect, dpi),
+                *style,
+            );
+            command.color = *color;
+            command.size = size.map(|size| crate::ZsFontSize::from_dip(size.0));
+            NativeDrawCommand::Text(command)
+        }
+        ZsCanvasPrimitive::ColoredIcon {
+            icon,
+            rect,
+            color,
+            fallback,
+        } => NativeDrawCommand::Icon(
+            NativeDrawIconCommand::new(
+                *icon,
+                canvas_rect_to_native(bounds, *rect, dpi),
+                NativeIconColorMode::ThemeAware,
+            )
+            .with_color(*fallback)
+            .with_custom_color(*color),
         ),
     }
 }

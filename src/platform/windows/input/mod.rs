@@ -17,7 +17,12 @@ pub struct WindowsWin32ViewInputRoute {
     shared_color_picker_drag_active: bool,
     pending_utf16_high_surrogate: Option<u16>,
     pending_draw_plan: Option<NativeDrawPlan>,
+    /// Renderer resources shared by text measurement and the window's
+    /// painter, so both use one text engine.
+    text_resources: WindowsGdiResourceCache,
     quit_requested: bool,
+    #[cfg(feature = "window-chrome")]
+    pending_window_commands: Vec<crate::ZsWindowCommand>,
     close_approved: bool,
     resource_policy: NativeWindowResourcePolicy,
     view_suspended: bool,
@@ -122,8 +127,11 @@ impl WindowsWin32ViewInputRoute {
     }
 
     fn from_shared_runtime(mut shared_runtime: crate::native::NativeViewInputRuntime) -> Self {
+        let text_resources = WindowsGdiResourceCache::default();
         shared_runtime.set_text_shaping_backend(
-            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend(),
+            crate::windows_gdi_renderer::windows_gdi_text_shaping_backend_with_resources(
+                text_resources.clone(),
+            ),
         );
         #[cfg(feature = "tooltip")]
         shared_runtime.set_tooltip_timing(windows_tooltip_timing());
@@ -151,7 +159,10 @@ impl WindowsWin32ViewInputRoute {
             shared_color_picker_drag_active: false,
             pending_utf16_high_surrogate: None,
             pending_draw_plan: None,
+            text_resources,
             quit_requested: false,
+            #[cfg(feature = "window-chrome")]
+            pending_window_commands: Vec::new(),
             close_approved: false,
         }
     }
@@ -222,6 +233,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub background_refresh_count: usize,
     pub surface_change_count: usize,
     pub quit_requested: bool,
+    #[cfg(feature = "window-chrome")]
+    pub window_commands: Vec<crate::ZsWindowCommand>,
     pub unhandled_click_count: usize,
     pub focus_count: usize,
     pub focus_visual_count: usize,
@@ -356,6 +369,8 @@ impl WindowsWin32ViewInputDispatchReport {
         self.background_refresh_count += next.background_refresh_count;
         self.surface_change_count += next.surface_change_count;
         self.quit_requested |= next.quit_requested;
+        #[cfg(feature = "window-chrome")]
+        self.window_commands.extend(next.window_commands);
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
         self.focus_visual_count += next.focus_visual_count;
@@ -469,6 +484,7 @@ pub fn set_windows_win32_window_view_input_route(
     route.bind_invalidation_target(hwnd);
     let draw_plan = route.take_pending_draw_plan();
     let poll_interval_ms = route.background_poll_interval_ms();
+    let text_resources = route.text_resources.clone();
     let hwnd_value = hwnd as isize;
     completed_window_view_input_reports()
         .lock()
@@ -492,6 +508,7 @@ pub fn set_windows_win32_window_view_input_route(
         });
     }
     drop(routes);
+    adopt_windows_win32_window_renderer_resources(hwnd, text_resources);
     if let Some(draw_plan) = draw_plan {
         set_windows_win32_window_draw_plan(hwnd, draw_plan);
         unsafe {
@@ -500,6 +517,17 @@ pub fn set_windows_win32_window_view_input_route(
     }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     true
+}
+
+/// The text resources of the View route registered for `hwnd`, if any. A
+/// busy registry yields `None`; the painter then keeps its own resources.
+fn windows_win32_window_view_text_resources(hwnd: HWND) -> Option<WindowsGdiResourceCache> {
+    let hwnd_value = hwnd as isize;
+    let routes = window_view_input_routes().try_lock().ok()?;
+    routes
+        .iter()
+        .find(|record| record.hwnd == hwnd_value)
+        .map(|record| record.route.text_resources.clone())
 }
 
 pub fn clear_windows_win32_window_view_input_route(hwnd: HWND) {
@@ -1214,6 +1242,8 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
         return None;
     }
     let hwnd_value = hwnd as isize;
+    #[cfg(feature = "window-chrome")]
+    let window_commands: Vec<crate::ZsWindowCommand>;
     let (
         mut report,
         mut draw_plan,
@@ -1232,6 +1262,10 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
         let report = dispatch(&mut record.route);
         let draw_plan = record.route.take_pending_draw_plan();
         let quit_requested = record.route.take_quit_requested();
+        #[cfg(feature = "window-chrome")]
+        {
+            window_commands = record.route.take_pending_window_commands();
+        }
         let dispatch_turn = record.route.begin_deferred_dispatch();
         let (app_executor, app_commands) = if dispatch_turn.is_some() {
             record.route.take_pending_app_command_dispatch()
@@ -1339,8 +1373,54 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
             PostMessageW(hwnd, WM_CLOSE, 0, 0);
         }
     }
+    #[cfg(feature = "window-chrome")]
+    post_windows_win32_window_commands(hwnd, &window_commands);
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     Some(report)
+}
+
+/// Posts View window commands as system commands, so they animate, respect
+/// Aero Snap and go through the same close path as the system menu.
+#[cfg(feature = "window-chrome")]
+fn post_windows_win32_window_commands(hwnd: HWND, commands: &[crate::ZsWindowCommand]) {
+    if commands.is_empty() || unsafe { IsWindow(hwnd) } == 0 {
+        return;
+    }
+    for command in commands {
+        let system_command = match command {
+            crate::ZsWindowCommand::Minimize => SC_MINIMIZE,
+            crate::ZsWindowCommand::ToggleMaximize if unsafe { IsZoomed(hwnd) } != 0 => SC_RESTORE,
+            crate::ZsWindowCommand::ToggleMaximize => SC_MAXIMIZE,
+            crate::ZsWindowCommand::Close => {
+                unsafe {
+                    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                }
+                continue;
+            }
+        };
+        unsafe {
+            PostMessageW(hwnd, WM_SYSCOMMAND, system_command as WPARAM, 0);
+        }
+    }
+}
+
+/// Whether `point` (client pixels) is uncovered caption area of the View
+/// registered for `hwnd`.
+#[cfg(feature = "window-chrome")]
+pub fn windows_win32_window_view_drag_region_at(hwnd: HWND, point: crate::Point) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let hwnd_value = hwnd as isize;
+    // WM_NCHITTEST can arrive while a dispatch holds the registry, for
+    // example from a nested modal loop; a busy registry means client area.
+    let Ok(routes) = window_view_input_routes().try_lock() else {
+        return false;
+    };
+    routes
+        .iter()
+        .find(|record| record.hwnd == hwnd_value)
+        .is_some_and(|record| record.route.window_drag_region_at(point))
 }
 
 pub fn approve_windows_win32_window_close(hwnd: HWND) -> bool {

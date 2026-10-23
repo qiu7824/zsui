@@ -739,7 +739,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "rust-text",
             Backend,
             false,
-            vec!["cosmic-text", "swash", "ttf-parser"],
+            vec!["cosmic-text", "skrifa", "swash", "ttf-parser"],
             Vec::new(),
             "ZSUI-owned Rust shaping, retained layout and hinted rasterization pipeline used by the Win32 host",
         ),

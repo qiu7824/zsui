@@ -467,12 +467,15 @@
         "docs/ai/context-packs.json",
         "docs/gallery.md",
         "docs/images",
-        "docs/native-host-smoke.md"
+        "docs/native-host-smoke.md",
+        "tools/native-proof/Cargo.toml",
+        "tools/native-proof/src/main.rs"
       ],
       "verify": [
         "cargo fmt --all -- --check",
         "cargo test --no-default-features --quiet",
         "cargo test --features full --quiet",
+        "cargo check --locked --manifest-path tools/native-proof/Cargo.toml",
         ".\\scripts\\check-native-boundary.ps1 -Locked",
         ".\\scripts\\check-feature-matrix.ps1 -Locked",
         "git diff --check"

@@ -1924,7 +1924,11 @@ impl<'a> LinuxDirectDrawSink<'a> {
     }
 
     fn draw_text(&self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.palette.high_contrast) {
+            style.color = color;
+        }
+        command.apply_size_override(&mut style);
         let layout = self
             .text_layout
             .pango_layout(&command.text, &style, Some(command.bounds));
@@ -1971,7 +1975,11 @@ impl<'a> LinuxDirectDrawSink<'a> {
                 .ceil()
                 .clamp(1.0, 512.0) as u32;
             let theme_aware = command.color_mode == NativeIconColorMode::ThemeAware;
-            let tint = theme_aware.then(|| self.palette.resolve(command.color));
+            let tint = theme_aware.then(|| {
+                command
+                    .color_override(self.palette.high_contrast)
+                    .unwrap_or_else(|| self.palette.resolve(command.color))
+            });
             let key = (
                 command.icon,
                 physical_size,
@@ -2027,7 +2035,9 @@ impl<'a> LinuxDirectDrawSink<'a> {
         crate::symbolic_icons::draw_symbolic_icon(
             self.context,
             command,
-            self.palette.resolve(command.color),
+            command
+                .color_override(self.palette.high_contrast)
+                .unwrap_or_else(|| self.palette.resolve(command.color)),
         );
     }
 

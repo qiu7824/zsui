@@ -5,6 +5,7 @@
 /comparisons/tauri_notepad/target
 /comparisons/tauri_notepad/gen
 /comparisons/zsui_dataviewer/target
+/tools/native-proof/target
 !/comparisons/egui_notepad/Cargo.lock
 !/comparisons/iced_notepad/Cargo.lock
 !/comparisons/slint_notepad/Cargo.lock

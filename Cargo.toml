@@ -1,6 +1,6 @@
 [package]
 name = "zsui"
-version = "0.2.0"
+version = "0.3.0-alpha.1"
 edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/qiu7824/zsui"
@@ -27,6 +27,7 @@ fluent-bundle = { version = "0.16", optional = true }
 png = { version = "0.18", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+skrifa = { version = "0.44", default-features = false, features = ["std"], optional = true }
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"], optional = true }
 ttf-parser = { version = "0.25.1", default-features = false, optional = true }
 rust_decimal = { version = "1.42.1", default-features = false, features = ["maths", "std"], optional = true }
@@ -93,6 +94,10 @@ list = ["widgets-list", "scroll"]
 virtual-list = ["list", "scroll"]
 paged-list = ["virtual-list"]
 textbox = ["text-input-core"]
+# Application keyboard shortcuts declared on View nodes (ZsAccelerator -> Msg).
+shortcuts = ["widgets-base"]
+# Application-drawn title bars: drag regions and window commands (Win32).
+window-chrome = ["widgets-base"]
 password-box = ["text-input-core", "dep:zeroize"]
 tooltip = ["widgets-base"]
 dialog = ["widgets-base"]
@@ -146,7 +151,7 @@ desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-rust-text"]
 windows-directwrite = ["windows-gdi", "dep:windows", "dep:windows-core", "windows/Win32_Graphics_DirectWrite", "windows/Win32_Graphics_Gdi"]
-rust-text = ["dep:cosmic-text", "dep:swash", "dep:ttf-parser"]
+rust-text = ["dep:cosmic-text", "dep:skrifa", "dep:swash", "dep:ttf-parser"]
 rust-text-proof = ["rust-text"]
 windows-rust-text = ["windows-gdi", "rust-text"]
 windows-text-proof = ["windows-directwrite", "rust-text-proof"]
@@ -162,6 +167,8 @@ all-widgets = ["button", "accordion", "badge", "split-view", "breadcrumb", "canv
 full = [
     "accessibility",
     "all-widgets",
+    "shortcuts",
+    "window-chrome",
     "clipboard",
     "calculator",
     "dark-mode",

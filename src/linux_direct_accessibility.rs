@@ -906,6 +906,8 @@ fn accesskit_role(kind: ViewHitTargetKind) -> Role {
         ViewHitTargetKind::MenuFlyout => Role::Menu,
         #[cfg(feature = "menu-flyout")]
         ViewHitTargetKind::MenuFlyoutScrim => Role::GenericContainer,
+        #[cfg(feature = "context-menu")]
+        ViewHitTargetKind::ContextMenuRegion => Role::GenericContainer,
         #[cfg(feature = "menu-flyout")]
         ViewHitTargetKind::MenuFlyoutItem { row_kind, .. } => match row_kind {
             crate::ZsMenuFlyoutRowKind::Command { checked: true } => Role::MenuItemCheckBox,
@@ -994,6 +996,8 @@ mod tests {
             ViewHitTargetKind::Button,
         );
         let plan = NativeDrawPlan::new([NativeDrawCommand::Text(NativeDrawTextCommand {
+            color: None,
+            size: None,
             text: "保存 / Save".to_string(),
             bounds: target.bounds,
             style: SemanticTextStyle::body(),
@@ -1108,6 +1112,8 @@ mod tests {
             ],
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         };
         #[cfg(feature = "tabs")]
         let tabs = Vec::new();
@@ -1307,6 +1313,8 @@ mod tests {
             ],
             #[cfg(feature = "tooltip")]
             tooltip_targets: Vec::new(),
+            #[cfg(feature = "window-chrome")]
+            window_drag_regions: Vec::new(),
         };
         #[cfg(feature = "tabs")]
         let tabs = Vec::new();

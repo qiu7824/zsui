@@ -53,6 +53,7 @@ const BPBF_TOPDOWNDIB: u32 = 2;
 static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
 static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
 static WINDOWS_SYSTEM_ICON_FONT: OnceLock<WindowsSystemIconFont> = OnceLock::new();
+static WINDOWS_UI_FONT_FAMILIES: OnceLock<WindowsUiFontFamilies> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WindowsUiFontFamilies {
@@ -624,6 +625,12 @@ pub(crate) struct WindowsGdiResourceCache {
 }
 
 impl WindowsGdiResourceCache {
+    /// Whether both handles refer to the same renderer resources.
+    #[cfg(test)]
+    pub(crate) fn shares_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.entries, &other.entries)
+    }
+
     fn cached_solid_brush(&self, color: Color) -> Option<HGDIOBJ> {
         let key = to_colorref(color);
         let mut entries = self
@@ -710,6 +717,16 @@ impl WindowsGdiResourceCache {
             .expect("Windows GDI resource cache should not be poisoned")
             .directwrite
             .draw_text(dc, run, style, dpi_scale)
+    }
+
+    #[cfg(all(test, feature = "windows-rust-text"))]
+    fn rust_text_engine_initializations(&self) -> u64 {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .rust_text
+            .stats()
+            .engine_initializations
     }
 
     #[cfg(test)]
@@ -1056,33 +1073,54 @@ impl TextLayout for WindowsGdiTextLayout {
 #[allow(dead_code)]
 pub(crate) fn windows_gdi_text_shaping_backend(
 ) -> crate::native_input_visuals::NativeTextShapingBackend {
+    windows_gdi_text_shaping_backend_with_resources(WindowsGdiResourceCache::default())
+}
+
+/// A measuring backend that shares `resources` with the window's renderer,
+/// so one text engine serves both layout measurement and painting.
+#[allow(dead_code)]
+pub(crate) fn windows_gdi_text_shaping_backend_with_resources(
+    resources: WindowsGdiResourceCache,
+) -> crate::native_input_visuals::NativeTextShapingBackend {
     #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
     {
         return crate::native_input_visuals::NativeTextShapingBackend::platform(
-            WindowsGdiTextShaper::default(),
+            WindowsGdiTextShaper::with_resources(resources),
         );
     }
     #[cfg(not(all(feature = "text-input-core", feature = "windows-win32")))]
     {
+        let _ = resources;
         crate::native_input_visuals::NativeTextShapingBackend::default()
     }
 }
 
+/// Measures View text for one window. The resolver and renderer resources
+/// are created once, so the text engine and its font database, layout and
+/// glyph caches survive across measurements instead of being rebuilt for
+/// every string.
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
 struct WindowsGdiTextShaper {
     context: std::sync::Mutex<(Dpi, f32)>,
-    #[cfg(feature = "windows-rust-text")]
-    engine: std::sync::Mutex<Option<crate::rust_text_renderer::ZsRustTextEngine>>,
+    resolver: WindowsGdiStyleResolver,
+    resources: WindowsGdiResourceCache,
+}
+
+#[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
+impl WindowsGdiTextShaper {
+    fn with_resources(resources: WindowsGdiResourceCache) -> Self {
+        Self {
+            context: std::sync::Mutex::new((Dpi::standard(), 1.0)),
+            resolver: WindowsGdiStyleResolver::default(),
+            resources,
+        }
+    }
 }
 
 #[cfg(all(feature = "text-input-core", feature = "windows-win32"))]
 impl Default for WindowsGdiTextShaper {
     fn default() -> Self {
-        Self {
-            context: std::sync::Mutex::new((Dpi::standard(), 1.0)),
-            #[cfg(feature = "windows-rust-text")]
-            engine: std::sync::Mutex::new(None),
-        }
+        Self::with_resources(WindowsGdiResourceCache::default())
     }
 }
 
@@ -1114,34 +1152,32 @@ impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
         typography_scale: f32,
     ) -> Option<Size> {
         let dc = WindowsGdiOwnedMemoryDc::new()?;
-        let mut style = WindowsGdiStyleResolver::default().resolve_text_style(semantic);
+        let mut style = self.resolver.resolve_text_style(semantic);
         let typography_scale = typography_scale.max(0.5);
         style.size *= typography_scale;
         style.line_height *= typography_scale;
-        Some(WindowsGdiTextLayout::with_dpi(dc.0, dpi).measure(text, &style, max_width))
+        let layout = WindowsGdiTextLayout::with_dpi_scale_and_resources(
+            dc.0,
+            dpi.scale_factor(),
+            self.resources.clone(),
+        );
+        Some(layout.measure(text, &style, max_width))
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         #[cfg(feature = "windows-rust-text")]
         {
             let (dpi, typography_scale) = *self.context.lock().ok()?;
-            let mut engine = self.engine.lock().ok()?;
-            let engine = engine.get_or_insert_with(|| {
-                crate::rust_text_renderer::ZsRustTextEngine::new().with_line_metric_policy(
-                    crate::rust_text_renderer::ZsTextLineMetricPolicy::WindowsDirectWrite,
-                )
-            });
             let mut style =
                 WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle::body());
             style.size *= typography_scale;
             style.line_height *= typography_scale;
             style.wrap = crate::TextWrap::NoWrap;
             style.ellipsis = false;
-            let layout = engine.layout(text, &style, 0, 0, dpi.scale_factor());
-            return crate::rust_text_renderer::native_shaped_line_from_layout(
+            return self.resources.entries.lock().ok()?.rust_text.shape_line(
                 text,
-                &layout,
-                style.size * dpi.scale_factor(),
+                &style,
+                dpi.scale_factor(),
             );
         }
         #[cfg(not(feature = "windows-rust-text"))]
@@ -1492,10 +1528,13 @@ impl WindowsGdiStyleResolver {
 }
 
 impl Default for WindowsGdiStyleResolver {
+    /// Resolves the installed UI and icon families, matching the draw sink so
+    /// measured and painted text use the same faces.
     fn default() -> Self {
-        let ui_fonts = detect_windows_ui_font_families(std::ptr::null_mut());
+        let ui_fonts = installed_windows_ui_font_families();
         Self::new(ui_fonts.text, WindowsGdiPalette::default())
             .with_type_families(ui_fonts.small, ui_fonts.display)
+            .with_icon_font_family(installed_windows_icon_font_family())
     }
 }
 
@@ -1665,7 +1704,11 @@ impl WindowsGdiDrawSink {
     }
 
     fn draw_text_command(&mut self, command: &NativeDrawTextCommand) {
-        let style = self.style_resolver.resolve_text_style(command.style);
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.high_contrast) {
+            style.color = color;
+        }
+        command.apply_size_override(&mut style);
         let run = TextRun {
             text: command.text.clone(),
             bounds: command.bounds,
@@ -1750,7 +1793,9 @@ impl WindowsGdiDrawSink {
             line_height: size / self.renderer.dpi_scale.max(f32::EPSILON),
             semantic_role: Some(crate::TextRole::Icon),
             weight: TextWeight::Regular,
-            color: self.palette.resolve(command.color),
+            color: command
+                .color_override(self.high_contrast)
+                .unwrap_or_else(|| self.palette.resolve(command.color)),
             horizontal_align: HorizontalAlign::Center,
             vertical_align: VerticalAlign::Center,
             wrap: TextWrap::NoWrap,
@@ -1883,7 +1928,47 @@ fn windows_system_ui_font_family() -> &'static str {
         .as_str()
 }
 
+/// Installed UI families, probed once per process. A null DC reports the
+/// preferred Fluent families without probing.
 fn detect_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
+    if dc.is_null() {
+        return probe_windows_ui_font_families(dc);
+    }
+    *WINDOWS_UI_FONT_FAMILIES.get_or_init(|| probe_windows_ui_font_families(dc))
+}
+
+/// UI families actually installed on this machine, probed through a memory
+/// DC so measurement and drawing resolve the same faces.
+fn installed_windows_ui_font_families() -> WindowsUiFontFamilies {
+    if let Some(families) = WINDOWS_UI_FONT_FAMILIES.get() {
+        return *families;
+    }
+    let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+    let families = detect_windows_ui_font_families(dc);
+    if !dc.is_null() {
+        unsafe { DeleteDC(dc) };
+    }
+    families
+}
+
+/// The icon font family drawing uses: Segoe Fluent Icons when installed,
+/// otherwise Segoe MDL2 Assets.
+fn installed_windows_icon_font_family() -> &'static str {
+    let font = match WINDOWS_SYSTEM_ICON_FONT.get() {
+        Some(font) => *font,
+        None => {
+            let dc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+            let font = detect_windows_system_icon_font(dc);
+            if !dc.is_null() {
+                unsafe { DeleteDC(dc) };
+            }
+            font
+        }
+    };
+    font.font_family().unwrap_or(WINDOWS_MDL2_ICON_FONT_FAMILY)
+}
+
+fn probe_windows_ui_font_families(dc: HDC) -> WindowsUiFontFamilies {
     let message = windows_system_ui_font_family();
     #[cfg(any(feature = "windows-rust-text", feature = "windows-directwrite"))]
     {
@@ -2499,7 +2584,7 @@ mod tests {
     }
 
     #[test]
-    fn icon_text_role_uses_fluent_icon_font() {
+    fn icon_text_role_uses_the_installed_icon_font() {
         let style = WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle {
             role: crate::TextRole::Icon,
             color: ColorRole::PrimaryText,
@@ -2510,7 +2595,13 @@ mod tests {
             ellipsis: false,
         });
 
-        assert_eq!(style.font_family, "Segoe Fluent Icons");
+        // Segoe Fluent Icons where installed (Windows 11), otherwise Segoe
+        // MDL2 Assets, matching what the draw sink detects.
+        assert_eq!(style.font_family, installed_windows_icon_font_family());
+        assert!(matches!(
+            style.font_family.as_str(),
+            "Segoe Fluent Icons" | "Segoe MDL2 Assets"
+        ));
         assert_eq!(style.size, 16.0);
     }
 
@@ -2587,9 +2678,49 @@ mod tests {
     }
 
     #[test]
+    #[cfg(all(
+        feature = "text-input-core",
+        feature = "windows-win32",
+        feature = "windows-rust-text"
+    ))]
+    fn view_text_measurement_reuses_one_text_engine_with_installed_fonts() {
+        use crate::native_input_visuals::NativeTextShaper;
+
+        let resources = WindowsGdiResourceCache::default();
+        let shaper = WindowsGdiTextShaper::with_resources(resources.clone());
+        for (text, role) in [
+            ("资源管理器 / Explorer", crate::TextRole::Body),
+            ("\u{E8BD}", crate::TextRole::Icon),
+            ("Caption 小字", crate::TextRole::Caption),
+            ("资源管理器 / Explorer", crate::TextRole::Body),
+        ] {
+            let size = shaper
+                .measure(
+                    text,
+                    SemanticTextStyle::for_role(role),
+                    400,
+                    Dpi::standard(),
+                    1.0,
+                )
+                .expect("the Windows shaper should measure text");
+            assert!(size.width > 0 && size.height > 0, "{text}");
+        }
+        // Rebuilding the engine per string made a window with a few hundred
+        // labels spend well over a second building font databases.
+        assert_eq!(resources.rust_text_engine_initializations(), 1);
+
+        let installed = installed_windows_ui_font_families();
+        let icon = shaper
+            .resolver
+            .resolve_text_style(SemanticTextStyle::for_role(crate::TextRole::Icon));
+        assert_eq!(icon.font_family, installed_windows_icon_font_family());
+        assert_eq!(shaper.resolver.font_family, installed.text);
+    }
+
+    #[test]
     fn fluent_optical_families_follow_semantic_text_roles() {
         let resolver = WindowsGdiStyleResolver::default();
-        let fluent = detect_windows_ui_font_families(std::ptr::null_mut());
+        let fluent = installed_windows_ui_font_families();
 
         assert_eq!(resolver.font_family, fluent.text);
         assert_eq!(resolver.small_font_family, fluent.small);

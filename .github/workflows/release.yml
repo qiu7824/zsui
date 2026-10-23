@@ -300,10 +300,15 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
           else
+            prerelease=()
+            if [[ "$VERSION" == *-* ]]; then
+              prerelease=(--prerelease)
+            fi
             gh release create "$tag" dist/* \
               --verify-tag \
               --title "ZSUI $tag" \
-              --notes-file docs/releases/v0.2.0.md
+              --notes-file "docs/releases/$tag.md" \
+              "${prerelease[@]}"
           fi
       - uses: actions/upload-artifact@v7
         with:

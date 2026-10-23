@@ -297,6 +297,30 @@ history remain authoritative for implementation status.
   excluding literal platform palettes and native handles. The typed
   `canvas_pointer_event` payload omits the private numeric WidgetId because the
   enclosing document action already carries the stable author node ID.
+- Rust-authored Canvas content may carry branded visuals: `TextRun` and
+  `ColoredIcon` primitives (and `glyph` for icon-font glyphs) add an explicit
+  color and DIP size on top of the still-required semantic role. Renderers use
+  the role whenever the system high-contrast appearance is active, and
+  UiDocument canvases stay palette-free. Built-in controls keep using theme
+  tokens only.
+- Canvas scenes declare hover regions. The runtime dispatches `CanvasHover`
+  only when the hovered region changes, and pointer events carry the region
+  under the pointer, so custom-drawn tabs, rows and buttons need neither a
+  rebuild per pointer move nor a second hit test in `update`.
+- `size-aware` canvases (`canvas_with`) rebuild their scene from final layout
+  bounds and measure text through the shared native measurement cache; their
+  declared extent is their natural height inside a Scroll.
+- Custom title bars are the opt-in `window-chrome` feature: the window keeps
+  native resize, snap and taskbar behavior, the View marks caption areas with
+  `window_drag_region()` (inside a drag-region Canvas only its hover regions are
+  interactive) and caption buttons raise `ZsWindowCommand`s. Hosts without
+  support keep their native title bar.
+- Updates can move focus with `AppCx::focus`, applied after layout and before
+  queued text edit commands; focus outlines keep following the keyboard
+  focus-visible rule.
+- Secondary-click menus use `context_menu`; menus an application opens itself
+  at a chosen point (dropdowns, overflow buttons) use `menu_flyout` with
+  `menu_flyout_anchor`. A runtime context-menu anchor wins when both exist.
 - The public `crate::view` module is physically organized under `src/view/`:
   node, layout, event, focus, paint, overlay and widget-family source units
   share the existing module namespace so public paths and privacy stay stable.
@@ -1546,6 +1570,15 @@ history remain authoritative for implementation status.
   runtime fallback and DirectWrite remains a proof oracle. The five weighted
   emoji/mixed-semibold deviations stay explicit release gaps until the full
   matrix is stable.
+- Windows Rust text must look like the system's ClearType text, not merely
+  share its geometry. Subpixel masks sample the physical stripe order chosen by
+  the user's font-smoothing settings (zeno's `Format::Subpixel` is BGR-ordered
+  for ZSUI's RGB compositor, which once reversed every color fringe), and
+  standard or disabled smoothing renders grayscale. Monochrome outlines are
+  hinted through skrifa because swash always reports symmetric smoothing; the
+  Windows policy takes that bit from the face's `gasp` range like DirectWrite,
+  so CJK UI faces keep whole-pixel horizontal strokes. Compare changes against
+  the `text_geometry_proof` DirectWrite pixels, not by eye.
 - The declarative View is temporary input to type+key reconciliation. The
   retained architecture separates Element state/identity, RenderObject
   geometry/paint invalidation, repaint-boundary DisplayLists and sparse
