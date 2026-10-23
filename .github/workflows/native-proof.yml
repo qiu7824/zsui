@@ -3741,10 +3741,6 @@ jobs:
         ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
         ./target/debug/examples/desktop_lifecycle --scene commands --output "$root/lifecycle" > "$root/lifecycle.log" 2>&1 || { cat "$root/lifecycle.log"; exit 1; }
         selected="$root/selected-folder"; mkdir -p "$selected"
-        send_dialog_key() {
-          if xdotool windowactivate --sync "$dialog" && xdotool key --clearmodifiers "$@"; then return 0; fi
-          ! xwininfo -id "$dialog" >/dev/null 2>&1
-        }
         for action in cancel select; do
           out="$root/directory-$action"; mkdir -p "$out"
           ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 9000 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 &
@@ -3759,9 +3755,9 @@ jobs:
           if test -z "$dialog"; then kill "$proof_pid" 2>/dev/null || true; cat "$out/run.log"; exit 1; fi
           sleep 0.3
           import -window "$dialog" "$out/picker.png"
-          if test "$action" = cancel; then
-            /usr/bin/python3 - <<'CANCEL'
-        import pyatspi,time
+          CHOOSER_ACTION="$action" /usr/bin/python3 - <<'CHOOSER'
+        import os,pyatspi,time
+        names={'Cancel'} if os.environ['CHOOSER_ACTION']=='cancel' else {'Open','Select'}
         def walk(node,depth=0):
             if depth>12: return
             yield node
@@ -3773,22 +3769,14 @@ jobs:
                 for window in app:
                     if window.name!='Choose directory': continue
                     for node in walk(window):
-                        if node.getRole()==pyatspi.ROLE_PUSH_BUTTON and node.name=='Cancel':
+                        if node.getRole()==pyatspi.ROLE_PUSH_BUTTON and node.name in names:
                             action=node.queryAction()
-                            if action.nActions and action.doAction(0): raise SystemExit(0)
+                            if action.nActions and action.doAction(0):
+                                print('Activated native chooser button:',node.name)
+                                raise SystemExit(0)
             time.sleep(0.1)
-        raise RuntimeError('Native file chooser Cancel button was not available')
-        CANCEL
-          else
-            send_dialog_key ctrl+l
-            sleep 0.15
-            send_dialog_key ctrl+a
-            xdotool type --window "$dialog" --clearmodifiers --delay 1 "$selected"
-            sleep 0.15
-            send_dialog_key Return
-            sleep 0.5
-            if xwininfo -id "$dialog" >/dev/null 2>&1; then send_dialog_key Return; fi
-          fi
+        raise RuntimeError('Native file chooser button was not available: '+repr(names))
+        CHOOSER
           if ! timeout 20s tail --pid="$proof_pid" -f /dev/null; then cat "$out/run.log"; xwininfo -id "$dialog" || true; kill "$proof_pid" 2>/dev/null || true; exit 1; fi
           wait "$proof_pid" || { cat "$out/run.log"; exit 1; }
         done
