@@ -2589,20 +2589,34 @@ impl TextLayout for MacosAppKitTextLayout {
 
 #[cfg(feature = "text-input-core")]
 fn macos_appkit_text_shaping_backend() -> crate::native_input_visuals::NativeTextShapingBackend {
-    crate::native_input_visuals::NativeTextShapingBackend::platform(MacosAppKitTextShaper)
+    crate::native_input_visuals::NativeTextShapingBackend::platform(MacosAppKitTextShaper {
+        scale: std::sync::Mutex::new(1.0),
+    })
 }
 
 #[cfg(feature = "text-input-core")]
-struct MacosAppKitTextShaper;
+struct MacosAppKitTextShaper {
+    scale: std::sync::Mutex<f32>,
+}
 
 #[cfg(feature = "text-input-core")]
 impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
+    fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = scale;
+    }
+
     fn debug_name(&self) -> &'static str {
         "AppKit"
     }
 
     fn typography_scale(&self) -> f32 {
-        appkit_ui_font_scale()
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn measure(
@@ -2622,13 +2636,20 @@ impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
-        shape_macos_appkit_text_line(text)
+        shape_macos_appkit_text_line_at_scale(text, self.typography_scale())
     }
 }
 
 #[cfg(feature = "text-input-core")]
 pub(crate) fn shape_macos_appkit_text_line(
     text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_macos_appkit_text_line_at_scale(text, appkit_ui_font_scale())
+}
+#[cfg(feature = "text-input-core")]
+fn shape_macos_appkit_text_line_at_scale(
+    text: &str,
+    typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
@@ -2638,7 +2659,6 @@ pub(crate) fn shape_macos_appkit_text_line(
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Macos);
-    let typography_scale = appkit_ui_font_scale();
     let mut style = TextStyle::line(
         ".AppleSystemUIFont",
         body.size * typography_scale,

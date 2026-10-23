@@ -1567,22 +1567,34 @@ fn linux_gtk_text_shaping_backend(
 ) -> crate::native_input_visuals::NativeTextShapingBackend {
     crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxGtkPangoTextShaper {
         context,
+        scale: std::sync::Mutex::new(1.0),
     })
 }
 
 #[cfg(feature = "text-input-core")]
 struct LinuxGtkPangoTextShaper {
+    scale: std::sync::Mutex<f32>,
     context: gtk::pango::Context,
 }
 
 #[cfg(feature = "text-input-core")]
 impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
+    fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = scale;
+    }
+
     fn debug_name(&self) -> &'static str {
         "Gtk(PangoContext)"
     }
 
     fn typography_scale(&self) -> f32 {
-        linux_gtk_ui_font_scale()
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn measure(
@@ -1602,7 +1614,7 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
-        shape_linux_gtk_text_line(&self.context, text)
+        shape_linux_gtk_text_line_at_scale(&self.context, text, self.typography_scale())
     }
 }
 
@@ -1610,6 +1622,14 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
 pub(crate) fn shape_linux_gtk_text_line(
     context: &gtk::pango::Context,
     text: &str,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_gtk_text_line_at_scale(context, text, linux_gtk_ui_font_scale())
+}
+#[cfg(feature = "text-input-core")]
+fn shape_linux_gtk_text_line_at_scale(
+    context: &gtk::pango::Context,
+    text: &str,
+    typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
@@ -1619,7 +1639,6 @@ pub(crate) fn shape_linux_gtk_text_line(
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
-    let typography_scale = linux_gtk_ui_font_scale();
     let mut style = TextStyle::line(
         linux_gtk_ui_font_family(),
         body.size * typography_scale,

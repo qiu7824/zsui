@@ -3521,7 +3521,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox sway jq python3-pyatspi python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
+        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox sway jq python3-pil python3-pyatspi python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
         fc-cache --force
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -3886,6 +3886,42 @@ jobs:
         print('Two native Wayland outputs delivered 1x -> 2x -> 1x scale changes with retained input.')
         PY
         SCALE
+    - name: Verify Linux text and caret pixels
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        /usr/bin/python3 - <<'PY'
+        import json,os
+        from pathlib import Path
+        from PIL import Image
+        root=Path(os.environ['PROOF_ROOT'])
+        records=[]
+        for name in ['long-input','monitor-scale','monitor-scale/native-2x']:
+            folder=root/name
+            proof=json.loads((folder/'proof.json').read_text())
+            scale=proof['runtime']['native_view_capture']['scale_factor']
+            image=Image.open(folder/'window.png').convert('RGB')
+            is_blue=lambda c:c[2]>150 and c[2]>c[0]+50 and c[2]>c[1]+20
+            blue=[(x,y) for y in range(image.height) for x in range(image.width) if is_blue(image.getpixel((x,y)))]
+            assert blue,name
+            left=min(x for x,y in blue);right=max(x for x,y in blue)
+            top=min(y for x,y in blue);bottom=max(y for x,y in blue)
+            inset=max(3,int(3*scale))
+            columns={}
+            for x,y in blue:
+                if left+inset<x<right-inset and top+inset<y<bottom-inset:
+                    columns[x]=columns.get(x,0)+1
+            assert columns,name
+            caret=max(columns,key=columns.get)
+            ink=[x for y in range(top+inset,bottom-inset) for x in range(left+inset,right-inset) if max(image.getpixel((x,y)))<120]
+            assert ink,name
+            text_end=max(ink)
+            gap=abs(caret-text_end)
+            records.append(dict(scene=name,scale=scale,caret_x=caret,text_ink_end_x=text_end,gap_pixels=gap))
+            assert gap<=max(4,round(3*scale)),records[-1]
+        (root/'caret-pixels.json').write_text(json.dumps(records,indent=2))
+        print('Visible text and caret agree at 1x, 2x and after the monitor round trip.')
+        PY
     - name: Validate retained application state and captures
       shell: bash
       run: |

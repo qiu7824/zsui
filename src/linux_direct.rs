@@ -309,7 +309,18 @@ impl LinuxDirectApp {
                 .get_mut(index)
                 .map(|runtime| std::mem::take(runtime))
                 .unwrap_or_default();
+            let mut plan = initial_plans
+                .get_mut(index)
+                .and_then(Option::take)
+                .unwrap_or_default();
             let text_context = linux_direct_text_context();
+            #[cfg(feature = "linux-direct")]
+            let system_scale = linux_direct_ui_font_scale();
+            #[cfg(all(feature = "linux-direct-lite", not(feature = "linux-direct")))]
+            let system_scale = text_context.ui_scale();
+            if let Some(updated) = runtime.set_typography_scale(system_scale) {
+                plan = updated;
+            }
             #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
             runtime
                 .set_text_shaping_backend(linux_direct_text_shaping_backend(text_context.clone()));
@@ -321,6 +332,7 @@ impl LinuxDirectApp {
             runtime.set_text_shaping_backend(linux_direct_lite_text_shaping_backend(
                 text_context.clone(),
             ));
+            plan = runtime.current_composed_draw_plan().unwrap_or(plan);
             runtime.defer_app_command_execution();
             runtime.defer_ui_command_execution();
             let mut direct = LinuxDirectWindow::new(
@@ -331,10 +343,7 @@ impl LinuxDirectApp {
                 initial_height,
                 Rc::clone(&window),
                 surface,
-                initial_plans
-                    .get_mut(index)
-                    .and_then(Option::take)
-                    .unwrap_or_default(),
+                plan,
                 runtime,
                 text_context,
                 self.capture_path.is_some(),
@@ -2525,7 +2534,7 @@ fn linux_direct_ui_font_family() -> String {
         .unwrap_or_else(|| "Sans".to_string())
 }
 
-#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+#[cfg(feature = "linux-direct")]
 pub(crate) fn linux_direct_ui_font_scale() -> f32 {
     let description = linux_direct_font_description();
     let size = description.size();
@@ -2551,22 +2560,34 @@ fn linux_direct_text_shaping_backend(
 ) -> crate::native_input_visuals::NativeTextShapingBackend {
     crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxDirectPangoTextShaper {
         context,
+        scale: std::sync::Mutex::new(1.0),
     })
 }
 
 #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 struct LinuxDirectPangoTextShaper {
+    scale: std::sync::Mutex<f32>,
     context: pango::Context,
 }
 
 #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShaper {
+    fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = scale;
+    }
+
     fn debug_name(&self) -> &'static str {
         "LinuxDirect(PangoContext)"
     }
 
     fn typography_scale(&self) -> f32 {
-        linux_direct_ui_font_scale()
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn measure(
@@ -2586,7 +2607,7 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShape
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
-        shape_linux_direct_text_line(&self.context, text)
+        shape_linux_direct_text_line_at_scale(&self.context, text, self.typography_scale())
     }
 }
 
@@ -2605,6 +2626,7 @@ fn linux_direct_lite_text_shaping_backend(
 ) -> crate::native_input_visuals::NativeTextShapingBackend {
     crate::native_input_visuals::NativeTextShapingBackend::platform(LinuxDirectLiteTextShaper {
         system,
+        scale: std::sync::Mutex::new(1.0),
     })
 }
 
@@ -2614,6 +2636,7 @@ fn linux_direct_lite_text_shaping_backend(
     not(feature = "linux-direct")
 ))]
 struct LinuxDirectLiteTextShaper {
+    scale: std::sync::Mutex<f32>,
     system: crate::linux_direct_lite::LinuxLiteTextSystem,
 }
 
@@ -2623,12 +2646,22 @@ struct LinuxDirectLiteTextShaper {
     not(feature = "linux-direct")
 ))]
 impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper {
+    fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = scale;
+    }
+
     fn debug_name(&self) -> &'static str {
         "LinuxDirectLite(ZsuiRustText)"
     }
 
     fn typography_scale(&self) -> f32 {
-        self.system.ui_scale()
+        *self
+            .scale
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn measure(
@@ -2651,7 +2684,11 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper
     }
 
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
-        crate::linux_direct_lite::shape_linux_lite_text_line(&self.system, text)
+        crate::linux_direct_lite::shape_linux_lite_text_line_at_scale(
+            &self.system,
+            text,
+            self.typography_scale(),
+        )
     }
 }
 
@@ -2689,6 +2726,14 @@ pub(crate) fn shape_linux_direct_text_line(
     context: &pango::Context,
     text: &str,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_direct_text_line_at_scale(context, text, linux_direct_ui_font_scale())
+}
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+fn shape_linux_direct_text_line_at_scale(
+    context: &pango::Context,
+    text: &str,
+    typography_scale: f32,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
     };
@@ -2697,7 +2742,6 @@ pub(crate) fn shape_linux_direct_text_line(
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
-    let typography_scale = linux_direct_ui_font_scale();
     let mut style = TextStyle::line(
         linux_direct_ui_font_family(),
         body.size * typography_scale,

@@ -784,17 +784,26 @@ pub(crate) fn shape_linux_lite_text_line(
     text_system: &LinuxLiteTextSystem,
     text: &str,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_lite_text_line_at_scale(text_system, text, text_system.ui_scale())
+}
+#[cfg(feature = "text-input-core")]
+pub(crate) fn shape_linux_lite_text_line_at_scale(
+    text_system: &LinuxLiteTextSystem,
+    text: &str,
+    typography_scale: f32,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     if text.is_empty() {
         return None;
     }
     let body = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::Gtk);
     let mut style = TextStyle::line(
         text_system.ui_family().to_string(),
-        body.size * text_system.ui_scale(),
+        body.size * typography_scale,
         Color::rgb(0, 0, 0),
     );
-    style.line_height = body.line_height * text_system.ui_scale();
+    style.line_height = body.line_height * typography_scale;
     style.ellipsis = false;
+    style.semantic_role = Some(crate::TextRole::Body);
     let mut engine = text_system.inner.lock().ok()?;
     let layout = engine.layout(text, &style, 0, 0, 1.0);
     crate::rust_text_renderer::native_shaped_line_from_layout(text, &layout, style.size)
