@@ -3902,10 +3902,19 @@ jobs:
             scale=proof['runtime']['native_view_capture']['scale_factor']
             image=Image.open(folder/'window.png').convert('RGB')
             is_blue=lambda c:c[2]>150 and c[2]>c[0]+50 and c[2]>c[1]+20
-            blue=[(x,y) for y in range(image.height) for x in range(image.width) if is_blue(image.getpixel((x,y)))]
-            assert blue,name
-            left=min(x for x,y in blue);right=max(x for x,y in blue)
-            top=min(y for x,y in blue);bottom=max(y for x,y in blue)
+            bands=[]
+            for y in range(image.height):
+                start=None
+                for x in range(image.width+1):
+                    if x<image.width and is_blue(image.getpixel((x,y))):
+                        if start is None: start=x
+                    elif start is not None:
+                        if x-start>image.width*0.5: bands.append((start,x-1,y))
+                        start=None
+            assert len(bands)>=2,name
+            left=min(x for x,r,y in bands);right=max(r for x,r,y in bands)
+            top=min(y for x,r,y in bands);bottom=max(y for x,r,y in bands)
+            blue=[(x,y) for y in range(top,bottom+1) for x in range(left,right+1) if is_blue(image.getpixel((x,y)))]
             inset=max(3,int(3*scale))
             columns={}
             for x,y in blue:
@@ -3913,7 +3922,9 @@ jobs:
                     columns[x]=columns.get(x,0)+1
             assert columns,name
             caret=max(columns,key=columns.get)
-            ink=[x for y in range(top+inset,bottom-inset) for x in range(left+inset,right-inset) if max(image.getpixel((x,y)))<120]
+            caret_colors=[image.getpixel((caret,y)) for y in range(top+inset,bottom-inset) if is_blue(image.getpixel((caret,y)))]
+            caret_color=max(set(caret_colors),key=caret_colors.count)
+            ink=[x for y in range(top+inset,bottom-inset) for x in range(left+inset,right-inset) if sum(image.getpixel((x,y)))<630 and image.getpixel((x,y))!=caret_color]
             assert ink,name
             text_end=max(ink)
             gap=abs(caret-text_end)
