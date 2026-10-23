@@ -3769,10 +3769,11 @@ jobs:
                 for window in app:
                     if window.name!='Choose directory': continue
                     for node in walk(window):
-                        if node.getRole()==pyatspi.ROLE_PUSH_BUTTON and node.name in names:
+                        label=node.name
+                        if node.getRole()==pyatspi.ROLE_PUSH_BUTTON and label in names:
                             action=node.queryAction()
                             if action.nActions and action.doAction(0):
-                                print('Activated native chooser button:',node.name)
+                                print('Activated native chooser button:',label)
                                 raise SystemExit(0)
             time.sleep(0.1)
         raise RuntimeError('Native file chooser button was not available: '+repr(names))
