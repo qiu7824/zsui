@@ -98,6 +98,10 @@ direct renderer retain logical layout coordinates and apply backing scale once
 at presentation. Native scale-change callbacks cancel captured gestures,
 invalidate text measurements, rebuild retained content and refresh IME geometry
 without replacing application-owned pane extents or text values.
+Native input shapers consume the runtime's normalized typography scale, matching
+the retained paint plan and semantic body font. System font preferences are
+resolved before installing the Direct host's initial input backend; raw and
+normalized font scales must not diverge between caret and paint paths.
 `ZSUI_NATIVE_SCALE_TRACE` is an optional native-smoke trace of real host scale
 notifications. It is not a mechanism for injecting scale changes.
 
@@ -112,6 +116,14 @@ cancellation through the application update loop. The selected path must match
 the requested directory exactly. AppKit proof sends Return/Escape through
 WindowServer to the native remote panel and captures its composited bounds;
 capturing only the local panel proxy omits the remote controls.
+
+[Desktop lifecycle and scale proof](https://github.com/qiu7824/zsui/actions/runs/39930480963)
+adds window command/close-veto cases, AppKit worker panels, actual D-Bus provider
+failure and missing-provider cases. Direct, Direct Lite and GTK move between
+two Sway virtual outputs at 1x and 2x, retain input after the round trip, and
+perform input and capture at 2x. Pixel checks compare visible text and caret
+positions. Physical multi-monitor and fractional-scale behavior require
+separate target-device verification.
 
 ## Native input verification
 

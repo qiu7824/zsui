@@ -1680,6 +1680,11 @@ history remain authoritative for implementation status.
 - Backing scale is separate from logical layout units on AppKit, GTK and the
   Linux direct hosts. Scale transitions cancel capture, refresh native text
   measurements and IME coordinates, and preserve controlled application state.
+- Native input shapers use the runtime's normalized typography context, matching
+  the paint plan's scale and semantic body font. Direct initializes that context
+  from system preferences before installing input shaping. Native input proofs
+  check caret pixels as well as messages; virtual dual-output scale evidence
+  does not certify physical monitors or fractional-scale configurations.
 
 ## Acceptance applications
 
