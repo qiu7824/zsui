@@ -618,6 +618,12 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                 }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                #[cfg(feature = "native-smoke")]
+                crate::native::record_native_display_scale(
+                    "linux-direct",
+                    "ScaleFactorChanged",
+                    scale_factor,
+                );
                 window.scale_factor = scale_factor.max(0.1);
                 window.icon_cache.clear();
                 let report = window.runtime.display_scale_changed();
@@ -970,6 +976,8 @@ impl LinuxDirectWindow {
         #[cfg(not(feature = "linux-direct-accessibility"))]
         let _ = (event_loop, initial_height);
         let scale_factor = window.scale_factor().max(0.1);
+        #[cfg(feature = "native-smoke")]
+        crate::native::record_native_display_scale("linux-direct", "initial", scale_factor);
         let theme = window.theme().unwrap_or(WinitTheme::Light);
         let display_server = linux_direct_display_server(&window);
         let mut menu_surface = menu.map(crate::linux_direct_menu::LinuxDirectMenuSurface::new);

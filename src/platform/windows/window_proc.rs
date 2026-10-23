@@ -164,6 +164,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_DPICHANGED => {
+            #[cfg(feature = "native-smoke")]
+            crate::native::record_native_display_scale("win32","WM_DPICHANGED",(wparam & 0xffff) as f64 / 96.0);
             let suggested = lparam as *const RECT;
             if !suggested.is_null() {
                 let suggested = *suggested;

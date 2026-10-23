@@ -129,6 +129,32 @@ pub fn native_window(title: impl Into<String>) -> NativeWindowBuilder {
     NativeWindowBuilder::new(title)
 }
 
+#[cfg(feature = "native-smoke")]
+pub(crate) fn record_native_display_scale(backend: &str, event: &str, scale: f64) {
+    use std::io::Write;
+    let Some(path) = std::env::var_os("ZSUI_NATIVE_SCALE_TRACE") else {
+        return;
+    };
+    let path = std::path::PathBuf::from(path);
+    if !path.is_absolute() || !scale.is_finite() || scale <= 0.0 {
+        return;
+    }
+    let result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::json!({"schema":"zsui.native-display-scale/v1","backend":backend,"event":event,"scale":scale})
+        )
+    })();
+    if let Err(error) = result {
+        eprintln!("Could not record native display scale: {error}");
+    }
+}
+
 /// A cloneable, thread-safe request handle for rebuilding one retained UI.
 ///
 /// Applications can mutate app-owned shared state on a worker thread and then
@@ -11131,6 +11157,67 @@ mod tests {
             );
         }
         assert!(!handle.has_commands());
+    }
+
+    #[cfg(all(feature = "label", feature = "window-chrome"))]
+    #[test]
+    fn queued_commands_do_not_consume_redraw_and_reject_destroyed_window() {
+        let handle = UiInvalidationHandle::new();
+        let builder = native_window("Command lifetime")
+            .invalidation_handle(handle.clone())
+            .stateful_view_with_app_commands(
+                (),
+                |_| crate::text("State"),
+                |_, (): (), _| {},
+                |_| None,
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        handle.request_rebuild();
+        handle
+            .request_app_command(Command::custom("unmapped"))
+            .unwrap();
+        runtime.refresh_invalidated_view();
+        assert!(handle
+            .inner
+            .pending
+            .load(std::sync::atomic::Ordering::Acquire));
+        runtime.refresh_invalidated_view();
+        assert!(!handle
+            .inner
+            .pending
+            .load(std::sync::atomic::Ordering::Acquire));
+        runtime.shutdown_dispatch();
+        assert!(handle
+            .request_app_command(Command::custom("restore"))
+            .is_err());
+        assert!(!handle.request_rebuild());
+    }
+
+    #[cfg(all(feature = "label", feature = "window-chrome"))]
+    #[test]
+    fn native_window_state_changes_are_delivered_once() {
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = seen.clone();
+        let builder = native_window("Native window state").stateful_view(
+            (),
+            |_| crate::text("State").on_window_state_change(std::convert::identity),
+            move |_, state: crate::ZsWindowState, _| observed.lock().unwrap().push(state.maximized),
+        );
+        let mut runtime = builder.native_view_input_runtime();
+        for maximized in [false, false, true, true, false] {
+            runtime.dispatch_window_state(crate::ZsWindowState { maximized });
+        }
+        assert_eq!(*seen.lock().unwrap(), [false, true, false]);
+        let mut context = crate::AppCx::new();
+        for _ in 0..crate::DISPATCH_BATCH_SIZE {
+            context
+                .try_window_command(crate::ZsWindowCommand::Show)
+                .unwrap();
+        }
+        assert!(context
+            .try_window_command(crate::ZsWindowCommand::Hide)
+            .is_err());
+        assert_eq!(context.rejected_count(), 1);
     }
 
     #[cfg(all(feature = "label", feature = "window-chrome"))]

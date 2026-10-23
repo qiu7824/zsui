@@ -965,6 +965,11 @@ fn capture_win32_hwnd_png(
     path: &str,
     typography_scale: f32,
 ) -> Result<crate::NativeViewCaptureEvidence, String> {
+    if unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd) } == 0
+        || unsafe { windows_sys::Win32::UI::WindowsAndMessaging::IsIconic(hwnd) } != 0
+    {
+        return Err("the Win32 proof window is hidden or minimized".into());
+    }
     use std::{ffi::c_void, mem, path::Path};
     use windows_sys::Win32::{
         Foundation::RECT,

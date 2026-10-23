@@ -3521,7 +3521,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
+        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox sway jq python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
         fc-cache --force
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -3665,80 +3665,6 @@ jobs:
           ZSUI_NATIVE_DIRECTORY_PROOF_ACTION="$action" ZSUI_NATIVE_DIRECTORY_PROOF_SCREENSHOT="$out/picker.png" \
             run_probe ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 6500 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
          done
-    - name: Run Linux control and directory proofs
-      if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
-        export WINIT_UNIX_BACKEND=x11
-        root="$PWD/$PROOF_ROOT"
-        mkdir -p "$root"
-        dbus-run-session -- xvfb-run -a bash -euo pipefail <<'PROOF'
-        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
-        root="$PWD/$PROOF_ROOT"
-        dbus-update-activation-environment DISPLAY XAUTHORITY
-        /usr/libexec/xdg-desktop-portal-gtk > "$root/portal-gtk.log" 2>&1 &
-        portal_gtk=$!
-        /usr/libexec/xdg-desktop-portal > "$root/portal.log" 2>&1 &
-        portal=$!
-        openbox > "$root/openbox.log" 2>&1 &
-        wm=$!
-        trap 'kill "$portal" "$portal_gtk" "$wm" 2>/dev/null || true' EXIT
-        for attempt in $(seq 1 100); do
-          if gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --only-properties >/dev/null 2>&1; then break; fi
-          sleep 0.1
-        done
-        for scene in navigation panels table icons; do
-          for theme in light dark high-contrast; do
-            out="$root/$scene-$theme"; mkdir -p "$out"
-            ./target/debug/examples/resizable_layout --scene "$scene" --theme "$theme" --smoke --duration-ms 3000 --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
-          done
-        done
-        ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
-        ./target/debug/examples/desktop_lifecycle --scene commands --output "$root/lifecycle" > "$root/lifecycle.log" 2>&1 || { cat "$root/lifecycle.log"; exit 1; }
-        selected="$root/selected-folder"; mkdir -p "$selected"
-        send_dialog_key() {
-          if xdotool key --window "$dialog" "$@"; then return 0; fi
-          ! xwininfo -id "$dialog" >/dev/null 2>&1
-        }
-        for action in cancel select; do
-          out="$root/directory-$action"; mkdir -p "$out"
-          ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 9000 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 &
-          proof_pid=$!
-          dialog=
-          for attempt in $(seq 1 120); do
-            dialog=$(xdotool search --onlyvisible --name '^Choose directory$' 2>/dev/null | head -n 1 || true)
-            test -n "$dialog" && break
-            kill -0 "$proof_pid" 2>/dev/null || break
-            sleep 0.1
-          done
-          if test -z "$dialog"; then kill "$proof_pid" 2>/dev/null || true; cat "$out/run.log"; exit 1; fi
-          sleep 0.3
-          import -window "$dialog" "$out/picker.png"
-          if test "$action" = cancel; then
-            send_dialog_key Escape
-          else
-            send_dialog_key ctrl+l
-            sleep 0.15
-            send_dialog_key ctrl+a
-            xdotool type --window "$dialog" --clearmodifiers --delay 1 "$selected"
-            sleep 0.15
-            send_dialog_key Return
-            sleep 0.5
-            if xwininfo -id "$dialog" >/dev/null 2>&1; then send_dialog_key Return; fi
-          fi
-          if ! timeout 20s tail --pid="$proof_pid" -f /dev/null; then kill "$proof_pid" 2>/dev/null || true; exit 1; fi
-          wait "$proof_pid"
-        done
-        PROOF
-    - name: Verify Win32 lifecycle
-      if: runner.os == 'Windows'
-      shell: pwsh
-      run: |
-        $output=Join-Path $PWD "$env:PROOF_ROOT/lifecycle"
-        & './target/debug/examples/desktop_lifecycle.exe' --scene commands --output $output
-        if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
     - name: Verify Linux provider error responses
       if: matrix.backend == 'linux-direct' || matrix.backend == 'linux-direct-lite'
       shell: bash
@@ -3781,6 +3707,152 @@ jobs:
         done
         timeout 20s "$binary" --scene provider-failure --output "$root/provider-failure"
         FAILURE
+    - name: Run Linux control and directory proofs
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
+        export WINIT_UNIX_BACKEND=x11
+        root="$PWD/$PROOF_ROOT"
+        mkdir -p "$root"
+        dbus-run-session -- xvfb-run -a bash -euo pipefail <<'PROOF'
+        export XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_TYPE=x11 GDK_BACKEND=x11 GTK_USE_PORTAL=1
+        root="$PWD/$PROOF_ROOT"
+        dbus-update-activation-environment DISPLAY XAUTHORITY
+        /usr/libexec/xdg-desktop-portal-gtk > "$root/portal-gtk.log" 2>&1 &
+        portal_gtk=$!
+        /usr/libexec/xdg-desktop-portal > "$root/portal.log" 2>&1 &
+        portal=$!
+        openbox > "$root/openbox.log" 2>&1 &
+        wm=$!
+        trap 'kill "$portal" "$portal_gtk" "$wm" 2>/dev/null || true' EXIT
+        for attempt in $(seq 1 100); do
+          if gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --only-properties >/dev/null 2>&1; then break; fi
+          sleep 0.1
+        done
+        for scene in navigation panels table icons; do
+          for theme in light dark high-contrast; do
+            out="$root/$scene-$theme"; mkdir -p "$out"
+            ./target/debug/examples/resizable_layout --scene "$scene" --theme "$theme" --smoke --duration-ms 3000 --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
+          done
+        done
+        ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
+        ./target/debug/examples/desktop_lifecycle --scene commands --output "$root/lifecycle" > "$root/lifecycle.log" 2>&1 || { cat "$root/lifecycle.log"; exit 1; }
+        selected="$root/selected-folder"; mkdir -p "$selected"
+        send_dialog_key() {
+          if xdotool windowactivate --sync "$dialog" && xdotool key --clearmodifiers "$@"; then return 0; fi
+          ! xwininfo -id "$dialog" >/dev/null 2>&1
+        }
+        for action in cancel select; do
+          out="$root/directory-$action"; mkdir -p "$out"
+          ./target/debug/examples/desktop_reliability --scene directory --smoke --duration-ms 9000 --initial-directory "$selected" --output "$out" > "$out/run.log" 2>&1 &
+          proof_pid=$!
+          dialog=
+          for attempt in $(seq 1 120); do
+            dialog=$(xdotool search --onlyvisible --name '^Choose directory$' 2>/dev/null | head -n 1 || true)
+            test -n "$dialog" && break
+            kill -0 "$proof_pid" 2>/dev/null || break
+            sleep 0.1
+          done
+          if test -z "$dialog"; then kill "$proof_pid" 2>/dev/null || true; cat "$out/run.log"; exit 1; fi
+          sleep 0.3
+          import -window "$dialog" "$out/picker.png"
+          if test "$action" = cancel; then
+            send_dialog_key Escape
+          else
+            send_dialog_key ctrl+l
+            sleep 0.15
+            send_dialog_key ctrl+a
+            xdotool type --window "$dialog" --clearmodifiers --delay 1 "$selected"
+            sleep 0.15
+            send_dialog_key Return
+            sleep 0.5
+            if xwininfo -id "$dialog" >/dev/null 2>&1; then send_dialog_key Return; fi
+          fi
+          if ! timeout 20s tail --pid="$proof_pid" -f /dev/null; then cat "$out/run.log"; xwininfo -id "$dialog" || true; kill "$proof_pid" 2>/dev/null || true; exit 1; fi
+          wait "$proof_pid"
+        done
+        PROOF
+    - name: Verify Win32 lifecycle
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $output=Join-Path $PWD "$env:PROOF_ROOT/lifecycle"
+        & './target/debug/examples/desktop_lifecycle.exe' --scene commands --output $output
+        if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+    - name: Verify Wayland monitor scale transitions
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        root="$PWD/$PROOF_ROOT/monitor-scale"
+        mkdir -p "$root" "$RUNNER_TEMP/zsui-scale-runtime"
+        chmod 700 "$RUNNER_TEMP/zsui-scale-runtime"
+        export XDG_RUNTIME_DIR="$RUNNER_TEMP/zsui-scale-runtime"
+        export root
+        cat > "$RUNNER_TEMP/zsui-scale-sway.conf" <<'CONFIG'
+        xwayland disable
+        output HEADLESS-1 mode 1280x800 position 0 0 scale 1
+        output HEADLESS-2 mode 2560x1600 position 1280 0 scale 2
+        workspace 1 output HEADLESS-1
+        workspace 2 output HEADLESS-2
+        seat seat0 fallback true
+        default_border none
+        focus_follows_mouse no
+        for_window [title="^ZSUI Desktop Reliability$"] floating enable
+        CONFIG
+        dbus-run-session -- bash -euo pipefail <<'SCALE'
+        export WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=2 WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
+        sway --unsupported-gpu --config "$RUNNER_TEMP/zsui-scale-sway.conf" > "$root/compositor.log" 2>&1 &
+        compositor=$!
+        trap 'kill "$compositor" 2>/dev/null || true' EXIT
+        for attempt in $(seq 1 100); do
+          socket=$(find "$XDG_RUNTIME_DIR" -maxdepth 1 -name 'sway-ipc*.sock' -print -quit)
+          test -n "$socket" && break
+          kill -0 "$compositor" 2>/dev/null || { cat "$root/compositor.log"; exit 1; }
+          sleep 0.1
+        done
+        export SWAYSOCK="$socket"
+        export WAYLAND_DISPLAY
+        for attempt in $(seq 1 100); do
+          for file in "$XDG_RUNTIME_DIR"/wayland-*; do if test -S "$file"; then WAYLAND_DISPLAY=$(basename "$file"); break; fi; done
+          test -n "${WAYLAND_DISPLAY:-}" && break
+          sleep 0.1
+        done
+        swaymsg -t get_outputs > "$root/outputs.json"
+        swaymsg workspace 2 >/dev/null
+        swaymsg workspace 1 >/dev/null
+        export WINIT_UNIX_BACKEND=wayland GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
+        unset DISPLAY
+        export ZSUI_NATIVE_SCALE_TRACE="$root/scale-events.jsonl"
+        ./target/debug/examples/desktop_reliability --smoke --duration-ms 12000 --output "$root" > "$root/run.log" 2>&1 &
+        proof=$!
+        for attempt in $(seq 1 100); do
+          if swaymsg -t get_tree | jq -e '.. | objects | select(.name? == "ZSUI Desktop Reliability")' >/dev/null; then break; fi
+          kill -0 "$proof" 2>/dev/null || { cat "$root/run.log"; exit 1; }
+          sleep 0.1
+        done
+        sleep 0.5
+        swaymsg '[title="^ZSUI Desktop Reliability$"] move container to output HEADLESS-2' > "$root/move-to-2.json"
+        sleep 1
+        swaymsg '[title="^ZSUI Desktop Reliability$"] move container to output HEADLESS-1' > "$root/move-to-1.json"
+        wait "$proof" || { cat "$root/run.log"; exit 1; }
+        python3 - <<'PY'
+        import json,os
+        from pathlib import Path
+        root=Path(os.environ['root'])
+        outputs=json.loads((root/'outputs.json').read_text())
+        assert {float(o['scale']) for o in outputs if o['active']}=={1.0,2.0},outputs
+        events=[json.loads(line) for line in (root/'scale-events.jsonl').read_text().splitlines()]
+        changes=[e['scale'] for e in events if e['event']!='initial']
+        assert 2.0 in changes and 1.0 in changes and changes.index(2.0)<max(i for i,v in enumerate(changes) if v==1.0),events
+        result=json.loads((root/'proof.json').read_text())
+        assert result['path'].endswith('document.txt中文🙂tail') and result['actions']==1,result
+        assert result['runtime']['screenshot_captured'],result
+        print('Two native Wayland outputs delivered 1x -> 2x -> 1x scale changes with retained input.')
+        PY
+        SCALE
     - name: Validate retained application state and captures
       shell: bash
       run: |

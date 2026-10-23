@@ -36,6 +36,73 @@ mod tests {
 
     #[cfg(feature = "split-view")]
     #[test]
+    fn monitor_scale_round_trip_preserves_extent_and_cancels_capture() {
+        let builder = native_window("Scale transition")
+            .size(900, 720)
+            .stateful_view(
+                Dp::new(180.0),
+                |width| {
+                    crate::split_view(
+                        crate::WidgetId::new(799),
+                        crate::ZsSplitViewSpec::new(true)
+                            .display_mode(crate::ZsSplitViewDisplayMode::Inline)
+                            .pane_extent(*width),
+                        crate::column([]),
+                        crate::column([]),
+                    )
+                    .pane_resize_limits(
+                        crate::ZsResizeLimits::new(Dp::new(100.0), Dp::new(400.0)).unwrap(),
+                    )
+                    .on_pane_resize(std::convert::identity)
+                },
+                |width, next, _| *width = next,
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        let start = center(handle(&runtime, crate::ZsResizeTarget::Pane).bounds);
+        assert!(
+            runtime
+                .dispatch_pointer_down(start, false)
+                .resize_drag_active
+        );
+        runtime.dispatch_pointer_move(Point {
+            x: start.x + 40,
+            y: start.y,
+        });
+        assert_eq!(extent(handle(&runtime, crate::ZsResizeTarget::Pane)), 220);
+        runtime.display_scale_changed();
+        assert!(runtime.resize_drag.is_none());
+        for dpi in [144.0, 192.0, 120.0, 96.0] {
+            let dpi = Dpi::new(dpi);
+            runtime.set_surface(
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: Dp::new(900.0).to_px(dpi).round_i32(),
+                    height: Dp::new(720.0).to_px(dpi).round_i32(),
+                },
+                dpi,
+            );
+            assert_eq!(
+                extent(handle(&runtime, crate::ZsResizeTarget::Pane)),
+                Dp::new(220.0).to_px(dpi).round_i32()
+            );
+            assert!(
+                !runtime
+                    .dispatch_pointer_move(Point { x: 600, y: 100 })
+                    .resize_extent_changed
+            );
+        }
+        let start = center(handle(&runtime, crate::ZsResizeTarget::Pane).bounds);
+        runtime.dispatch_pointer_down(start, false);
+        runtime.dispatch_pointer_move(Point {
+            x: start.x + 32,
+            y: start.y,
+        });
+        assert_eq!(extent(handle(&runtime, crate::ZsResizeTarget::Pane)), 252);
+    }
+
+    #[cfg(feature = "split-view")]
+    #[test]
     fn resize_panels_keep_controlled_state_capture_direction_and_escape() {
         for axis in [
             crate::ZsResizeAxis::Horizontal,

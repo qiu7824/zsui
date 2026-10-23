@@ -576,6 +576,10 @@ define_class!(
 
         #[unsafe(method(viewDidChangeBackingProperties))]
         fn view_did_change_backing_properties(&self) {
+            #[cfg(feature = "native-smoke")]
+            if let Some(window)=self.window() {
+                crate::native::record_native_display_scale("appkit","viewDidChangeBackingProperties",window.backingScaleFactor());
+            }
             let report = self.ivars().runtime.borrow_mut().display_scale_changed();
             self.apply_input_report(report);
             if let Some(context) = self.inputContext() { context.invalidateCharacterCoordinates(); }

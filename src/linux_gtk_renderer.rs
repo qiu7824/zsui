@@ -603,6 +603,12 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let ime = ime.clone();
         let application = application.clone();
         move |area| {
+            #[cfg(feature = "native-smoke")]
+            crate::native::record_native_display_scale(
+                "gtk",
+                "scale-factor-notify",
+                f64::from(area.scale_factor()),
+            );
             let report = runtime.borrow_mut().display_scale_changed();
             apply_linux_gtk_input_report(report, area, &plan, &runtime, &ime, application.as_ref());
         }

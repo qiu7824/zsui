@@ -142,6 +142,8 @@ mod native {
             // Subscribe before calling the portal; immediate responses must not be lost.
             connection.add_match(rule, move |(code, values): (u32, PropMap), _, message| {
                 if let Some(path) = message.path() {
+                    #[cfg(feature = "native-smoke")]
+                    eprintln!("Native file chooser response: path={path}, code={code}");
                     let mut queue = received
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -208,6 +210,8 @@ mod native {
                 if self.save { "SaveFile" } else { "OpenFile" },
                 (parent, self.title.clone(), options),
             )?;
+            #[cfg(feature = "native-smoke")]
+            eprintln!("Native file chooser request: {path}");
             loop {
                 if let Some((_, code, values)) = responses
                     .lock()
