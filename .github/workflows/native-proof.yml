@@ -3927,7 +3927,8 @@ jobs:
             ink=[x for y in range(top+inset,bottom-inset) for x in range(left+inset,right-inset) if sum(image.getpixel((x,y)))<630 and image.getpixel((x,y))!=caret_color]
             assert ink,name
             text_end=max(ink)
-            gap=abs(caret-text_end)
+            # Count pixels between the ink and caret, excluding both endpoints.
+            gap=max(0,abs(caret-text_end)-1)
             records.append(dict(scene=name,scale=scale,caret_x=caret,text_ink_end_x=text_end,gap_pixels=gap))
             assert gap<=max(4,round(3*scale)),records[-1]
         (root/'caret-pixels.json').write_text(json.dumps(records,indent=2))
