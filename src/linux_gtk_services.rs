@@ -415,7 +415,7 @@ impl WindowService for LinuxGtkWindowService {
             .default_height(spec.height.min(i32::MAX as u32).max(1) as i32)
             .build();
         window.set_resizable(spec.resizable);
-        window.set_decorated(spec.decorations);
+        window.set_decorated(spec.decorations && !spec.custom_title_bar);
         if spec.min_width.is_some() || spec.min_height.is_some() {
             window.set_size_request(
                 spec.min_width.map(gtk_dimension).unwrap_or(-1),

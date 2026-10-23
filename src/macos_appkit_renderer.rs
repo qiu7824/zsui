@@ -574,6 +574,14 @@ define_class!(
             sink.draw_plan(&plan);
         }
 
+        #[unsafe(method(viewDidChangeBackingProperties))]
+        fn view_did_change_backing_properties(&self) {
+            let report = self.ivars().runtime.borrow_mut().display_scale_changed();
+            self.apply_input_report(report);
+            if let Some(context) = self.inputContext() { context.invalidateCharacterCoordinates(); }
+            self.setNeedsDisplay(true);
+        }
+
         #[unsafe(method(viewDidChangeEffectiveAppearance))]
         fn view_did_change_effective_appearance(&self) {
             unsafe {
@@ -1560,6 +1568,32 @@ impl ZsuiAppKitDrawView {
     }
 
     fn dispatch_pointer_down_event(&self, event: &NSEvent, button: crate::ZsPointerButton) {
+        #[cfg(feature = "window-chrome")]
+        if button == crate::ZsPointerButton::Primary
+            && self
+                .ivars()
+                .runtime
+                .borrow()
+                .window_drag_region_at(self.pointer_point(event))
+        {
+            if let Some(window) = self.window() {
+                if event.clickCount() == 2 {
+                    window.zoom(None);
+                } else {
+                    window.performWindowDragWithEvent(event);
+                }
+                let report =
+                    self.ivars()
+                        .runtime
+                        .borrow_mut()
+                        .dispatch_window_state(crate::ZsWindowState {
+                            maximized: window.isZoomed(),
+                        });
+                self.apply_input_report(report);
+                return;
+            }
+        }
+
         let report = self
             .ivars()
             .runtime
@@ -1683,6 +1717,8 @@ impl ZsuiAppKitDrawView {
                 report.message_count += effect_report.message_count;
                 report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
                 report.quit_requested |= effect_report.quit_requested;
+                #[cfg(feature = "window-chrome")]
+                report.window_commands.extend(effect_report.window_commands);
                 report.errors.extend(effect_report.errors);
                 if let Some(plan) = effect_report.redraw_plan {
                     report.redraw_plan = Some(plan);
@@ -1690,6 +1726,42 @@ impl ZsuiAppKitDrawView {
             }
         }
         drop(dispatch_turn);
+        #[cfg(feature = "window-chrome")]
+        if let Some(window) = self.window() {
+            for command in report.window_commands.clone() {
+                match command {
+                    crate::ZsWindowCommand::Minimize => window.miniaturize(None),
+                    crate::ZsWindowCommand::ToggleMaximize => window.zoom(None),
+                    crate::ZsWindowCommand::Close => window.performClose(None),
+                    crate::ZsWindowCommand::Hide => {
+                        if self.ivars().runtime.borrow_mut().suspend_view_when_hidden() {
+                            *self.ivars().plan.borrow_mut() = NativeDrawPlan::default();
+                        }
+                        report.redraw_plan = None;
+                        window.orderOut(None);
+                    }
+                    crate::ZsWindowCommand::Show => {
+                        window.deminiaturize(None);
+                        let plan = self.ivars().runtime.borrow_mut().resume_view_when_visible();
+                        if let Some(plan) = plan {
+                            report.redraw_plan = Some(plan);
+                        }
+                        window.makeKeyAndOrderFront(None);
+                        #[allow(deprecated)]
+                        objc2_app_kit::NSApplication::sharedApplication(self.mtm())
+                            .activateIgnoringOtherApps(true);
+                        self.setNeedsDisplay(true);
+                    }
+                }
+            }
+            if !report.window_commands.is_empty()
+                && window.isVisible()
+                && !self.ivars().runtime.borrow().is_view_suspended()
+            {
+                report.redraw_plan = self.ivars().runtime.borrow().current_composed_draw_plan();
+            }
+        }
+
         if let Some(plan) = report.redraw_plan.clone() {
             *self.ivars().plan.borrow_mut() = plan;
             self.setNeedsDisplay(true);
@@ -2292,6 +2364,13 @@ impl MacosAppKitDrawViewHost {
         &self,
         path: &Path,
     ) -> Result<crate::NativeViewCaptureEvidence, String> {
+        if self
+            .view
+            .window()
+            .is_none_or(|window| !window.isVisible() || window.isMiniaturized())
+        {
+            return Err("the AppKit proof window is hidden or minimized".into());
+        }
         let bounds = self.view.bounds();
         if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
             return Err("the AppKit view has empty bounds".to_string());
@@ -2394,6 +2473,17 @@ impl MacosAppKitDrawViewHost {
             .runtime
             .borrow_mut()
             .dispatch_app_command(command);
+        self.view.apply_input_report(report);
+    }
+
+    #[cfg(feature = "window-chrome")]
+    pub(crate) fn dispatch_window_state(&self, maximized: bool) {
+        let report = self
+            .view
+            .ivars()
+            .runtime
+            .borrow_mut()
+            .dispatch_window_state(crate::ZsWindowState { maximized });
         self.view.apply_input_report(report);
     }
 

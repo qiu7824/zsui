@@ -214,6 +214,12 @@ impl WindowsWin32ViewInputRoute {
         self.adapt_shared_report(report, WindowsSharedInputKind::WindowClose)
     }
 
+    #[cfg(feature = "window-chrome")]
+    fn dispatch_window_state(&mut self, maximized: bool) -> WindowsWin32ViewInputDispatchReport {
+        let report=self.shared_runtime.dispatch_window_state(crate::ZsWindowState {maximized});
+        self.adapt_shared_report(report, WindowsSharedInputKind::Background)
+    }
+
     fn refresh_live_view_after_app_effect(&mut self) -> Option<u64> {
         let mut report = crate::native::NativeViewInputDispatchReport::default();
         self.shared_runtime

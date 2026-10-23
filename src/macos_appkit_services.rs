@@ -61,6 +61,7 @@ struct ZsuiAppKitRuntimeDelegateIvars {
     proof_resize_event_count: Cell<usize>,
     proof_resize_evidence: RefCell<Option<crate::NativeWindowResizeEvidence>>,
     proof_resize_error: RefCell<Option<String>>,
+    proof_finished: Cell<bool>,
 }
 
 define_class!(
@@ -72,6 +73,26 @@ define_class!(
     unsafe impl NSObjectProtocol for ZsuiAppKitRuntimeDelegate {}
 
     unsafe impl NSApplicationDelegate for ZsuiAppKitRuntimeDelegate {}
+
+    impl ZsuiAppKitRuntimeDelegate {
+        #[unsafe(method(zsuiFinishSmoke:))]
+        fn finish_smoke(&self, timer: &objc2_foundation::NSTimer) {
+            timer.invalidate();
+            self.run_proof_inputs_and_capture();
+            let application = NSApplication::sharedApplication(self.mtm());
+            application.stop(None);
+            // Wake nextEvent so the application observes stop after a timer,
+            // even when no mouse or keyboard events arrive in a CI session.
+            use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+            #[allow(deprecated)]
+            if let Some(event) = NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                NSEventType::ApplicationDefined, NSPoint::new(0.0, 0.0),
+                NSEventModifierFlags::empty(), 0.0, 0, None, 0, 0, 0,
+            ) {
+                application.postEvent_atStart(&event, true);
+            }
+        }
+    }
 
     unsafe impl NSWindowDelegate for ZsuiAppKitRuntimeDelegate {
         #[unsafe(method(windowShouldClose:))]
@@ -100,7 +121,15 @@ define_class!(
         }
 
         #[unsafe(method(windowDidResize:))]
-        fn window_did_resize(&self, _notification: &NSNotification) {
+        fn window_did_resize(&self, notification: &NSNotification) {
+            #[cfg(feature = "window-chrome")]
+            if let Some(object) = notification.object() {
+                let address = Retained::as_ptr(&object).cast::<NSWindow>() as usize;
+                if let Some(host) = self.ivars().close_handlers.get(&address) {
+                    let window: &NSWindow = unsafe { &*(address as *const NSWindow) };
+                    host.dispatch_window_state(window.isZoomed());
+                }
+            }
             self.ivars().proof_resize_event_count.set(
                 self.ivars()
                     .proof_resize_event_count
@@ -123,6 +152,9 @@ define_class!(
 
 impl ZsuiAppKitRuntimeDelegate {
     fn run_proof_inputs_and_capture(&self) {
+        if self.ivars().proof_finished.replace(true) {
+            return;
+        }
         if let Some(handler) = self.ivars().capture_handler.as_ref() {
             if let Some(requested_size) = self.ivars().proof_resize {
                 let events_before = self.ivars().proof_resize_event_count.get();
@@ -221,6 +253,7 @@ impl ZsuiAppKitRuntimeDelegate {
             proof_resize_event_count: Cell::new(0),
             proof_resize_evidence: RefCell::new(None),
             proof_resize_error: RefCell::new(None),
+            proof_finished: Cell::new(false),
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -394,10 +427,16 @@ pub(crate) fn run_macos_appkit_native_window_event_loop(
     let status_menu_command_routed =
         auto_close_after_ms.is_some() && status_items.invoke_first_enabled_command_for_proof();
 
+    let _dialog_dispatch = AppKitDialogDispatch::enter();
     if let Some(delay) = auto_close_after_ms {
-        application.finishLaunching();
-        let deadline = NSDate::dateWithTimeIntervalSinceNow(delay.max(1) as f64 / 1_000.0);
-        NSRunLoop::mainRunLoop().runUntilDate(&deadline);
+        let timer = unsafe {
+            objc2_foundation::NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                delay.max(1) as f64 / 1_000.0, &*delegate,
+                objc2::sel!(zsuiFinishSmoke:), None, false,
+            )
+        };
+        application.run();
+        timer.invalidate();
         delegate.run_proof_inputs_and_capture();
     } else {
         application.run();
@@ -535,7 +574,7 @@ impl WindowService for MacosAppKitWindowService {
                 "the AppKit transparent window surface is not connected",
             ));
         }
-        let mut style = if spec.decorations {
+        let mut style = if spec.decorations || spec.custom_title_bar {
             NSWindowStyleMask::Titled
                 | NSWindowStyleMask::Closable
                 | NSWindowStyleMask::Miniaturizable
@@ -544,6 +583,9 @@ impl WindowService for MacosAppKitWindowService {
         };
         if spec.resizable {
             style |= NSWindowStyleMask::Resizable;
+        }
+        if spec.custom_title_bar {
+            style |= NSWindowStyleMask::FullSizeContentView;
         }
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -559,6 +601,20 @@ impl WindowService for MacosAppKitWindowService {
         };
         unsafe { window.setReleasedWhenClosed(false) };
         window.setTitle(&NSString::from_str(&spec.title));
+        if spec.custom_title_bar {
+            window.setTitleVisibility(objc2_app_kit::NSWindowTitleVisibility::Hidden);
+            window.setTitlebarAppearsTransparent(true);
+            for button in [
+                objc2_app_kit::NSWindowButton::CloseButton,
+                objc2_app_kit::NSWindowButton::MiniaturizeButton,
+                objc2_app_kit::NSWindowButton::ZoomButton,
+            ] {
+                if let Some(button) = window.standardWindowButton(button) {
+                    button.setHidden(true);
+                }
+            }
+        }
+
         if let (Some(width), Some(height)) = (spec.min_width, spec.min_height) {
             window.setMinSize(NSSize::new(width.max(1) as f64, height.max(1) as f64));
         }
@@ -701,6 +757,7 @@ impl NativeDialogService for MacosAppKitDialogService {
 enum AppKitFilePanelKind {
     Open,
     Save,
+    Folder,
 }
 
 impl AppKitFilePanelKind {
@@ -709,11 +766,15 @@ impl AppKitFilePanelKind {
         match self {
             Self::Open => "notepad-owner-open-panel.png",
             Self::Save => "notepad-owner-save-panel.png",
+            Self::Folder => "folder-owner-panel.png",
         }
     }
 }
 
 pub fn macos_appkit_open_file_dialog(spec: &FileDialogSpec) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    if MainThreadMarker::new().is_none() {
+        return appkit_open_panel_from_worker(spec.clone(), false);
+    }
     let mtm = appkit_main_thread_marker("NSOpenPanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSOpenPanel::openPanel(mtm);
@@ -750,6 +811,12 @@ pub fn macos_appkit_pick_directory_dialog(
     spec: &crate::DirectoryDialogSpec,
 ) -> ZsuiResult<Option<PathBuf>> {
     spec.validate()?;
+    if MainThreadMarker::new().is_none() {
+        let mut request = FileDialogSpec::new(&spec.title);
+        request.current_path = spec.current_path.clone();
+        return appkit_open_panel_from_worker(request, true)
+            .map(|paths| paths.and_then(|paths| paths.into_iter().next()));
+    }
     let mtm = appkit_main_thread_marker("NSOpenPanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSOpenPanel::openPanel(mtm);
@@ -782,6 +849,9 @@ pub fn macos_appkit_pick_directory_dialog(
 }
 
 pub fn macos_appkit_save_file_dialog(spec: &SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+    if MainThreadMarker::new().is_none() {
+        return appkit_save_panel_from_worker(spec.clone());
+    }
     let mtm = appkit_main_thread_marker("NSSavePanel")?;
     let owner = appkit_active_file_dialog_owner(mtm);
     let panel = NSSavePanel::savePanel(mtm);
@@ -904,6 +974,229 @@ fn appkit_schedule_directory_proof(
         action_timer,
         timeout_timer,
     }))
+}
+
+static APPKIT_DIALOG_GENERATION: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static APPKIT_PENDING_PANELS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+struct AppKitPanelAdmission;
+impl Drop for AppKitPanelAdmission {
+    fn drop(&mut self) {
+        APPKIT_PENDING_PANELS.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+struct AppKitDialogDispatch;
+impl AppKitDialogDispatch {
+    fn enter() -> Self {
+        APPKIT_DIALOG_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        Self
+    }
+}
+impl Drop for AppKitDialogDispatch {
+    fn drop(&mut self) {
+        APPKIT_DIALOG_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+// The worker waits while the main queue remains free for the panel's remote
+// view service and its completion callback.
+fn appkit_dispatch_panel<T: Send + 'static>(
+    start: impl FnOnce(std::sync::mpsc::Sender<ZsuiResult<T>>) -> ZsuiResult<()> + Send + 'static,
+) -> ZsuiResult<T> {
+    let generation = APPKIT_DIALOG_GENERATION.load(std::sync::atomic::Ordering::Acquire);
+    if generation % 2 == 0 {
+        return Err(ZsuiError::host(
+            "macos_file_dialog",
+            "The AppKit event loop is not running",
+        ));
+    }
+    if APPKIT_PENDING_PANELS
+        .fetch_update(
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+            |n| (n < 32).then_some(n + 1),
+        )
+        .is_err()
+    {
+        return Err(ZsuiError::host(
+            "macos_file_dialog",
+            "The native panel queue is full",
+        ));
+    }
+    let _admission = AppKitPanelAdmission;
+    let (sender, receiver) = std::sync::mpsc::channel();
+    dispatch2::DispatchQueue::main().exec_async(move || {
+        if APPKIT_DIALOG_GENERATION.load(std::sync::atomic::Ordering::Acquire) != generation {
+            let _ = sender.send(Err(ZsuiError::host(
+                "macos_file_dialog",
+                "The AppKit event loop stopped",
+            )));
+            return;
+        }
+        if let Err(error) = start(sender.clone()) {
+            let _ = sender.send(Err(error));
+        }
+    });
+    loop {
+        match receiver.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(result) => return result,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(ZsuiError::host(
+                    "macos_file_dialog",
+                    "The file panel closed without a response",
+                ))
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if APPKIT_DIALOG_GENERATION.load(std::sync::atomic::Ordering::Acquire) != generation
+                {
+                    return Err(ZsuiError::host(
+                        "macos_file_dialog",
+                        "The AppKit event loop stopped",
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn appkit_open_panel_from_worker(
+    spec: FileDialogSpec,
+    directory: bool,
+) -> ZsuiResult<Option<Vec<PathBuf>>> {
+    appkit_dispatch_panel(move |sender| {
+        let mtm = appkit_main_thread_marker("NSOpenPanel")?;
+        let owner = appkit_active_file_dialog_owner(mtm);
+        let panel = NSOpenPanel::openPanel(mtm);
+        appkit_configure_open_panel(&panel, &spec);
+        if directory {
+            panel.setCanChooseFiles(false);
+            panel.setCanChooseDirectories(true);
+            panel.setAllowsMultipleSelection(false);
+        }
+        let selected = panel.clone();
+        let completion = RcBlock::new(move |response: objc2_app_kit::NSModalResponse| {
+            let result = (|| -> ZsuiResult<Option<Vec<PathBuf>>> {
+                if response == NSModalResponseCancel {
+                    return Ok(None);
+                }
+                if response != NSModalResponseOK {
+                    return Err(ZsuiError::host(
+                        "macos_file_dialog",
+                        "NSOpenPanel could not display or complete the selection",
+                    ));
+                }
+                let urls = selected.URLs();
+                let mut paths = Vec::with_capacity(urls.len());
+                for index in 0..urls.len() {
+                    let url = unsafe { urls.objectAtIndex_unchecked(index) };
+                    let path = url.to_file_path().ok_or_else(|| {
+                        ZsuiError::host("macos_file_dialog", "NSOpenPanel returned a non-file URL")
+                    })?;
+                    if directory && !path.is_dir() {
+                        return Err(ZsuiError::host(
+                            "macos_pick_folder",
+                            "The selected path is not a directory",
+                        ));
+                    }
+                    paths.push(path);
+                }
+                if paths.is_empty() {
+                    return Err(ZsuiError::host(
+                        "macos_file_dialog",
+                        "NSOpenPanel accepted without a selected path",
+                    ));
+                }
+                Ok(Some(paths))
+            })();
+            let _ = sender.send(result);
+        });
+        if let Some(owner) = owner.as_deref() {
+            panel.beginSheetModalForWindow_completionHandler(owner, &completion);
+        } else {
+            panel.beginWithCompletionHandler(&completion);
+        }
+        #[cfg(feature = "native-smoke")]
+        appkit_schedule_async_panel_proof(
+            &panel,
+            owner.as_deref(),
+            if directory {
+                AppKitFilePanelKind::Folder
+            } else {
+                AppKitFilePanelKind::Open
+            },
+        )?;
+        Ok(())
+    })
+}
+
+fn appkit_save_panel_from_worker(spec: SaveFileDialogSpec) -> ZsuiResult<Option<PathBuf>> {
+    appkit_dispatch_panel(move |sender| {
+        let mtm = appkit_main_thread_marker("NSSavePanel")?;
+        let owner = appkit_active_file_dialog_owner(mtm);
+        let panel = NSSavePanel::savePanel(mtm);
+        appkit_configure_save_panel(&panel, &spec);
+        let selected = panel.clone();
+        let completion = RcBlock::new(move |response: objc2_app_kit::NSModalResponse| {
+            let result = if response == NSModalResponseCancel {
+                Ok(None)
+            } else if response != NSModalResponseOK {
+                Err(ZsuiError::host(
+                    "macos_save_file_dialog",
+                    "NSSavePanel could not display or complete the selection",
+                ))
+            } else {
+                selected
+                    .URL()
+                    .and_then(|url| url.to_file_path())
+                    .map(Some)
+                    .ok_or_else(|| {
+                        ZsuiError::host(
+                            "macos_save_file_dialog",
+                            "NSSavePanel accepted without a local path",
+                        )
+                    })
+            };
+            let _ = sender.send(result);
+        });
+        if let Some(owner) = owner.as_deref() {
+            panel.beginSheetModalForWindow_completionHandler(owner, &completion);
+        } else {
+            panel.beginWithCompletionHandler(&completion);
+        }
+        #[cfg(feature = "native-smoke")]
+        appkit_schedule_async_panel_proof(&panel, owner.as_deref(), AppKitFilePanelKind::Save)?;
+        Ok(())
+    })
+}
+
+#[cfg(feature = "native-smoke")]
+fn appkit_schedule_async_panel_proof(
+    panel: &NSSavePanel,
+    owner: Option<&NSWindow>,
+    kind: AppKitFilePanelKind,
+) -> ZsuiResult<()> {
+    let Some(screenshot) = appkit_owner_file_panel_proof_path(kind)? else {
+        return Ok(());
+    };
+    let panel = panel.retain();
+    let owner = owner.map(|window| window.retain());
+    let capture_and_cancel = RcBlock::new(move |_timer: NonNull<NSTimer>| {
+        if let Err(error) = appkit_capture_file_panel_compositor_png(&panel, &screenshot) {
+            let _ = std::fs::write(screenshot.with_extension("error.txt"), error);
+        }
+        if let Some(owner) = owner.as_deref() {
+            owner.endSheet_returnCode(&panel, NSModalResponseCancel);
+        } else {
+            unsafe { panel.cancel(None) };
+        }
+        panel.orderOut(None);
+    });
+    let timer =
+        unsafe { NSTimer::timerWithTimeInterval_repeats_block(3.0, false, &capture_and_cancel) };
+    unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&timer, NSDefaultRunLoopMode) };
+    Ok(())
 }
 
 fn appkit_configure_open_panel(panel: &NSOpenPanel, spec: &FileDialogSpec) {

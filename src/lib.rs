@@ -136,6 +136,15 @@ mod linux_direct_lite;
     feature = "linux-direct-host"
 ))]
 mod linux_direct_menu;
+#[cfg(any(
+    test,
+    all(
+        target_os = "linux",
+        not(target_env = "ohos"),
+        feature = "linux-direct-host"
+    )
+))]
+mod linux_file_dialog;
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), feature = "linux-gtk"))]
 #[doc(hidden)]
 pub mod linux_gtk_menu;
@@ -1239,7 +1248,7 @@ pub use widget_render::{
 #[doc(hidden)]
 pub use window::{Window, WindowNativeOptions, WindowResolvedSpec, WindowSpec};
 #[cfg(feature = "window-chrome")]
-pub use window_chrome::ZsWindowCommand;
+pub use window_chrome::{ZsWindowCommand, ZsWindowState};
 #[cfg(all(windows, feature = "windows-gdi"))]
 #[doc(hidden)]
 pub use windows_gdi_renderer::{

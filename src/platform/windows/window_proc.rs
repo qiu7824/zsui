@@ -187,6 +187,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_SIZE => {
+            #[cfg(feature = "window-chrome")]
+            {
+                let maximized = IsZoomed(hwnd) != 0;
+                dispatch_windows_win32_window_view_input(hwnd, |route|route.dispatch_window_state(maximized));
+            }
             let minimized = wparam == SIZE_MINIMIZED as usize;
             let lifecycle_handled = sync_windows_win32_window_view_visibility(hwnd, !minimized);
             let shell_handled =

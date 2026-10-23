@@ -779,7 +779,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "linux-direct-host",
             Backend,
             false,
-            vec!["rfd", "softbuffer", "winit"],
+            vec!["dbus", "rfd", "softbuffer", "winit"],
             Vec::new(),
             "shared Wayland/X11 window, input, IME, menu, portal and software-presentation host",
         ),

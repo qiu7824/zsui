@@ -1321,10 +1321,23 @@ pub struct ViewNode<Msg> {
     shortcuts: Vec<(crate::ZsAccelerator, Msg)>,
     #[cfg(feature = "window-chrome")]
     window_drag_region: bool,
+    #[cfg(feature = "window-chrome")]
+    window_state_message: Option<fn(crate::ZsWindowState) -> Msg>,
     message: PhantomData<fn() -> Msg>,
 }
 
 impl<Msg> ViewNode<Msg> {
+    /// Binds changes to the native maximize/restore state to the first handler in the View.
+    #[cfg(feature = "window-chrome")]
+    pub fn on_window_state_change(mut self, message: fn(crate::ZsWindowState) -> Msg) -> Self {
+        self.window_state_message = Some(message);
+        self
+    }
+
+    #[cfg(feature = "window-chrome")]
+    pub(crate) fn window_state_message(&self, state: crate::ZsWindowState) -> Option<Msg> {
+        self.window_state_message.map(|message|message(state)).or_else(||self.children.iter().find_map(|child|child.window_state_message(state)))
+    }
     pub fn new(kind: ViewNodeKind<Msg>) -> Self {
         Self {
             id: None,
@@ -1384,6 +1397,8 @@ impl<Msg> ViewNode<Msg> {
             shortcuts: Vec::new(),
             #[cfg(feature = "window-chrome")]
             window_drag_region: false,
+            #[cfg(feature = "window-chrome")]
+            window_state_message: None,
             message: PhantomData,
         }
     }

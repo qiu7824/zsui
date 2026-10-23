@@ -59,6 +59,7 @@ gdk-pixbuf = { version = "0.22", optional = true }
 gtk4 = { version = "0.11", optional = true }
 pango = { version = "0.22", optional = true }
 pangocairo = { version = "0.22", optional = true }
+dbus = { version = "0.9", optional = true }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"], optional = true }
 softbuffer = { version = "0.4.8", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "x11-dlopen"], optional = true }
 
@@ -157,7 +158,7 @@ windows-rust-text = ["windows-gdi", "rust-text"]
 windows-text-proof = ["windows-directwrite", "rust-text-proof"]
 macos-appkit = ["dep:block2", "dep:dispatch2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:objc2-core-graphics", "objc2-app-kit/objc2-core-graphics"]
 linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
-linux-direct-host = ["dep:rfd", "dep:softbuffer", "dep:winit"]
+linux-direct-host = ["dep:dbus", "dep:rfd", "dep:softbuffer", "dep:winit"]
 linux-direct-accessibility = ["accessibility", "linux-direct-host", "dep:accesskit", "dep:accesskit_winit"]
 linux-direct = ["linux-direct-host", "dep:cairo-rs", "dep:pango", "dep:pangocairo"]
 linux-direct-lite = ["linux-direct-host", "rust-text", "dep:tiny-skia"]
@@ -266,6 +267,11 @@ required-features = ["window", "shell"]
 name = "resizable_layout"
 path = "examples/resizable_layout.rs"
 required-features = ["split-view", "shell", "table", "icon", "native-smoke", "accessibility"]
+
+[[example]]
+name = "desktop_lifecycle"
+path = "examples/desktop_lifecycle.rs"
+required-features = ["button", "label", "window-chrome", "native-smoke"]
 
 [[example]]
 name = "zsui_notepad_gtk"

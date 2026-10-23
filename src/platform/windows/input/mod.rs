@@ -1243,7 +1243,7 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     }
     let hwnd_value = hwnd as isize;
     #[cfg(feature = "window-chrome")]
-    let window_commands: Vec<crate::ZsWindowCommand>;
+    let mut window_commands: Vec<crate::ZsWindowCommand>;
     let (
         mut report,
         mut draw_plan,
@@ -1357,6 +1357,8 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
                 }
             }
         }
+        #[cfg(feature = "window-chrome")]
+        window_commands.extend(record.route.take_pending_window_commands());
         poll_interval_ms = record.route.background_poll_interval_ms();
         record.report.merge(report.clone());
     }
@@ -1394,6 +1396,18 @@ fn post_windows_win32_window_commands(hwnd: HWND, commands: &[crate::ZsWindowCom
             crate::ZsWindowCommand::Close => {
                 unsafe {
                     PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                }
+                continue;
+            }
+            crate::ZsWindowCommand::Hide => {
+                unsafe { ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE); }
+                continue;
+            }
+            crate::ZsWindowCommand::Show => {
+                unsafe {
+                    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SW_RESTORE, SW_SHOW, SetForegroundWindow};
+                    ShowWindow(hwnd, if IsIconic(hwnd) != 0 { SW_RESTORE } else { SW_SHOW });
+                    SetForegroundWindow(hwnd);
                 }
                 continue;
             }

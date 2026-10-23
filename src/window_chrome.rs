@@ -7,6 +7,12 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Native maximize state, including changes made outside application controls.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ZsWindowState {
+    pub maximized: bool,
+}
+
 /// A window-management request raised from a View update.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsWindowCommand {
@@ -17,4 +23,8 @@ pub enum ZsWindowCommand {
     /// Requests closing the window through the normal close path, so close
     /// requests can still be vetoed by the application.
     Close,
+    /// Hides the window while preserving its application state.
+    Hide,
+    /// Restores a hidden or minimized window and brings it forward.
+    Show,
 }

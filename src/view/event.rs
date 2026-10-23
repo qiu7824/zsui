@@ -176,6 +176,8 @@ impl ViewEditableTextDescriptor {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
+    #[cfg(feature = "window-chrome")]
+    WindowStateChanged { state: crate::ZsWindowState },
     #[cfg(feature = "resize")]
     Resized {
         widget: WidgetId,
@@ -1611,7 +1613,15 @@ impl AppCx {
     /// typically from the caption buttons of a custom title bar.
     #[cfg(feature = "window-chrome")]
     pub fn window_command(&mut self, command: crate::ZsWindowCommand) {
+        let _ = self.try_window_command(command);
+    }
+
+    /// Queues a native window action or reports per-update backpressure.
+    #[cfg(feature = "window-chrome")]
+    pub fn try_window_command(&mut self, command: crate::ZsWindowCommand) -> Result<(), crate::QueueFull> {
+        self.admit("window command", self.window_commands.len(), crate::DISPATCH_BATCH_SIZE)?;
         self.window_commands.push(command);
+        Ok(())
     }
 
     #[cfg(feature = "window-chrome")]

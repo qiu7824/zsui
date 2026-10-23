@@ -3521,7 +3521,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
+        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
         fc-cache --force
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -3535,7 +3535,7 @@ jobs:
       run: |
         set -euo pipefail
         mkdir -p "$PROOF_ROOT"
-        cargo build --locked --no-default-features --features "${{ matrix.backend }},split-view,shell,table,icon,button,textbox,native-smoke,accessibility" --example resizable_layout --example desktop_reliability 2>&1 | tee "$PROOF_ROOT/build.log"
+        cargo build --locked --no-default-features --features "${{ matrix.backend }},split-view,shell,table,icon,button,textbox,window-chrome,native-smoke,accessibility" --example resizable_layout --example desktop_reliability --example desktop_lifecycle 2>&1 | tee "$PROOF_ROOT/build.log"
     - name: Run Win32 control and directory proofs
       if: runner.os == 'Windows'
       shell: pwsh
@@ -3653,6 +3653,12 @@ jobs:
           done
         done
         run_probe ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
+        for scene in worker-open worker-save worker-directory; do
+          out="$root/$scene"; mkdir -p "$out"
+          ZSUI_NATIVE_OWNER_FILE_DIALOG_PROOF_DIR="$out" run_probe ./target/debug/examples/desktop_lifecycle --scene "$scene" --output "$out" > "$out/run.log" 2>&1 || { cat "$out/run.log"; exit 1; }
+        done
+        run_probe ./target/debug/examples/desktop_lifecycle --scene worker-no-host --output "$root/worker-no-host"
+        run_probe ./target/debug/examples/desktop_lifecycle --scene commands --output "$root/lifecycle" > "$root/lifecycle.log" 2>&1 || { cat "$root/lifecycle.log"; exit 1; }
         selected="$root/selected-folder"; mkdir -p "$selected"
         for action in cancel select; do
           out="$root/directory-$action"; mkdir -p "$out"
@@ -3676,7 +3682,9 @@ jobs:
         portal_gtk=$!
         /usr/libexec/xdg-desktop-portal > "$root/portal.log" 2>&1 &
         portal=$!
-        trap 'kill "$portal" "$portal_gtk" 2>/dev/null || true' EXIT
+        openbox > "$root/openbox.log" 2>&1 &
+        wm=$!
+        trap 'kill "$portal" "$portal_gtk" "$wm" 2>/dev/null || true' EXIT
         for attempt in $(seq 1 100); do
           if gdbus introspect --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --only-properties >/dev/null 2>&1; then break; fi
           sleep 0.1
@@ -3688,6 +3696,7 @@ jobs:
           done
         done
         ./target/debug/examples/desktop_reliability --smoke --duration-ms 3500 --output "$root/long-input" > "$root/long-input.log" 2>&1 || { cat "$root/long-input.log"; exit 1; }
+        ./target/debug/examples/desktop_lifecycle --scene commands --output "$root/lifecycle" > "$root/lifecycle.log" 2>&1 || { cat "$root/lifecycle.log"; exit 1; }
         selected="$root/selected-folder"; mkdir -p "$selected"
         send_dialog_key() {
           if xdotool key --window "$dialog" "$@"; then return 0; fi
@@ -3723,6 +3732,55 @@ jobs:
           wait "$proof_pid"
         done
         PROOF
+    - name: Verify Win32 lifecycle
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $output=Join-Path $PWD "$env:PROOF_ROOT/lifecycle"
+        & './target/debug/examples/desktop_lifecycle.exe' --scene commands --output $output
+        if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+    - name: Verify Linux provider error responses
+      if: matrix.backend == 'linux-direct' || matrix.backend == 'linux-direct-lite'
+      shell: bash
+      run: |
+        set -euo pipefail
+        root="$PWD/$PROOF_ROOT"
+        binary="$PWD/target/debug/examples/desktop_lifecycle"
+        env DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/zsui-bus PATH=/nonexistent "$binary" --scene provider-unavailable --output "$root/provider-unavailable"
+        cat > "$RUNNER_TEMP/zsui-portal-failure.py" <<'PY'
+        import dbus, dbus.service, dbus.mainloop.glib
+        from gi.repository import GLib
+        dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+        bus=dbus.SessionBus()
+        name=dbus.service.BusName('org.freedesktop.portal.Desktop',bus)
+        pending=[]
+        class Request(dbus.service.Object):
+            @dbus.service.signal('org.freedesktop.portal.Request',signature='ua{sv}')
+            def Response(self,code,results): pass
+        class Portal(dbus.service.Object):
+            @dbus.service.method('org.freedesktop.portal.FileChooser',in_signature='ssa{sv}',out_signature='o',sender_keyword='sender')
+            def OpenFile(self,parent,title,options,sender=None):
+                path='/org/freedesktop/portal/desktop/request/'+sender[1:].replace('.','_')+'/'+str(options['handle_token'])
+                request=Request(bus,path);pending.append(request)
+                def fail():
+                    request.Response(dbus.UInt32(2),dbus.Dictionary({},signature='sv'))
+                    return False
+                GLib.timeout_add(100,fail)
+                return dbus.ObjectPath(path)
+        portal=Portal(bus,'/org/freedesktop/portal/desktop')
+        GLib.MainLoop().run()
+        PY
+        export binary root
+        dbus-run-session -- bash -euo pipefail <<'FAILURE'
+        /usr/bin/python3 "$RUNNER_TEMP/zsui-portal-failure.py" > "$root/provider-failure-service.log" 2>&1 &
+        provider=$!
+        trap 'kill "$provider" 2>/dev/null || true' EXIT
+        for attempt in $(seq 1 50); do
+          if gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.NameHasOwner org.freedesktop.portal.Desktop | grep -q true; then break; fi
+          sleep 0.1
+        done
+        timeout 20s "$binary" --scene provider-failure --output "$root/provider-failure"
+        FAILURE
     - name: Validate retained application state and captures
       shell: bash
       run: |
@@ -3753,7 +3811,10 @@ jobs:
             assert isinstance(result,dict) and 'Ok' in result, result
             if action=='cancel': assert result['Ok'] is None
             else: assert Path(result['Ok']).resolve()==selected.resolve(), result
-        print('Icon themes, all resize surfaces, long input and directory select/cancel passed')
+        lifecycle=json.loads((root/'lifecycle/proof.json').read_text(encoding='utf-8-sig'))
+        assert len(lifecycle['actions'])==7 and lifecycle['close_requests']==1,lifecycle
+        assert True in lifecycle['native_maximized_states'] and lifecycle['native_maximized_states'][-1] is False,lifecycle
+        print('Icons, resizing, input, lifecycle and file chooser responses passed')
         PY
     - name: Upload control proof
       if: always()

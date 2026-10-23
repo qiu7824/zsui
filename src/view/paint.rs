@@ -672,6 +672,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "window-chrome")]
+        if let ViewEvent::WindowStateChanged { state } = event {
+            if let Some(message) = self.window_state_message(*state) { cx.emit(message); }
+            return;
+        }
         #[cfg(feature = "shortcuts")]
         if let ViewEvent::Shortcut { accelerator } = event {
             if let Some(message) = self.shortcut_message(*accelerator) {

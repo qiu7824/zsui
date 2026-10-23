@@ -135,6 +135,8 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(feature = "shortcuts")]
             (_, ViewEvent::Shortcut { .. }) => false,
             (None, _) => false,
+            #[cfg(feature = "window-chrome")]
+            (_, ViewEvent::WindowStateChanged { .. }) => false,
         }
     }
 

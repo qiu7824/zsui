@@ -157,6 +157,13 @@ pub(crate) fn install_linux_gtk_draw_plan(
         let runtime = Rc::clone(&runtime);
         let ime = ime.clone();
         move |gesture, _press_count, x, y| {
+            #[cfg(feature = "window-chrome")]
+            if gesture.current_button() == 1
+                && begin_linux_gtk_window_gesture(gesture, &area, &runtime, x, y)
+            {
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+                return;
+            }
             let report = runtime.borrow_mut().dispatch_pointer_down_with_button(
                 crate::Point {
                     x: gtk_coordinate(x),
@@ -541,13 +548,43 @@ pub(crate) fn install_linux_gtk_draw_plan(
     });
     drawing_area.add_controller(focus);
     window.set_child(Some(&drawing_area));
+    // A hidden DrawingArea does not draw. Deliver invalidations through an
+    // owned native action so queued restore commands still reach the UI thread.
+    let invalidation_action = gtk::gio::SimpleAction::new("zsui-invalidate", None);
+    invalidation_action.connect_activate({
+        let area = drawing_area.clone();
+        let runtime = runtime.clone();
+        let plan = plan.clone();
+        let ime = ime.clone();
+        let application = application.clone();
+        let timer = runtime_timer.clone();
+        move |_, _| {
+            let report = runtime.borrow_mut().refresh_invalidated_view();
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+            schedule_linux_gtk_runtime_tick(
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.clone(),
+                &timer,
+            );
+        }
+    });
     let invalidation_binding = {
-        let area = gtk::glib::SendWeakRef::from(drawing_area.downgrade());
+        let action = gtk::glib::SendWeakRef::from(invalidation_action.downgrade());
         runtime.borrow().bind_invalidation_target(move || {
-            let area = area.clone();
+            let action = action.clone();
             gtk::glib::idle_add_once(move || {
-                if let Some(area) = area.upgrade() {
-                    area.queue_draw();
+                if let Some(action) = action.upgrade() {
+                    action.activate(None);
                 }
             });
         })
@@ -560,6 +597,39 @@ pub(crate) fn install_linux_gtk_draw_plan(
         application.clone(),
         &runtime_timer,
     );
+    drawing_area.connect_scale_factor_notify({
+        let plan = plan.clone();
+        let runtime = runtime.clone();
+        let ime = ime.clone();
+        let application = application.clone();
+        move |area| {
+            let report = runtime.borrow_mut().display_scale_changed();
+            apply_linux_gtk_input_report(report, area, &plan, &runtime, &ime, application.as_ref());
+        }
+    });
+    #[cfg(feature = "window-chrome")]
+    window.connect_maximized_notify({
+        let plan = plan.clone();
+        let runtime = runtime.clone();
+        let ime = ime.clone();
+        let application = application.clone();
+        let area = drawing_area.clone();
+        move |window| {
+            let report = runtime
+                .borrow_mut()
+                .dispatch_window_state(crate::ZsWindowState {
+                    maximized: window.is_maximized(),
+                });
+            apply_linux_gtk_input_report(
+                report,
+                &area,
+                &plan,
+                &runtime,
+                &ime,
+                application.as_ref(),
+            );
+        }
+    });
     // Keep the paintable attached for the lifetime of the host. Creating it
     // only when a proof capture is requested can race its first invalidation
     // under a headless GSK renderer and yield an empty render node.
@@ -573,6 +643,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
         application,
         runtime_timer,
         _invalidation_binding: invalidation_binding,
+        _invalidation_action: invalidation_action,
     }
 }
 
@@ -586,6 +657,7 @@ pub(crate) struct LinuxGtkDrawViewHost {
     application: Option<gtk::Application>,
     runtime_timer: Rc<RefCell<Option<gtk::glib::SourceId>>>,
     _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
+    _invalidation_action: gtk::gio::SimpleAction,
 }
 
 impl std::fmt::Debug for LinuxGtkDrawViewHost {
@@ -776,6 +848,9 @@ impl LinuxGtkDrawViewHost {
         &self,
         path: &Path,
     ) -> Result<crate::NativeViewCaptureEvidence, String> {
+        if !self.area.is_mapped() {
+            return Err("the GTK proof window is not mapped".into());
+        }
         let logical_width = self.area.width().max(0) as u32;
         let logical_height = self.area.height().max(0) as u32;
         if logical_width == 0 || logical_height == 0 {
@@ -951,6 +1026,65 @@ fn schedule_linux_gtk_runtime_tick(
     *timer.borrow_mut() = Some(source);
 }
 
+#[cfg(feature = "window-chrome")]
+fn begin_linux_gtk_window_gesture(
+    gesture: &gtk::GestureClick,
+    area: &gtk::DrawingArea,
+    runtime: &Rc<RefCell<crate::native::NativeViewInputRuntime>>,
+    x: f64,
+    y: f64,
+) -> bool {
+    let Some(window) = area
+        .root()
+        .and_then(|root| root.downcast::<gtk::Window>().ok())
+    else {
+        return false;
+    };
+    let Some(top) = window
+        .surface()
+        .and_then(|surface| surface.downcast::<gtk::gdk::Toplevel>().ok())
+    else {
+        return false;
+    };
+    let Some(event) = gesture.current_event() else {
+        return false;
+    };
+    let Some(device) = event.device() else {
+        return false;
+    };
+    if !window.is_decorated() && window.is_resizable() && !window.is_maximized() {
+        let left = x < 6.0;
+        let right = x >= f64::from(area.width()) - 6.0;
+        let upper = y < 6.0;
+        let lower = y >= f64::from(area.height()) - 6.0;
+        use gtk::gdk::SurfaceEdge as E;
+        let edge = match (left, right, upper, lower) {
+            (true, _, true, _) => Some(E::NorthWest),
+            (_, true, true, _) => Some(E::NorthEast),
+            (true, _, _, true) => Some(E::SouthWest),
+            (_, true, _, true) => Some(E::SouthEast),
+            (true, _, _, _) => Some(E::West),
+            (_, true, _, _) => Some(E::East),
+            (_, _, true, _) => Some(E::North),
+            (_, _, _, true) => Some(E::South),
+            _ => None,
+        };
+        if let Some(edge) = edge {
+            top.begin_resize(edge, Some(&device), 1, x, y, event.time());
+            return true;
+        }
+    }
+    let point = crate::Point {
+        x: gtk_coordinate(x),
+        y: gtk_coordinate(y),
+    };
+    if runtime.borrow().window_drag_region_at(point) {
+        top.begin_move(&device, 1, x, y, event.time());
+        return true;
+    }
+    false
+}
+
 fn apply_linux_gtk_input_report(
     report: crate::native::NativeViewInputDispatchReport,
     area: &gtk::DrawingArea,
@@ -1040,6 +1174,8 @@ fn apply_linux_gtk_input_report_with_redraw_request(
             report.message_count += effect_report.message_count;
             report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
             report.quit_requested |= effect_report.quit_requested;
+            #[cfg(feature = "window-chrome")]
+            report.window_commands.extend(effect_report.window_commands);
             report.errors.extend(effect_report.errors);
             if let Some(plan) = effect_report.redraw_plan {
                 report.redraw_plan = Some(plan);
@@ -1047,6 +1183,40 @@ fn apply_linux_gtk_input_report_with_redraw_request(
         }
     }
     drop(dispatch_turn);
+    #[cfg(feature = "window-chrome")]
+    if let Some(window) = area
+        .root()
+        .and_then(|root| root.downcast::<gtk::Window>().ok())
+    {
+        for command in &report.window_commands {
+            match command {
+                crate::ZsWindowCommand::Minimize => window.minimize(),
+                crate::ZsWindowCommand::ToggleMaximize => {
+                    if window.is_maximized() {
+                        window.unmaximize()
+                    } else {
+                        window.maximize()
+                    }
+                }
+                crate::ZsWindowCommand::Close => window.close(),
+                crate::ZsWindowCommand::Hide => {
+                    window.set_visible(false);
+                    report.redraw_plan = None;
+                    if runtime.borrow_mut().suspend_view_when_hidden() {
+                        *plan.borrow_mut() = NativeDrawPlan::default();
+                    }
+                }
+                crate::ZsWindowCommand::Show => {
+                    window.unminimize();
+                    report.redraw_plan = runtime.borrow_mut().resume_view_when_visible();
+                    window.present();
+                }
+            }
+        }
+        if !report.window_commands.is_empty() && !runtime.borrow().is_view_suspended() {
+            report.redraw_plan = runtime.borrow().current_composed_draw_plan();
+        }
+    }
     if let Some(updated) = report.redraw_plan.take() {
         *plan.borrow_mut() = updated;
         if request_redraw {

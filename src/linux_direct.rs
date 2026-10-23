@@ -168,6 +168,8 @@ pub(crate) fn run_linux_direct_native_window_event_loop(
 #[derive(Debug, Clone, Copy)]
 enum LinuxDirectUserEvent {
     InvalidateView,
+    #[cfg(feature = "window-chrome")]
+    CloseWindow(WinitWindowId),
 }
 
 struct LinuxDirectApp {
@@ -274,7 +276,7 @@ impl LinuxDirectApp {
                 )))
                 .with_visible(false)
                 .with_resizable(spec.resizable)
-                .with_decorations(spec.decorations)
+                .with_decorations(spec.decorations && !spec.custom_title_bar)
                 .with_transparent(spec.transparent);
             if let (Some(width), Some(height)) = (spec.min_width, spec.min_height) {
                 attributes = attributes.with_min_inner_size(Size::Logical(LogicalSize::new(
@@ -560,6 +562,24 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                     window.apply_report(report, event_loop);
                 }
             }
+            #[cfg(feature = "window-chrome")]
+            LinuxDirectUserEvent::CloseWindow(id) => {
+                let allow = self.windows.get_mut(&id).is_some_and(|window| {
+                    let report = window.runtime.dispatch_window_close_requested();
+                    let allow = !report.handled || report.quit_requested;
+                    window.apply_report(report, event_loop);
+                    allow
+                });
+                if allow {
+                    if let Some(window) = self.windows.get_mut(&id) {
+                        window.runtime.shutdown_dispatch();
+                    }
+                    self.windows.remove(&id);
+                    if self.windows.is_empty() {
+                        event_loop.exit();
+                    }
+                }
+            }
         }
         self.schedule_control_flow(event_loop);
     }
@@ -585,6 +605,13 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
             }
             WindowEvent::Resized(size) => {
                 window.resize(size);
+                #[cfg(feature = "window-chrome")]
+                {
+                    let report = window.runtime.dispatch_window_state(crate::ZsWindowState {
+                        maximized: window.window.is_maximized(),
+                    });
+                    window.apply_report(report, event_loop);
+                }
                 window.window.request_redraw();
                 if self.proof_resize_requested && self.proof_resize_window == Some(window_id) {
                     self.proof_resize_event_count = self.proof_resize_event_count.saturating_add(1);
@@ -592,6 +619,9 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window.scale_factor = scale_factor.max(0.1);
+                window.icon_cache.clear();
+                let report = window.runtime.display_scale_changed();
+                window.apply_report(report, event_loop);
                 window.resize(window.window.inner_size());
                 window.window.request_redraw();
             }
@@ -626,17 +656,31 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                         linux_pointer_modifiers(window.modifiers),
                     );
                     window.apply_report(report, event_loop);
-                    #[cfg(feature = "resize")]
                     window.window.set_cursor(
-                        match window.runtime.resize_cursor_at(window.content_point(point)) {
-                            Some(crate::ZsResizeAxis::Horizontal) => {
-                                winit::window::CursorIcon::ColResize
-                            }
-                            Some(crate::ZsResizeAxis::Vertical) => {
-                                winit::window::CursorIcon::RowResize
-                            }
-                            None => winit::window::CursorIcon::Default,
-                        },
+                        window
+                            .resize_direction(point)
+                            .map(winit::window::CursorIcon::from)
+                            .unwrap_or_else(|| {
+                                #[cfg(feature = "resize")]
+                                {
+                                    return match window
+                                        .runtime
+                                        .resize_cursor_at(window.content_point(point))
+                                    {
+                                        Some(crate::ZsResizeAxis::Horizontal) => {
+                                            winit::window::CursorIcon::ColResize
+                                        }
+                                        Some(crate::ZsResizeAxis::Vertical) => {
+                                            winit::window::CursorIcon::RowResize
+                                        }
+                                        None => winit::window::CursorIcon::Default,
+                                    };
+                                }
+                                #[cfg(not(feature = "resize"))]
+                                {
+                                    winit::window::CursorIcon::Default
+                                }
+                            }),
                     );
                 }
             }
@@ -656,6 +700,7 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                             .is_some_and(|menu| menu.pointer_down(cursor));
                     if menu_consumed {
                         window.window.request_redraw();
+                    } else if primary && window.begin_window_gesture(cursor) {
                     } else {
                         let report = window.runtime.dispatch_pointer_down_with_button(
                             window.content_point(cursor),
@@ -839,6 +884,9 @@ struct LinuxDirectWindow {
     icon_cache: HashMap<(ZsIcon, u32, Option<u32>), LinuxIconRaster>,
     next_tick: Option<Instant>,
     _invalidation_binding: Option<crate::native::UiInvalidationBinding>,
+    event_proxy: Option<EventLoopProxy<LinuxDirectUserEvent>>,
+    #[cfg(feature = "window-chrome")]
+    last_caption_press: Option<(Instant, Point)>,
     menu_surface: Option<crate::linux_direct_menu::LinuxDirectMenuSurface>,
     menu_surface_command_count: usize,
     #[cfg(feature = "linux-direct-accessibility")]
@@ -846,6 +894,58 @@ struct LinuxDirectWindow {
 }
 
 impl LinuxDirectWindow {
+    fn resize_direction(&self, point: Point) -> Option<winit::window::ResizeDirection> {
+        if self.window.is_decorated() || !self.window.is_resizable() || self.window.is_maximized() {
+            return None;
+        }
+        let size = self.logical_window_size();
+        if point.x < 0 || point.y < 0 || point.x >= size.width || point.y >= size.height {
+            return None;
+        }
+        let left = point.x < 6;
+        let right = point.x >= size.width - 6;
+        let top = point.y < 6;
+        let bottom = point.y >= size.height - 6;
+        use winit::window::ResizeDirection as D;
+        match (left, right, top, bottom) {
+            (true, _, true, _) => Some(D::NorthWest),
+            (_, true, true, _) => Some(D::NorthEast),
+            (true, _, _, true) => Some(D::SouthWest),
+            (_, true, _, true) => Some(D::SouthEast),
+            (true, _, _, _) => Some(D::West),
+            (_, true, _, _) => Some(D::East),
+            (_, _, true, _) => Some(D::North),
+            (_, _, _, true) => Some(D::South),
+            _ => None,
+        }
+    }
+
+    fn begin_window_gesture(&mut self, point: Point) -> bool {
+        if let Some(direction) = self.resize_direction(point) {
+            return self.window.drag_resize_window(direction).is_ok();
+        }
+        #[cfg(feature = "window-chrome")]
+        if self
+            .runtime
+            .window_drag_region_at(self.content_point(point))
+        {
+            let now = Instant::now();
+            let double = self.last_caption_press.is_some_and(|(at, previous)| {
+                now.duration_since(at) < Duration::from_millis(500)
+                    && (previous.x - point.x).abs() <= 4
+                    && (previous.y - point.y).abs() <= 4
+            });
+            self.last_caption_press = Some((now, point));
+            if double {
+                self.last_caption_press = None;
+                self.window.set_maximized(!self.window.is_maximized());
+                return true;
+            }
+            return self.window.drag_window().is_ok();
+        }
+        false
+    }
+
     fn logical_window_size(&self) -> crate::Size {
         let logical = self.physical_size.to_logical::<f64>(self.scale_factor);
         crate::Size {
@@ -925,6 +1025,9 @@ impl LinuxDirectWindow {
             icon_cache: HashMap::new(),
             next_tick: None,
             _invalidation_binding: None,
+            event_proxy: None,
+            #[cfg(feature = "window-chrome")]
+            last_caption_press: None,
             menu_surface,
             menu_surface_command_count: 0,
             #[cfg(feature = "linux-direct-accessibility")]
@@ -933,6 +1036,7 @@ impl LinuxDirectWindow {
     }
 
     fn bind_invalidation_target(&mut self, proxy: EventLoopProxy<LinuxDirectUserEvent>) {
+        self.event_proxy = Some(proxy.clone());
         self._invalidation_binding = self.runtime.bind_invalidation_target(move || {
             let _ = proxy.send_event(LinuxDirectUserEvent::InvalidateView);
         });
@@ -1243,6 +1347,8 @@ impl LinuxDirectWindow {
                 report.message_count += effect_report.message_count;
                 report.app_effect_outcome_count += effect_report.app_effect_outcome_count;
                 report.quit_requested |= effect_report.quit_requested;
+                #[cfg(feature = "window-chrome")]
+                report.window_commands.extend(effect_report.window_commands);
                 report.errors.extend(effect_report.errors);
                 if let Some(plan) = effect_report.redraw_plan {
                     report.redraw_plan = Some(plan);
@@ -1250,6 +1356,45 @@ impl LinuxDirectWindow {
             }
         }
         drop(dispatch_turn);
+        #[cfg(feature = "window-chrome")]
+        for command in report.window_commands.clone() {
+            match command {
+                crate::ZsWindowCommand::Minimize => self.window.set_minimized(true),
+                crate::ZsWindowCommand::ToggleMaximize => {
+                    self.window.set_maximized(!self.window.is_maximized())
+                }
+                crate::ZsWindowCommand::Close => {
+                    if let Some(proxy) = &self.event_proxy {
+                        let _ =
+                            proxy.send_event(LinuxDirectUserEvent::CloseWindow(self.window.id()));
+                    }
+                }
+                crate::ZsWindowCommand::Hide => {
+                    self.window.set_visible(false);
+                    report.redraw_plan = None;
+                    if self.runtime.suspend_view_when_hidden() {
+                        self.plan = NativeDrawPlan::default();
+                    }
+                }
+                crate::ZsWindowCommand::Show => {
+                    self.window.set_visible(true);
+                    self.window.set_minimized(false);
+                    if let Some(plan) = self.runtime.resume_view_when_visible() {
+                        report.redraw_plan = Some(plan);
+                    }
+                    self.window.focus_window();
+                    self.window.request_redraw();
+                }
+            }
+        }
+
+        #[cfg(feature = "window-chrome")]
+        if !report.window_commands.is_empty()
+            && self.window.is_visible() != Some(false)
+            && !self.runtime.is_view_suspended()
+        {
+            report.redraw_plan = self.runtime.current_composed_draw_plan();
+        }
         if let Some(plan) = report.redraw_plan.take() {
             self.plan = plan;
             self.window.request_redraw();
@@ -1482,6 +1627,9 @@ impl LinuxDirectWindow {
     }
 
     fn capture_png(&self, path: &Path) -> Result<crate::NativeViewCaptureEvidence, String> {
+        if self.window.is_visible() == Some(false) || self.window.is_minimized() == Some(true) {
+            return Err("the Linux proof window is hidden or minimized".into());
+        }
         if self.last_frame.is_empty() {
             return Err("the Linux direct host has not presented a frame".to_string());
         }
@@ -2683,69 +2831,64 @@ fn write_linux_direct_png(
     Err("enable the image feature to capture a Linux native PNG".to_string())
 }
 
+fn linux_file_picker(
+    title: &str,
+    current_path: Option<PathBuf>,
+) -> crate::linux_file_dialog::Picker {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let parent_xid = linux_direct_file_dialog_parent().and_then(|parent| {
+        let handle = parent.window_handle().ok()?;
+        match handle.as_raw() {
+            RawWindowHandle::Xlib(handle) => Some(handle.window as u64),
+            RawWindowHandle::Xcb(handle) => Some(handle.window.get() as u64),
+            _ => None,
+        }
+    });
+    crate::linux_file_dialog::Picker {
+        title: title.to_owned(),
+        current_path,
+        suggested_name: None,
+        filters: Vec::new(),
+        multiple: false,
+        directory: false,
+        save: false,
+        parent_xid,
+    }
+}
+
 pub(crate) fn linux_direct_open_file_dialog(
     spec: &crate::FileDialogSpec,
 ) -> ZsuiResult<Option<Vec<PathBuf>>> {
-    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
-    if let Some(parent) = linux_direct_file_dialog_parent() {
-        dialog = dialog.set_parent(parent.as_ref());
-    }
-    if let Some(path) = &spec.current_path {
-        dialog = dialog.set_directory(path);
-    }
-    for filter in &spec.filters {
-        let extensions = filter
-            .patterns
-            .iter()
-            .map(|pattern| pattern.trim_start_matches("*.").trim_start_matches('.'))
-            .filter(|extension| !extension.is_empty() && *extension != "*")
-            .collect::<Vec<_>>();
-        if !extensions.is_empty() {
-            dialog = dialog.add_filter(&filter.name, &extensions);
-        }
-    }
-    Ok(crate::native_file_dialog::normalize_open_file_dialog_selection(dialog.pick_files()))
+    let mut picker = linux_file_picker(&spec.title, spec.current_path.clone());
+    picker.filters = spec.filters.clone();
+    picker.multiple = spec.allow_multiple;
+    picker.run()
 }
 
 pub(crate) fn linux_direct_pick_directory_dialog(
     spec: &crate::DirectoryDialogSpec,
 ) -> ZsuiResult<Option<PathBuf>> {
     spec.validate()?;
-    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
-    if let Some(parent) = linux_direct_file_dialog_parent() {
-        dialog = dialog.set_parent(parent.as_ref());
-    }
-    if let Some(path) = &spec.current_path {
-        dialog = dialog.set_directory(path);
-    }
-    Ok(dialog.pick_folder())
+    let mut picker = linux_file_picker(&spec.title, spec.current_path.clone());
+    picker.directory = true;
+    picker
+        .run()
+        .map(|paths| paths.and_then(|paths| paths.into_iter().next()))
 }
 
 pub(crate) fn linux_direct_save_file_dialog(
     spec: &crate::SaveFileDialogSpec,
 ) -> ZsuiResult<Option<PathBuf>> {
-    let mut dialog = rfd::FileDialog::new().set_title(&spec.title);
-    if let Some(parent) = linux_direct_file_dialog_parent() {
-        dialog = dialog.set_parent(parent.as_ref());
-    }
-    if let Some(path) = &spec.current_path {
-        dialog = dialog.set_directory(path);
-    }
-    if let Some(name) = &spec.suggested_name {
-        dialog = dialog.set_file_name(name);
-    }
-    for filter in &spec.filters {
-        let extensions = filter
-            .patterns
-            .iter()
-            .map(|pattern| pattern.trim_start_matches("*.").trim_start_matches('.'))
-            .filter(|extension| !extension.is_empty() && *extension != "*")
-            .collect::<Vec<_>>();
-        if !extensions.is_empty() {
-            dialog = dialog.add_filter(&filter.name, &extensions);
-        }
-    }
-    Ok(dialog.save_file())
+    let mut picker = linux_file_picker(&spec.title, spec.current_path.clone());
+    picker.save = true;
+    picker.suggested_name = crate::native_file_dialog::native_save_dialog_suggested_name(
+        spec.suggested_name.as_deref(),
+        spec.current_path.as_deref(),
+    );
+    picker.filters = spec.filters.clone();
+    picker
+        .run()
+        .map(|paths| paths.and_then(|paths| paths.into_iter().next()))
 }
 
 pub(crate) fn linux_direct_show_native_dialog(

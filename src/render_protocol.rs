@@ -1522,6 +1522,7 @@ mod icon_geometry_tests {
             },
             color_mode: NativeIconColorMode::ThemeAware,
             color: ColorRole::PrimaryText,
+            custom_color: None,
         };
         assert_eq!(
             icon.fitted_bounds(crate::Size {

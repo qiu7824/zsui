@@ -146,9 +146,11 @@ type UiInvalidationTarget = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
 
 #[derive(Default)]
 struct UiInvalidationState {
+    closed: std::sync::atomic::AtomicBool,
     pending: std::sync::atomic::AtomicBool,
     next_binding: std::sync::atomic::AtomicU64,
     target: std::sync::Mutex<Option<(u64, UiInvalidationTarget)>>,
+    commands: std::sync::Mutex<std::collections::VecDeque<Command>>,
 }
 
 impl std::fmt::Debug for UiInvalidationHandle {
@@ -183,12 +185,73 @@ impl UiInvalidationHandle {
         Self::default()
     }
 
+    /// Queues an owned application command for delivery on the native UI thread.
+    /// Up to 32 commands are retained, including before the window binds. A
+    /// suspended view can receive commands that restore or close its window.
+    pub fn request_app_command(&self, command: Command) -> crate::ZsuiResult<()> {
+        if let Command::Custom { id, payload } = &command {
+            if id.is_empty()
+                || id.len() > 256
+                || payload.as_ref().is_some_and(|value| value.len() > 65536)
+            {
+                return Err(crate::ZsuiError::invalid_spec(
+                    "application_command",
+                    "command identifier or payload exceeds its bound",
+                ));
+            }
+        }
+        {
+            let mut commands = self
+                .inner
+                .commands
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.inner.closed.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(crate::ZsuiError::host(
+                    "queue_application_command",
+                    "The window has been destroyed",
+                ));
+            }
+            if commands.len() >= 32 {
+                return Err(crate::ZsuiError::host(
+                    "queue_application_command",
+                    "the window command queue is full",
+                ));
+            }
+            commands.push_back(command);
+        }
+        // Commands have an independent wake: a hidden window may retain a
+        // pending repaint indefinitely, but restore must still be delivered.
+        self.wake();
+        Ok(())
+    }
+
+    fn has_commands(&self) -> bool {
+        !self
+            .inner
+            .commands
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+    }
+
+    fn take_command(&self) -> Option<Command> {
+        self.inner
+            .commands
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop_front()
+    }
+
     /// Requests one stateful View rebuild and repaint.
     ///
     /// Returns `true` when this call changes the handle from idle to pending,
     /// or `false` when an earlier request is already waiting. This method is
     /// safe to call from any thread and never performs UI work on the caller.
     pub fn request_rebuild(&self) -> bool {
+        if self.inner.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return false;
+        }
         if self
             .inner
             .pending
@@ -207,6 +270,19 @@ impl UiInvalidationHandle {
             target();
         }
         true
+    }
+
+    fn wake(&self) {
+        let target = self
+            .inner
+            .target
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|(_, target)| target.clone());
+        if let Some(target) = target {
+            target();
+        }
     }
 
     pub(crate) fn take_request(&self) -> bool {
@@ -234,6 +310,7 @@ impl UiInvalidationHandle {
             .inner
             .pending
             .load(std::sync::atomic::Ordering::Acquire)
+            || self.has_commands()
         {
             target();
         }
@@ -1665,6 +1742,8 @@ pub(crate) struct NativeViewInputRuntime {
     invalidation_handle: Option<UiInvalidationHandle>,
     resource_policy: NativeWindowResourcePolicy,
     view_suspended: bool,
+    #[cfg(feature = "window-chrome")]
+    window_state: Option<crate::ZsWindowState>,
     animation_epoch: Option<std::time::Instant>,
     focused_widget: Option<crate::WidgetId>,
     focus_outline_visible: bool,
@@ -2045,6 +2124,8 @@ impl NativeViewInputRuntime {
             invalidation_handle: None,
             resource_policy,
             view_suspended: false,
+            #[cfg(feature = "window-chrome")]
+            window_state: None,
             animation_epoch: Some(std::time::Instant::now()),
             focused_widget: None,
             focus_outline_visible: false,
@@ -2278,13 +2359,27 @@ impl NativeViewInputRuntime {
 
     /// Consumes one externally requested rebuild on the native UI thread.
     pub(crate) fn refresh_invalidated_view(&mut self) -> NativeViewInputDispatchReport {
-        if self.view_suspended {
+        if self.effect_window.is_closed() {
             return NativeViewInputDispatchReport::default();
         }
         let Some(handle) = self.invalidation_handle.clone() else {
             return NativeViewInputDispatchReport::default();
         };
-        if !handle.take_request() {
+        if let Some(command) = handle.take_command() {
+            let report = self.dispatch_app_command(command);
+            // Do not consume a pending redraw while delivering a command.
+            if handle.has_commands()
+                || (!self.view_suspended
+                    && handle
+                        .inner
+                        .pending
+                        .load(std::sync::atomic::Ordering::Acquire))
+            {
+                handle.wake();
+            }
+            return report;
+        }
+        if self.view_suspended || !handle.take_request() {
             return NativeViewInputDispatchReport::default();
         }
         let Some(runtime) = self.live_view.clone() else {
@@ -2336,6 +2431,18 @@ impl NativeViewInputRuntime {
         }
         report
     }
+    /// Refreshes logical geometry after the host's physical backing scale changes.
+    /// Host coordinates remain logical on AppKit/GTK/Wayland; do not scale DP twice.
+    pub(crate) fn display_scale_changed(&mut self) -> NativeViewInputDispatchReport {
+        let mut report = self.cancel_pointer_drag();
+        self.clear_native_text_measurements();
+        self.refresh_native_text_measurements();
+        self.refresh_live_view_after_app_effect(&mut report);
+        report.handled = true;
+        report.ime_caret_rect = self.text_input_caret_rect();
+        report
+    }
+
     pub(crate) fn set_text_shaping_backend(
         &mut self,
         backend: crate::native_input_visuals::NativeTextShapingBackend,
@@ -7169,7 +7276,7 @@ impl NativeViewInputRuntime {
         }
     }
 
-    fn current_composed_draw_plan(&self) -> Option<NativeDrawPlan> {
+    pub(crate) fn current_composed_draw_plan(&self) -> Option<NativeDrawPlan> {
         if self.view_suspended {
             return None;
         }
@@ -9098,6 +9205,22 @@ impl NativeViewInputRuntime {
         report
     }
 
+    #[cfg(feature = "window-chrome")]
+    pub(crate) fn dispatch_window_state(
+        &mut self,
+        state: crate::ZsWindowState,
+    ) -> NativeViewInputDispatchReport {
+        if self.view_suspended || self.window_state == Some(state) || self.effect_window.is_closed()
+        {
+            return NativeViewInputDispatchReport::default();
+        }
+        self.window_state = Some(state);
+        self.dispatch_view_event(
+            ViewEvent::WindowStateChanged { state },
+            NativeViewInputDispatchReport::default(),
+        )
+    }
+
     pub(crate) fn defer_app_command_execution(&mut self) {
         self.defer_app_command_execution = true;
     }
@@ -9212,6 +9335,18 @@ impl NativeViewInputRuntime {
     /// Closes the window's action scope. In-flight results cannot call update.
     pub(crate) fn shutdown_dispatch(&mut self) {
         self.effect_window.close();
+        if let Some(handle) = &self.invalidation_handle {
+            let mut commands = handle
+                .inner
+                .commands
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            handle
+                .inner
+                .closed
+                .store(true, std::sync::atomic::Ordering::Release);
+            commands.clear();
+        }
         while let Some(request) = self.pending_app_effects.pop() {
             request.cancellation().cancel();
         }
@@ -9243,10 +9378,16 @@ impl NativeViewInputRuntime {
             runtime.dispatch_effect_with_allowance(request, outcome, self.dispatch_allowance())
         });
         report.app_effect_outcome_count = usize::from(update.is_some());
+        let mut focus_request = None;
         let mut app_effect_executed = false;
         if let Some(update) = update.filter(|update| update.message_count > 0) {
             #[cfg(feature = "text-input-core")]
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
+            focus_request = update.focus_request;
+            #[cfg(feature = "window-chrome")]
+            report
+                .window_commands
+                .extend(update.window_commands.iter().copied());
             report.handled = true;
             report.message_count = update.message_count;
             report.app_command_count = update.commands.len();
@@ -9310,6 +9451,12 @@ impl NativeViewInputRuntime {
             report.focus_visual_changed = true;
         }
         self.sync_text_edit();
+        if let Some(target) = focus_request.and_then(|widget| {
+            self.current_interaction_plan()
+                .and_then(|plan| plan.focus_target_for_widget(widget))
+        }) {
+            self.focus_target(target, &mut report);
+        }
         #[cfg(feature = "text-input-core")]
         self.dispatch_text_edit_commands(text_edit_commands, &mut report);
         if let Some(plan) = report.redraw_plan.take() {
@@ -10963,6 +11110,78 @@ mod tests {
         assert_eq!(wake_count.load(Ordering::SeqCst), 1);
         assert!(handle.take_request());
         assert!(!handle.take_request());
+    }
+
+    #[test]
+    fn queued_application_commands_preserve_order_and_reject_overflow() {
+        let handle = UiInvalidationHandle::new();
+        for index in 0..32 {
+            handle
+                .request_app_command(Command::custom(format!("command-{index}")))
+                .unwrap();
+        }
+        assert!(handle.request_app_command(Command::Quit).is_err());
+        assert!(handle
+            .request_app_command(Command::custom_with_payload("large", "x".repeat(65537)))
+            .is_err());
+        for index in 0..32 {
+            assert_eq!(
+                handle.take_command(),
+                Some(Command::custom(format!("command-{index}")))
+            );
+        }
+        assert!(!handle.has_commands());
+    }
+
+    #[cfg(all(feature = "label", feature = "window-chrome"))]
+    #[test]
+    fn queued_restore_reaches_the_update_thread_while_the_view_is_suspended() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let ui_thread = std::thread::current().id();
+        let handled = Arc::new(AtomicUsize::new(0));
+        let observed = handled.clone();
+        let handle = UiInvalidationHandle::new();
+        let builder = native_window("Queued restore")
+            .release_view_when_hidden()
+            .invalidation_handle(handle.clone())
+            .stateful_view_with_app_commands(
+                0usize,
+                |count| crate::text(format!("{count}")),
+                move |count, (), cx| {
+                    assert_eq!(std::thread::current().id(), ui_thread);
+                    *count += 1;
+                    observed.fetch_add(1, Ordering::AcqRel);
+                    cx.window_command(crate::ZsWindowCommand::Show);
+                },
+                |command| {
+                    matches!(command, Command::Custom { id, .. } if id == "restore").then_some(())
+                },
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        assert!(runtime.suspend_view_when_hidden());
+        let wake_count = Arc::new(AtomicUsize::new(0));
+        let target_count = wake_count.clone();
+        let _binding = runtime.bind_invalidation_target(move || {
+            target_count.fetch_add(1, Ordering::AcqRel);
+        });
+        handle.request_rebuild();
+        runtime.refresh_invalidated_view();
+        let before_command = wake_count.load(Ordering::Acquire);
+        std::thread::spawn(move || {
+            handle
+                .request_app_command(Command::custom("restore"))
+                .unwrap()
+        })
+        .join()
+        .unwrap();
+        assert!(wake_count.load(Ordering::Acquire) > before_command);
+        let report = runtime.refresh_invalidated_view();
+        assert_eq!(handled.load(Ordering::Acquire), 1);
+        assert_eq!(report.window_commands, [crate::ZsWindowCommand::Show]);
+        assert!(runtime.resume_view_when_visible().is_some());
     }
 
     #[test]
