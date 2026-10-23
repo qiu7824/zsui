@@ -2833,7 +2833,12 @@ impl MacosAppKitDrawSink {
             &NSString::from_str(command.icon.sf_symbol_name()),
             None,
         ) else {
-            symbolic_icons::draw(command, self.palette.resolve(command.color));
+            symbolic_icons::draw(
+                command,
+                command
+                    .color_override(self.palette.high_contrast)
+                    .unwrap_or_else(|| self.palette.resolve(command.color)),
+            );
             return;
         };
         let configuration =

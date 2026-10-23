@@ -51,10 +51,55 @@ folder and long-path resolution. AppKit uses a directory-only `NSOpenPanel` with
 the existing owner sheet contract. GTK uses `FileChooserNative::SelectFolder`.
 AppKit waits through the native file-panel modal session; native alert sheets
 dispatch application events while waiting for their completion callback.
-Linux Direct uses its existing portal/Zenity provider through `rfd::pick_folder`.
+Linux Direct calls the XDG FileChooser portal through a blocking native D-Bus
+connection. Response `0` returns validated local file paths, `1` means explicit
+user cancellation, and `2`, invalid responses, malformed selections or a lost
+provider return `Err`. A missing portal may fall back to Zenity; exit status `1`
+is cancellation, while other failures retain their diagnostics.
 All return local `PathBuf` values; cancellation is `Ok(None)`. Unsupported remains
-the contract for backends without directory services. Linux Direct inherits
-`rfd`'s inability to distinguish provider failures from cancellation.
+the contract for backends without directory services. An unavailable portal and
+missing Zenity return `Unsupported`; neither is reported as a cancelled choice.
+
+AppKit file, save and directory services also accept worker-thread callers while
+the native application loop is running. They enqueue panel creation on the main
+queue and return the completion result to the worker. At most 32 panel requests
+are outstanding. A stopped event-loop generation terminates waiting callers and
+cannot start stale requests in a subsequent loop. Without an active host, a
+worker call fails immediately. Native panel proof captures composited screen
+content within the panel bounds, including the system's remote view service.
+
+## Window commands and external wakeups
+
+`AppCx::try_window_command` admits up to 32 window operations per update.
+`window_command` keeps the legacy convenience shape and records rejected
+admissions in the normal diagnostics. `Minimize`, `ToggleMaximize`, `Close`,
+`Hide` and `Show` use native host operations; Close follows the application's
+normal veto policy. `on_window_state_change` receives changes to native maximize
+state, including changes made by the window manager, without repeated identical
+notifications.
+
+`UiInvalidationHandle::request_app_command` sends an owned application command
+from a worker to the owning UI thread. Its separate 32-entry FIFO also wakes a
+hidden window when a repaint is already pending. Commands do not consume that
+pending repaint. Custom command identifiers are limited to 256 bytes and payloads
+to 65,536 bytes. Destruction clears the queue and rejects further admission.
+An application maps its restore command to `ZsWindowCommand::Show` through the
+normal `stateful_view_with_app_commands` callback.
+
+Win32, AppKit and the Linux X11 hosts implement hide/restore. The Winit Wayland
+profile does not expose client-driven visibility, unminimizing or forced focus;
+unsupported hide/restore requests retain the active View and record diagnostics.
+Window-manager activation policy remains authoritative.
+
+## Display scale changes
+
+Win32 uses physical pixels and the window DPI. AppKit, GTK and the Wayland/X11
+direct renderer retain logical layout coordinates and apply backing scale once
+at presentation. Native scale-change callbacks cancel captured gestures,
+invalidate text measurements, rebuild retained content and refresh IME geometry
+without replacing application-owned pane extents or text values.
+`ZSUI_NATIVE_SCALE_TRACE` is an optional native-smoke trace of real host scale
+notifications. It is not a mechanism for injecting scale changes.
 
 The controlled dispatcher tests cover 1,000 queued requests, 100 chained results,
 FIFO batching, admission at capacity, deadline expiry, provider failure,

@@ -1074,6 +1074,7 @@ fn appkit_open_panel_from_worker(
             panel.setCanChooseFiles(false);
             panel.setCanChooseDirectories(true);
             panel.setAllowsMultipleSelection(false);
+            panel.setCanCreateDirectories(true);
         }
         let selected = panel.clone();
         let completion = RcBlock::new(move |response: objc2_app_kit::NSModalResponse| {
@@ -1336,24 +1337,7 @@ fn appkit_run_file_panel_cancel_proof(
 
 #[cfg(feature = "native-smoke")]
 fn appkit_capture_file_panel_png(panel: &NSSavePanel, path: &Path) -> Result<(), String> {
-    panel.displayIfNeeded();
-    let view = panel
-        .contentView()
-        .ok_or_else(|| "the AppKit file panel has no content view".to_string())?;
-    let bounds = view.bounds();
-    if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
-        return Err("the AppKit file-panel content view has empty bounds".to_string());
-    }
-    view.layoutSubtreeIfNeeded();
-    view.setNeedsDisplay(true);
-    view.displayIfNeeded();
-    let bitmap = view
-        .bitmapImageRepForCachingDisplayInRect(bounds)
-        .ok_or_else(|| {
-            "AppKit could not allocate an NSBitmapImageRep for the file panel".to_string()
-        })?;
-    view.cacheDisplayInRect_toBitmapImageRep(bounds, &bitmap);
-    appkit_write_bitmap_png(&bitmap, path)
+    appkit_capture_file_panel_compositor_png(panel, path)
 }
 
 #[cfg(feature = "native-smoke")]

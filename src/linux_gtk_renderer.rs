@@ -1860,7 +1860,9 @@ impl<'a> LinuxGtkDrawSink<'a> {
             crate::symbolic_icons::draw_symbolic_icon(
                 &self.context,
                 command,
-                self.palette.resolve(command.color),
+                command
+                    .color_override(self.palette.high_contrast)
+                    .unwrap_or_else(|| self.palette.resolve(command.color)),
             );
             return;
         };
@@ -1887,7 +1889,9 @@ impl<'a> LinuxGtkDrawSink<'a> {
         self.context.set_source_pixbuf(&pixbuf, 0.0, 0.0);
         if theme_aware {
             let mask = self.context.source();
-            let color = self.palette.resolve(command.color);
+            let color = command
+                .color_override(self.palette.high_contrast)
+                .unwrap_or_else(|| self.palette.resolve(command.color));
             self.context.set_source_rgba(
                 f64::from(color.r) / 255.0,
                 f64::from(color.g) / 255.0,

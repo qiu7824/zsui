@@ -1666,6 +1666,20 @@ history remain authoritative for implementation status.
   proof sends keyboard input through WindowServer because modern file-panel
   controls are hosted by a remote service; composited captures include all
   on-screen layers within the panel bounds, rather than only its local proxy.
+- Worker file-panel calls require a live AppKit application loop. Creation runs
+  asynchronously on its main queue; completion returns to the waiting worker.
+  A bounded admission count and loop generation prevent stale requests and
+  indefinite waiting after shutdown.
+- Linux Direct file pickers preserve XDG portal response semantics: success,
+  explicit cancellation and failure are distinct. Zenity is an unavailable-
+  portal fallback, not a way to hide a failed or malformed portal response.
+- Window commands use native operations and preserve close veto policy.
+  Worker commands wake a hidden window independently of a retained redraw;
+  destruction closes admission. Winit Wayland's unsupported visibility and
+  restoration requests must not clear a still-visible retained View.
+- Backing scale is separate from logical layout units on AppKit, GTK and the
+  Linux direct hosts. Scale transitions cancel capture, refresh native text
+  measurements and IME coordinates, and preserve controlled application state.
 
 ## Acceptance applications
 

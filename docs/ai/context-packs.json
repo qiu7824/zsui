@@ -386,7 +386,10 @@
         "src/dispatch_queue.rs",
         "src/native_dispatch_tests.rs",
         "docs/app-effects.md",
-        "examples/desktop_reliability.rs"
+        "examples/desktop_reliability.rs",
+        "src/linux_file_dialog.rs",
+        "examples/desktop_lifecycle.rs",
+        "src/window_chrome.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",

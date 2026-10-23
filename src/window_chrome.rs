@@ -23,8 +23,10 @@ pub enum ZsWindowCommand {
     /// Requests closing the window through the normal close path, so close
     /// requests can still be vetoed by the application.
     Close,
-    /// Hides the window while preserving its application state.
+    /// Hides the window while preserving its application state. Hosts without
+    /// native visibility control report the limitation and retain the active view.
     Hide,
-    /// Restores a hidden or minimized window and brings it forward.
+    /// Restores a hidden or minimized window and brings it forward where the
+    /// compositor permits application-initiated restoration and activation.
     Show,
 }

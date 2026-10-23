@@ -191,6 +191,7 @@ impl WindowsRustTextState {
         Some(engine.measure(text, style, max_width, dpi_scale))
     }
 
+    #[cfg(feature = "text-input-core")]
     pub(crate) fn shape_line(
         &mut self,
         text: &str,

@@ -832,6 +832,8 @@ impl ApplicationHandler<LinuxDirectUserEvent> for LinuxDirectApp {
                     window.window.request_redraw();
                 }
             }
+            #[cfg(feature = "window-chrome")]
+            WindowEvent::Moved(_) => window.last_caption_press = None,
             _ => {}
         }
         if remove_window {
@@ -1378,6 +1380,10 @@ impl LinuxDirectWindow {
                     }
                 }
                 crate::ZsWindowCommand::Hide => {
+                    if self.window.is_visible().is_none() {
+                        report.errors.push("Window hiding is unavailable in the Wayland host; the view remains active".into());
+                        continue;
+                    }
                     self.window.set_visible(false);
                     report.redraw_plan = None;
                     if self.runtime.suspend_view_when_hidden() {
@@ -1385,6 +1391,10 @@ impl LinuxDirectWindow {
                     }
                 }
                 crate::ZsWindowCommand::Show => {
+                    if self.window.is_visible().is_none() {
+                        report.errors.push("Window restoration and activation are controlled by the Wayland compositor".into());
+                        continue;
+                    }
                     self.window.set_visible(true);
                     self.window.set_minimized(false);
                     if let Some(plan) = self.runtime.resume_view_when_visible() {

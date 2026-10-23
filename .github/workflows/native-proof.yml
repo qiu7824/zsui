@@ -3521,7 +3521,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox sway jq python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
+        sudo apt-get install --yes libcairo2-dev libdbus-1-dev libgdk-pixbuf-2.0-dev libgtk-4-dev libpango1.0-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev xvfb xauth xdotool x11-utils dbus-x11 xdg-desktop-portal xdg-desktop-portal-gtk zenity imagemagick openbox sway jq python3-pyatspi python3-dbus python3-gi adwaita-icon-theme librsvg2-common at-spi2-core fonts-noto-cjk fonts-noto-color-emoji
         fc-cache --force
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
@@ -3531,6 +3531,7 @@ jobs:
         shared-key: desktop-controls-${{ matrix.backend }}
         cache-on-failure: true
     - name: Build control and reliability proofs
+      id: build_controls
       shell: bash
       run: |
         set -euo pipefail
@@ -3759,7 +3760,25 @@ jobs:
           sleep 0.3
           import -window "$dialog" "$out/picker.png"
           if test "$action" = cancel; then
-            send_dialog_key Escape
+            /usr/bin/python3 - <<'CANCEL'
+        import pyatspi,time
+        def walk(node,depth=0):
+            if depth>12: return
+            yield node
+            for index in range(min(node.childCount,256)):
+                try: yield from walk(node[index],depth+1)
+                except Exception: continue
+        for attempt in range(50):
+            for app in pyatspi.Registry.getDesktop(0):
+                for window in app:
+                    if window.name!='Choose directory': continue
+                    for node in walk(window):
+                        if node.getRole()==pyatspi.ROLE_PUSH_BUTTON and node.name=='Cancel':
+                            action=node.queryAction()
+                            if action.nActions and action.doAction(0): raise SystemExit(0)
+            time.sleep(0.1)
+        raise RuntimeError('Native file chooser Cancel button was not available')
+        CANCEL
           else
             send_dialog_key ctrl+l
             sleep 0.15
@@ -3771,7 +3790,7 @@ jobs:
             if xwininfo -id "$dialog" >/dev/null 2>&1; then send_dialog_key Return; fi
           fi
           if ! timeout 20s tail --pid="$proof_pid" -f /dev/null; then cat "$out/run.log"; xwininfo -id "$dialog" || true; kill "$proof_pid" 2>/dev/null || true; exit 1; fi
-          wait "$proof_pid"
+          wait "$proof_pid" || { cat "$out/run.log"; exit 1; }
         done
         PROOF
     - name: Verify Win32 lifecycle
@@ -3782,7 +3801,7 @@ jobs:
         & './target/debug/examples/desktop_lifecycle.exe' --scene commands --output $output
         if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
     - name: Verify Wayland monitor scale transitions
-      if: runner.os == 'Linux'
+      if: always() && runner.os == 'Linux' && steps.build_controls.outcome == 'success'
       shell: bash
       run: |
         set -euo pipefail
@@ -3823,7 +3842,7 @@ jobs:
         swaymsg -t get_outputs > "$root/outputs.json"
         swaymsg workspace 2 >/dev/null
         swaymsg workspace 1 >/dev/null
-        export WINIT_UNIX_BACKEND=wayland GDK_BACKEND=wayland XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
+        export WINIT_UNIX_BACKEND=wayland GDK_BACKEND=wayland GSK_RENDERER=cairo XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=sway
         unset DISPLAY
         export ZSUI_NATIVE_SCALE_TRACE="$root/scale-events.jsonl"
         ./target/debug/examples/desktop_reliability --smoke --duration-ms 12000 --output "$root" > "$root/run.log" 2>&1 &
