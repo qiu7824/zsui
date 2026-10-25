@@ -1718,7 +1718,15 @@ jobs:
               echo "the Linux desktop dialog did not produce a valid window capture" >&2
               exit 1
             fi
-            xdotool key --window "$window" Return
+            # The dialog closes on the key press, so xdotool can fail to send the
+            # release to a window that no longer exists; only a live dialog is an error.
+            if ! xdotool key --window "$window" Return 2>/dev/null \
+              && xwininfo -id "$window" >/dev/null 2>&1; then
+              kill "$dialog_pid" 2>/dev/null || true
+              wait "$dialog_pid" 2>/dev/null || true
+              echo "the Linux desktop dialog did not accept Return" >&2
+              exit 1
+            fi
             wait "$dialog_pid"
           '
           python3 - <<'PY'
@@ -1797,7 +1805,15 @@ jobs:
                 echo "the XDG file dialog did not produce a valid capture: $title" >&2
                 exit 1
               fi
-              xdotool key --window "$window" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$window" Escape 2>/dev/null \
+                && xwininfo -id "$window" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the XDG file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/native_file_dialog_smoke \
@@ -1903,7 +1919,15 @@ jobs:
                 echo "the owner-bound XDG file dialog did not produce a valid capture" >&2
                 exit 1
               fi
-              xdotool key --window "$dialog" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$dialog" Escape 2>/dev/null \
+                && xwininfo -id "$dialog" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound XDG file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/zsui_notepad \
@@ -1987,7 +2011,15 @@ jobs:
                 echo "the owner-bound GTK4 file dialog did not produce a valid capture" >&2
                 exit 1
               fi
-              xdotool key --window "$dialog" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$dialog" Escape 2>/dev/null \
+                && xwininfo -id "$dialog" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound GTK4 file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/zsui_notepad_gtk \
