@@ -1443,8 +1443,25 @@ fn cross_axis_length<Msg>(
     let text_stretches_width = !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
     #[cfg(not(feature = "label"))]
     let text_stretches_width = false;
-    let stretches_cross_axis =
-        matches!(&child.kind, ViewNodeKind::Stack { .. }) || text_stretches_width;
+    // A Grid is a layout container like a stack: its tracks divide the cell it
+    // is given, so it owns the cross axis instead of collapsing to the
+    // ellipsized minimum of its cells.
+    #[cfg(feature = "grid")]
+    let grid_stretches = matches!(&child.kind, ViewNodeKind::Grid { .. });
+    #[cfg(not(feature = "grid"))]
+    let grid_stretches = false;
+    // Padding alone is not content. A surface without an intrinsic size, such
+    // as a Canvas or image preview inside a padded boxed-list row, fills the
+    // cell rather than shrinking to twice its padding.
+    let padding = child
+        .style
+        .padding
+        .map(|value| value.to_px(dpi).round_i32().max(0))
+        .unwrap_or(0)
+        .saturating_mul(2);
+    let stretches_cross_axis = matches!(&child.kind, ViewNodeKind::Stack { .. })
+        || text_stretches_width
+        || grid_stretches;
     fixed
         .map(|value| {
             typography_aware_length_px(
@@ -1466,7 +1483,9 @@ fn cross_axis_length<Msg>(
                 preferred.min(available.max(minimum))
             }
             ViewAlign::Auto
-                if child.style.flex <= f32::EPSILON && minimum > 0 && !stretches_cross_axis =>
+                if child.style.flex <= f32::EPSILON
+                    && minimum > padding
+                    && !stretches_cross_axis =>
             {
                 minimum
             }
@@ -2804,5 +2823,62 @@ mod ellipsis_layout_tests {
         assert!(second_bounds.width < 240);
         assert!(first_bounds.width > second_bounds.width);
         assert!(second_bounds.x >= first_bounds.x + first_bounds.width);
+    }
+
+    #[test]
+    #[cfg(feature = "canvas")]
+    fn padded_canvas_fills_the_stack_cross_axis() {
+        // Linux boxed-list sections pad every row.
+        let surface = WidgetId::new(9_420);
+        let mut view: ViewNode<()> = column([crate::canvas(crate::ZsCanvasScene::new())
+            .id(surface)
+            .height(Dp::new(84.0))
+            .padding(Dp::new(12.0))]);
+
+        let output = measured_layout(&mut view, 400, ViewTextMeasurements::default());
+
+        assert_eq!(child_bounds(&output, surface).width, 400);
+    }
+
+    #[test]
+    #[cfg(feature = "grid")]
+    fn grid_with_ellipsizable_cells_fills_the_stack_cross_axis() {
+        let layout = WidgetId::new(9_421);
+        let mut view: ViewNode<()> = column([grid(
+            [ZsGridTrack::FLEX, ZsGridTrack::FLEX],
+            [ZsGridTrack::fixed(Dp::new(56.0))],
+            [
+                ZsGridCell::new(0, 0, text("网格单元 A / Grid cell A")),
+                ZsGridCell::new(0, 1, text("网格单元 B / Grid cell B")),
+            ],
+        )
+        .id(layout)
+        .padding(Dp::new(12.0))]);
+
+        let output = measured_layout(&mut view, 400, ViewTextMeasurements::default());
+
+        assert_eq!(child_bounds(&output, layout).width, 400);
+    }
+
+    #[test]
+    #[cfg(feature = "button")]
+    fn padded_button_keeps_its_natural_width_in_a_stack() {
+        let action = WidgetId::new(9_422);
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> =
+            column([button("打开").id(action).padding(Dp::new(12.0))]);
+
+        let output = measured_layout(&mut view, 400, measurements);
+
+        assert!(child_bounds(&output, action).width < 400);
     }
 }

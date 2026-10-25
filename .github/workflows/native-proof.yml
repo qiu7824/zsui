@@ -1370,6 +1370,12 @@ jobs:
                   roles = {widget["role"] for widget in proof["widgets"]}
                   assert {"menu_flyout", "menu_flyout_scrim", "menu_flyout_item"} <= roles
               if stem == "gallery-navigation-light":
+                  print(json.dumps({
+                      key: value
+                      for key, value in runtime.items()
+                      if key.startswith(("native_view_message", "native_view_event", "native_view_tab", "native_view_key", "native_view_focused", "native_view_unhandled"))
+                  }, sort_keys=True))
+                  print([event for event in runtime["events"] if "input" in event or "tab" in event])
                   assert proof["messages"] == ["TabSelected"]
                   assert runtime["native_view_message_count"] == 2
                   assert runtime["native_view_event_count"] == 3
