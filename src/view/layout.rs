@@ -1443,13 +1443,18 @@ fn cross_axis_length<Msg>(
     let text_stretches_width = !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
     #[cfg(not(feature = "label"))]
     let text_stretches_width = false;
-    // A Grid is a layout container like a stack: its tracks divide the cell it
-    // is given, so it owns the cross axis instead of collapsing to the
-    // ellipsized minimum of its cells.
+    // Grids and tab views are layout containers like stacks: their tracks or
+    // header strip divide the cell they are given, so they own the cross axis
+    // instead of collapsing to the ellipsized minimum of their content, which
+    // left too little room for every tab header.
     #[cfg(feature = "grid")]
     let grid_stretches = matches!(&child.kind, ViewNodeKind::Grid { .. });
     #[cfg(not(feature = "grid"))]
     let grid_stretches = false;
+    #[cfg(feature = "tabs")]
+    let tabs_stretch = matches!(&child.kind, ViewNodeKind::Tabs { .. });
+    #[cfg(not(feature = "tabs"))]
+    let tabs_stretch = false;
     // Padding alone is not content. A surface without an intrinsic size, such
     // as a Canvas or image preview inside a padded boxed-list row, fills the
     // cell rather than shrinking to twice its padding.
@@ -1461,7 +1466,8 @@ fn cross_axis_length<Msg>(
         .saturating_mul(2);
     let stretches_cross_axis = matches!(&child.kind, ViewNodeKind::Stack { .. })
         || text_stretches_width
-        || grid_stretches;
+        || grid_stretches
+        || tabs_stretch;
     fixed
         .map(|value| {
             typography_aware_length_px(
@@ -2858,6 +2864,25 @@ mod ellipsis_layout_tests {
         let output = measured_layout(&mut view, 400, ViewTextMeasurements::default());
 
         assert_eq!(child_bounds(&output, layout).width, 400);
+    }
+
+    #[test]
+    #[cfg(feature = "tabs")]
+    fn tab_view_fills_the_stack_cross_axis() {
+        let tabs = WidgetId::new(9_423);
+        let mut view: ViewNode<()> = column([tab_view(
+            [
+                ZsTabItem::new(ZsTabId::new(1), "常规 / General", text("General")),
+                ZsTabItem::new(ZsTabId::new(2), "高级 / Advanced", text("Advanced")),
+                ZsTabItem::new(ZsTabId::new(3), "关于 / About", text("About")),
+            ],
+            Some(ZsTabId::new(1)),
+        )
+        .id(tabs)]);
+
+        let output = measured_layout(&mut view, 600, ViewTextMeasurements::default());
+
+        assert_eq!(child_bounds(&output, tabs).width, 600);
     }
 
     #[test]

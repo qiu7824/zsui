@@ -1019,8 +1019,9 @@ history remain authoritative for implementation status.
   `flex(0)`; filling remaining space is always explicit. `ViewJustify` owns
   main-axis distribution and `ViewAlign` owns cross-axis placement; `Auto`
   preserves native intrinsic sizing, row centering and column start placement.
-  Stacks, text and Grids own their cross axis under `Auto`; padding alone is
-  not intrinsic content, so a padded Canvas or image preview fills its cell.
+  Stacks, text, Grids and tab views own their cross axis under `Auto`;
+  padding alone is not intrinsic content, so a padded Canvas or image preview
+  fills its cell.
 - UiDocument page/content spacing uses `UiSpacingToken` rather than copied
   Windows constants. Text documents expose semantic role, wrap, ellipsis,
   weight and alignment; enum bindings are validated after value resolution.
