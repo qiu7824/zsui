@@ -1376,6 +1376,8 @@ jobs:
                       if key.startswith(("native_view_message", "native_view_event", "native_view_tab", "native_view_key", "native_view_focused", "native_view_unhandled"))
                   }, sort_keys=True))
                   print([event for event in runtime["events"] if "input" in event or "tab" in event])
+                  print([widget for widget in proof["widgets"] if widget["role"] in ("tab", "tab_view")])
+                  print(runtime.get("native_view_text_navigation_evidence"))
                   assert proof["messages"] == ["TabSelected"]
                   assert runtime["native_view_message_count"] == 2
                   assert runtime["native_view_event_count"] == 3
