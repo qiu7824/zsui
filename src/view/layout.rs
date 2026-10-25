@@ -1443,18 +1443,6 @@ fn cross_axis_length<Msg>(
     let text_stretches_width = !vertical && matches!(&child.kind, ViewNodeKind::Text { .. });
     #[cfg(not(feature = "label"))]
     let text_stretches_width = false;
-    // Grids and tab views are layout containers like stacks: their tracks or
-    // header strip divide the cell they are given, so they own the cross axis
-    // instead of collapsing to the ellipsized minimum of their content, which
-    // left too little room for every tab header.
-    #[cfg(feature = "grid")]
-    let grid_stretches = matches!(&child.kind, ViewNodeKind::Grid { .. });
-    #[cfg(not(feature = "grid"))]
-    let grid_stretches = false;
-    #[cfg(feature = "tabs")]
-    let tabs_stretch = matches!(&child.kind, ViewNodeKind::Tabs { .. });
-    #[cfg(not(feature = "tabs"))]
-    let tabs_stretch = false;
     // Padding alone is not content. A surface without an intrinsic size, such
     // as a Canvas or image preview inside a padded boxed-list row, fills the
     // cell rather than shrinking to twice its padding.
@@ -1464,10 +1452,7 @@ fn cross_axis_length<Msg>(
         .map(|value| value.to_px(dpi).round_i32().max(0))
         .unwrap_or(0)
         .saturating_mul(2);
-    let stretches_cross_axis = matches!(&child.kind, ViewNodeKind::Stack { .. })
-        || text_stretches_width
-        || grid_stretches
-        || tabs_stretch;
+    let stretches_cross_axis = owns_cross_axis(child) || text_stretches_width;
     fixed
         .map(|value| {
             typography_aware_length_px(
@@ -1497,6 +1482,38 @@ fn cross_axis_length<Msg>(
             }
             ViewAlign::Auto => available.max(minimum),
         })
+}
+
+/// Whether a node fills its stack's cross axis under [`ViewAlign::Auto`]
+/// instead of shrinking to its intrinsic minimum. Layout containers divide the
+/// cell they are given; since minimum widths let ellipsizable text shrink to
+/// its marker, collapsing them left too little room for grid cells and tab
+/// headers. Overlay hosts lay their first child, the page they decorate, out
+/// at their own bounds, so they size like it: a command palette around a page
+/// fills the window while a flyout around a button keeps the button's width.
+fn owns_cross_axis<Msg>(node: &ViewNode<Msg>) -> bool {
+    match &node.kind {
+        ViewNodeKind::Stack { .. } => true,
+        #[cfg(feature = "grid")]
+        ViewNodeKind::Grid { .. } => true,
+        #[cfg(feature = "tabs")]
+        ViewNodeKind::Tabs { .. } => true,
+        #[cfg(feature = "list")]
+        ViewNodeKind::List { .. } => true,
+        #[cfg(feature = "command-palette")]
+        ViewNodeKind::CommandPalette { .. } => node.children.first().is_some_and(owns_cross_axis),
+        #[cfg(feature = "dialog")]
+        ViewNodeKind::ContentDialog { .. } => node.children.first().is_some_and(owns_cross_axis),
+        #[cfg(feature = "toast")]
+        ViewNodeKind::ToastPresenter { .. } => node.children.first().is_some_and(owns_cross_axis),
+        #[cfg(feature = "flyout")]
+        ViewNodeKind::Flyout { .. } => node.children.first().is_some_and(owns_cross_axis),
+        #[cfg(feature = "teaching-tip")]
+        ViewNodeKind::TeachingTip { .. } => node.children.first().is_some_and(owns_cross_axis),
+        #[cfg(feature = "menu-flyout")]
+        ViewNodeKind::MenuFlyout { .. } => node.children.first().is_some_and(owns_cross_axis),
+        _ => false,
+    }
 }
 
 /// Width measurement mode for intrinsic sizing. `Minimum` is the hard floor a
@@ -2883,6 +2900,52 @@ mod ellipsis_layout_tests {
         let output = measured_layout(&mut view, 600, ViewTextMeasurements::default());
 
         assert_eq!(child_bounds(&output, tabs).width, 600);
+    }
+
+    #[test]
+    #[cfg(feature = "command-palette")]
+    fn command_palette_around_a_page_fills_the_stack_cross_axis() {
+        let palette = WidgetId::new(9_424);
+        let mut view: ViewNode<()> = column([command_palette(
+            palette,
+            false,
+            "",
+            Vec::<crate::ZsCommandPaletteItem>::new(),
+            column([text("Page")]),
+        )]);
+
+        let output = measured_layout(&mut view, 600, ViewTextMeasurements::default());
+
+        assert_eq!(child_bounds(&output, palette).width, 600);
+    }
+
+    #[test]
+    #[cfg(all(feature = "flyout", feature = "button"))]
+    fn flyout_around_a_button_keeps_the_button_width() {
+        let host = WidgetId::new(9_425);
+        let action = WidgetId::new(9_426);
+        let mut measurements = ViewTextMeasurements::default();
+        measurements.insert(
+            "打开",
+            button_label_style(),
+            0,
+            crate::Size {
+                width: 40,
+                height: 20,
+            },
+        );
+        let mut view: ViewNode<()> = column([flyout(
+            host,
+            false,
+            action,
+            crate::ZsFlyoutSpec::new(Dp::new(200.0), Dp::new(120.0)),
+            text("Flyout content"),
+            button("打开").id(action),
+        )]);
+
+        let output = measured_layout(&mut view, 600, measurements);
+
+        assert!(child_bounds(&output, host).width < 600);
     }
 
     #[test]
