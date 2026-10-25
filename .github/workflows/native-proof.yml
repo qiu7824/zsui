@@ -1373,6 +1373,9 @@ jobs:
                   print({key: value for key, value in runtime.items() if key.startswith(("native_view_message", "native_view_event", "native_view_tab", "native_view_focused"))})
                   print([widget for widget in proof["widgets"] if widget["role"] in ("tab", "tab_view")])
                   print(proof["messages"], runtime.get("native_view_text_navigation_evidence"), [event for event in runtime["events"] if "input" in event])
+                  print(proof.get("window"), {key: (runtime.get("native_view_capture") or {}).get(key) for key in ("logical_width", "logical_height", "pixel_width", "pixel_height", "scale_factor")})
+                  print([widget for widget in proof["widgets"] if widget["id"] in ("widget-301", "widget-300") or widget["x"] + widget["width"] > 560])
+                  print(sorted({widget["role"] for widget in proof["widgets"]}))
                   assert proof["messages"] == ["TabSelected"]
                   assert runtime["native_view_message_count"] == 2
                   assert runtime["native_view_event_count"] == 3
