@@ -829,7 +829,7 @@ jobs:
           Assert-True ($runtime.process_memory_during_runtime.source -eq "win32_get_process_memory_info") "unexpected memory source"
           Assert-True ($runtime.process_memory_during_runtime.resident_bytes -gt 0) "missing Win32 RSS evidence"
           Assert-True ($runtime.process_memory_during_runtime.private_bytes -gt 0) "missing Win32 private-byte evidence"
-          Assert-True ($runtime.native_view_capture.typography.source -eq "win32_spi_message_font") "Viewer bypassed the system UI font"
+          Assert-True ($runtime.native_view_capture.typography.source -eq "windows_fluent_font_stack") "Viewer bypassed the Windows UI font stack"
           Assert-True ($runtime.native_accessibility_backend -eq "win32_uia") "reload View did not expose Win32 UIA"
           Assert-True ($runtime.native_accessibility_node_count -gt 0) "reload View exposed no UIA nodes"
 
@@ -1718,7 +1718,15 @@ jobs:
               echo "the Linux desktop dialog did not produce a valid window capture" >&2
               exit 1
             fi
-            xdotool key --window "$window" Return
+            # The dialog closes on the key press, so xdotool can fail to send the
+            # release to a window that no longer exists; only a live dialog is an error.
+            if ! xdotool key --window "$window" Return 2>/dev/null \
+              && xwininfo -id "$window" >/dev/null 2>&1; then
+              kill "$dialog_pid" 2>/dev/null || true
+              wait "$dialog_pid" 2>/dev/null || true
+              echo "the Linux desktop dialog did not accept Return" >&2
+              exit 1
+            fi
             wait "$dialog_pid"
           '
           python3 - <<'PY'
@@ -1797,7 +1805,15 @@ jobs:
                 echo "the XDG file dialog did not produce a valid capture: $title" >&2
                 exit 1
               fi
-              xdotool key --window "$window" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$window" Escape 2>/dev/null \
+                && xwininfo -id "$window" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the XDG file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/native_file_dialog_smoke \
@@ -1903,7 +1919,15 @@ jobs:
                 echo "the owner-bound XDG file dialog did not produce a valid capture" >&2
                 exit 1
               fi
-              xdotool key --window "$dialog" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$dialog" Escape 2>/dev/null \
+                && xwininfo -id "$dialog" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound XDG file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/zsui_notepad \
@@ -1987,7 +2011,15 @@ jobs:
                 echo "the owner-bound GTK4 file dialog did not produce a valid capture" >&2
                 exit 1
               fi
-              xdotool key --window "$dialog" Escape
+              # The dialog closes on the key press, so xdotool can fail to send the
+              # release to a window that no longer exists; only a live dialog is an error.
+              if ! xdotool key --window "$dialog" Escape 2>/dev/null \
+                && xwininfo -id "$dialog" >/dev/null 2>&1; then
+                kill "$proof_pid" 2>/dev/null || true
+                wait "$proof_pid" 2>/dev/null || true
+                echo "the owner-bound GTK4 file dialog did not accept Escape" >&2
+                exit 1
+              fi
             }
 
             ./target/release/examples/zsui_notepad_gtk \
@@ -3680,20 +3712,12 @@ jobs:
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         bus=dbus.SessionBus()
         name=dbus.service.BusName('org.freedesktop.portal.Desktop',bus)
-        pending=[]
-        class Request(dbus.service.Object):
-            @dbus.service.signal('org.freedesktop.portal.Request',signature='ua{sv}')
-            def Response(self,code,results): pass
         class Portal(dbus.service.Object):
-            @dbus.service.method('org.freedesktop.portal.FileChooser',in_signature='ssa{sv}',out_signature='o',sender_keyword='sender')
-            def OpenFile(self,parent,title,options,sender=None):
-                path='/org/freedesktop/portal/desktop/request/'+sender[1:].replace('.','_')+'/'+str(options['handle_token'])
-                request=Request(bus,path);pending.append(request)
-                def fail():
-                    request.Response(dbus.UInt32(2),dbus.Dictionary({},signature='sv'))
-                    return False
-                GLib.timeout_add(100,fail)
-                return dbus.ObjectPath(path)
+            # Response 2 is a dismissal (Escape or closing the GTK dialog);
+            # a provider failure is a portal error reply.
+            @dbus.service.method('org.freedesktop.portal.FileChooser',in_signature='ssa{sv}',out_signature='o')
+            def OpenFile(self,parent,title,options):
+                raise dbus.exceptions.DBusException('The file chooser backend failed',name='org.freedesktop.portal.Error.Failed')
         portal=Portal(bus,'/org/freedesktop/portal/desktop')
         GLib.MainLoop().run()
         PY

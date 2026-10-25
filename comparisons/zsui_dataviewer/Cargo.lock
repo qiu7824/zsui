@@ -704,6 +704,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "dbus"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ab69f03cc8c4340c9c8e315114e1658e6775a9b16a04357973aa21cec22b32e"
+dependencies = [
+ "libc",
+ "libdbus-sys",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "derive_arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1566,6 +1577,15 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "libdbus-sys"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "328c4789d42200f1eeec05bd86c9c13c7f091d2ba9a6ea35acdf51f31bc0f043"
+dependencies = [
+ "pkg-config",
+]
 
 [[package]]
 name = "libduckdb-sys"
@@ -3887,11 +3907,13 @@ dependencies = [
  "block2 0.6.2",
  "cairo-rs",
  "cosmic-text",
+ "dbus",
  "dispatch2",
  "gtk4",
  "libc",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "pango",
  "pangocairo",
@@ -3899,6 +3921,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "skrifa 0.44.0",
  "softbuffer",
  "swash",
  "ttf-parser",

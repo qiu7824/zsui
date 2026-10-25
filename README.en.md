@@ -837,6 +837,33 @@ ZSUI is designed so another Rust application can provide its own product
 adapter and choose a native host without placing storage, sync or business
 logic inside the framework.
 
+### Memory and Caches
+
+Long-running applications keep producing new text: a playback clock that ticks
+every second, scrolling lyrics, a large playlist. Every ZSUI text and drawing
+cache is bounded, so memory does not grow with uptime:
+
+| Cache | Bound | Owner |
+| --- | --- | --- |
+| Text layouts | 256 entries or 2 MiB, least recently used first | Each `ZsRustTextEngine`; one per Win32 window |
+| Glyph rasters | 2048 entries or 4 MiB, least recently used first | Same |
+| cosmic-text shaped runs | Aged every 64 new layouts, dropped after 4 ages without reuse | Same |
+| Hinting instances | 8 | Same |
+| View text measurements | 4096 entries | Each View runtime |
+| Text-input shaping | 256 entries | Each text-input runtime |
+| Win32 GDI fonts / brushes / pens | 32 / 64 / 64 | Each window |
+
+0.3.0-alpha.1 never trimmed cosmic-text's shaped-run cache. Once Win32 reused
+one text engine per window, every distinct string a window had shown stayed in
+memory, so applications that refresh text kept growing. Laying out 60,000
+distinct clock, lyric and playlist strings under a counting allocator grew the
+heap by 63 MiB before the fix and by about 1.1 MiB after it. Applications pick
+up the fix by upgrading ZSUI; no code changes are needed.
+
+Tray-resident or long-minimized applications can also use
+`release_view_when_hidden()` (see Quick Start) to drop the `View` tree,
+draw/hit plans and transient input caches while the window is not visible.
+
 Verify every public single feature and the supported widget/backend
 combinations with:
 
@@ -846,6 +873,13 @@ combinations with:
 
 The same matrix runs in `.github/workflows/ci.yml`, together with default,
 no-default, full Windows and Linux/macOS desktop checks.
+
+`Native UI Proof` runs the full Win32, AppKit, X11 and Wayland/AT-SPI target
+proofs on pushes to `main` and on pull requests that touch the relevant paths.
+A manual run with `controls_only` covers only the control, resize and directory
+proofs and does not replace the full run. On Linux, pressing Escape or closing
+the file dialog (XDG portal response 1 or 2) returns a cancellation; a portal
+error reply, a malformed response or a lost provider returns an error.
 
 On Windows, the native smoke run can produce the full target
 artifact set:

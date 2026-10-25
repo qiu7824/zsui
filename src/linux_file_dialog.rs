@@ -2,8 +2,11 @@
 fn response_accepted(code: u32) -> Result<bool, String> {
     match code {
         0 => Ok(true),
-        1 => Ok(false),
-        2 => Err("The desktop file chooser failed to complete the request".into()),
+        // 2 ends the interaction "in some other way": GTK and GNOME portals
+        // report Escape and closing the dialog window with it, and GTK's own
+        // file dialogs treat it as a dismissal. Provider failures arrive as
+        // D-Bus errors, malformed responses or a lost provider instead.
+        1 | 2 => Ok(false),
         _ => Err(format!("Invalid desktop file chooser response {code}")),
     }
 }
@@ -352,7 +355,8 @@ mod tests {
     fn linux_provider_cancellation_is_distinct_from_failure() {
         assert_eq!(response_accepted(0), Ok(true));
         assert_eq!(response_accepted(1), Ok(false));
-        assert!(response_accepted(2).is_err());
+        // Escape or closing the GTK portal dialog.
+        assert_eq!(response_accepted(2), Ok(false));
         assert!(response_accepted(17).is_err());
     }
     #[test]

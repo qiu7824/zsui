@@ -712,8 +712,10 @@ history remain authoritative for implementation status.
   `linux-direct-host` lifecycle, Wayland/X11, IME, menu, portal and AccessKit
   paths. It enables the feature-gated retained ZSUI text engine plus tiny-skia
   and binds directly to the Softbuffer frame. Menu measurement, final drawing,
-  typography metrics and text-input geometry share one bounded engine context;
-  physical clipping composites into the final frame without a temporary bitmap
+  typography metrics and text-input geometry share one bounded engine context.
+  Every cache a long-lived engine owns must stay bounded, including
+  cosmic-text's shaped-run cache, which grows until its owner trims it.
+  Physical clipping composites into the final frame without a temporary bitmap
   per text command. New structured evidence identifies this profile as
   `zsui_rust_text`, with capture backend
   `winit_softbuffer_zsui_rust_text_tiny_skia`; checked-in proof carrying the old
@@ -1017,6 +1019,10 @@ history remain authoritative for implementation status.
   `flex(0)`; filling remaining space is always explicit. `ViewJustify` owns
   main-axis distribution and `ViewAlign` owns cross-axis placement; `Auto`
   preserves native intrinsic sizing, row centering and column start placement.
+  Stacks, text, Grids, tab views and lists own their cross axis under
+  `Auto`; overlay hosts (command palette, dialog, toast, flyout, teaching tip,
+  menu flyout) size like the page they wrap. Padding alone is not intrinsic
+  content, so a padded Canvas or image preview fills its cell.
 - UiDocument page/content spacing uses `UiSpacingToken` rather than copied
   Windows constants. Text documents expose semantic role, wrap, ellipsis,
   weight and alignment; enum bindings are validated after value resolution.
@@ -1671,8 +1677,12 @@ history remain authoritative for implementation status.
   A bounded admission count and loop generation prevent stale requests and
   indefinite waiting after shutdown.
 - Linux Direct file pickers preserve XDG portal response semantics: success,
-  explicit cancellation and failure are distinct. Zenity is an unavailable-
-  portal fallback, not a way to hide a failed or malformed portal response.
+  explicit cancellation and failure are distinct. Response 2 ("ended in some
+  other way") is a dismissal: GTK and GNOME portals report Escape and closing
+  the dialog with it, and GTK's own file dialogs and the `linux-gtk` backend
+  treat it as one. Failures are portal error replies, malformed or unknown
+  responses and a lost provider. Zenity is an unavailable-portal fallback, not
+  a way to hide a failed or malformed portal response.
 - Window commands use native operations and preserve close veto policy.
   Worker commands wake a hidden window independently of a retained redraw;
   destruction closes admission. Winit Wayland's unsupported visibility and
