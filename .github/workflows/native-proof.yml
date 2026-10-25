@@ -829,7 +829,7 @@ jobs:
           Assert-True ($runtime.process_memory_during_runtime.source -eq "win32_get_process_memory_info") "unexpected memory source"
           Assert-True ($runtime.process_memory_during_runtime.resident_bytes -gt 0) "missing Win32 RSS evidence"
           Assert-True ($runtime.process_memory_during_runtime.private_bytes -gt 0) "missing Win32 private-byte evidence"
-          Assert-True ($runtime.native_view_capture.typography.source -eq "win32_spi_message_font") "Viewer bypassed the system UI font"
+          Assert-True ($runtime.native_view_capture.typography.source -eq "windows_fluent_font_stack") "Viewer bypassed the Windows UI font stack"
           Assert-True ($runtime.native_accessibility_backend -eq "win32_uia") "reload View did not expose Win32 UIA"
           Assert-True ($runtime.native_accessibility_node_count -gt 0) "reload View exposed no UIA nodes"
 
@@ -3680,20 +3680,12 @@ jobs:
         dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
         bus=dbus.SessionBus()
         name=dbus.service.BusName('org.freedesktop.portal.Desktop',bus)
-        pending=[]
-        class Request(dbus.service.Object):
-            @dbus.service.signal('org.freedesktop.portal.Request',signature='ua{sv}')
-            def Response(self,code,results): pass
         class Portal(dbus.service.Object):
-            @dbus.service.method('org.freedesktop.portal.FileChooser',in_signature='ssa{sv}',out_signature='o',sender_keyword='sender')
-            def OpenFile(self,parent,title,options,sender=None):
-                path='/org/freedesktop/portal/desktop/request/'+sender[1:].replace('.','_')+'/'+str(options['handle_token'])
-                request=Request(bus,path);pending.append(request)
-                def fail():
-                    request.Response(dbus.UInt32(2),dbus.Dictionary({},signature='sv'))
-                    return False
-                GLib.timeout_add(100,fail)
-                return dbus.ObjectPath(path)
+            # Response 2 is a dismissal (Escape or closing the GTK dialog);
+            # a provider failure is a portal error reply.
+            @dbus.service.method('org.freedesktop.portal.FileChooser',in_signature='ssa{sv}',out_signature='o')
+            def OpenFile(self,parent,title,options):
+                raise dbus.exceptions.DBusException('The file chooser backend failed',name='org.freedesktop.portal.Error.Failed')
         portal=Portal(bus,'/org/freedesktop/portal/desktop')
         GLib.MainLoop().run()
         PY

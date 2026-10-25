@@ -1487,12 +1487,10 @@ fn main() -> ZsuiResult<()> {
                         "missing Advanced gallery tab header",
                     )
                 })?;
-            let point = Point {
-                x: target.bounds.x + target.bounds.width / 2,
-                y: target.bounds.y + target.bounds.height / 2,
-            };
+            // Tab header widths follow the configured system UI font, so the
+            // host resolves the header against its live layout.
             options = options
-                .native_view_click(point)
+                .native_view_click_widget(target.widget)
                 .native_view_key_down(NativeViewKey::Right);
         } else if resize_target.is_none() && initial_page == GalleryPage::Feedback {
             let interaction = builder.native_view_interaction_plan().ok_or_else(|| {

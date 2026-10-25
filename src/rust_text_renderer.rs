@@ -46,6 +46,12 @@ const DEFAULT_LAYOUT_CACHE_BYTE_LIMIT: usize = 2 * 1024 * 1024;
 /// Building a hinting instance runs a face's `fpgm` and `prep` programs, so a
 /// few recent face/size/variation instances are kept for glyph-cache misses.
 const HINTING_INSTANCE_CACHE_LIMIT: usize = 8;
+/// cosmic-text retains every shaped run until its owner trims the cache, so a
+/// long-lived engine shaping changing text (clocks, lyrics, scrolled rows)
+/// grew without bound. The cache ages once per this many shaped layouts.
+const SHAPE_RUN_CACHE_TRIM_INTERVAL: u32 = 64;
+/// Ages a shaped run survives unused, about the default layout cache depth.
+const SHAPE_RUN_CACHE_KEEP_AGES: u64 = 4;
 /// `gasp` range behaviour bit requesting ClearType symmetric smoothing.
 const GASP_SYMMETRIC_SMOOTHING: u16 = 0x0008;
 /// Horizontal distance from a pixel's centre to the centre of an outer stripe.
@@ -684,6 +690,8 @@ pub struct ZsRustTextEngine {
     glyph_cache_bytes: usize,
     cache_clock: u64,
     cache_stats: ZsTextCacheStats,
+    shaped_layouts_since_trim: u32,
+    shape_run_cache_trims: u64,
     line_metric_policy: ZsTextLineMetricPolicy,
 }
 
@@ -698,6 +706,7 @@ impl fmt::Debug for ZsRustTextEngine {
             .field("glyph_cache_bytes", &self.glyph_cache_bytes)
             .field("glyph_cache_limit", &self.glyph_cache_limit)
             .field("cache_stats", &self.cache_stats)
+            .field("shape_run_cache_trims", &self.shape_run_cache_trims)
             .field("line_metric_policy", &self.line_metric_policy)
             .finish_non_exhaustive()
     }
@@ -735,6 +744,8 @@ impl ZsRustTextEngine {
             glyph_cache_bytes: 0,
             cache_clock: 0,
             cache_stats: ZsTextCacheStats::default(),
+            shaped_layouts_since_trim: 0,
+            shape_run_cache_trims: 0,
             line_metric_policy: ZsTextLineMetricPolicy::CenteredGlyphBox,
         }
     }
@@ -885,6 +896,7 @@ impl ZsRustTextEngine {
                 )
             })
             .flatten();
+        self.age_shape_run_cache();
 
         let content_height_dp = buffer
             .layout_runs()
@@ -1180,6 +1192,19 @@ impl ZsRustTextEngine {
         measure_style.ellipsis = false;
         self.layout(text, &measure_style, max_width_px, 0, dpi_scale)
             .size()
+    }
+
+    /// Drops shaped runs no recent layout reused; layout-cache hits never
+    /// shape and therefore never age the run cache.
+    fn age_shape_run_cache(&mut self) {
+        self.shaped_layouts_since_trim += 1;
+        if self.shaped_layouts_since_trim >= SHAPE_RUN_CACHE_TRIM_INTERVAL {
+            self.shaped_layouts_since_trim = 0;
+            self.font_system
+                .shape_run_cache
+                .trim(SHAPE_RUN_CACHE_KEEP_AGES);
+            self.shape_run_cache_trims = self.shape_run_cache_trims.saturating_add(1);
+        }
     }
 
     fn cached_layout(&mut self, key: &ZsTextLayoutCacheKey) -> Option<Arc<ZsRustTextLayout>> {
@@ -2842,6 +2867,23 @@ mod tests {
             assert!(Arc::ptr_eq(&first_image, &second_image));
         }
         assert_eq!(engine.cache_stats().glyph_hits, 1);
+    }
+
+    #[test]
+    fn shaping_changing_text_ages_the_shaped_run_cache() {
+        let _guard = text_engine_test_guard();
+        let mut engine = ZsRustTextEngine::new();
+        let style = TextStyle::line("sans-serif", 14.0, Color::rgb(0, 0, 0));
+        for index in 0..SHAPE_RUN_CACHE_TRIM_INTERVAL * 3 {
+            engine.measure(&format!("00:{index:02} elapsed"), &style, 0, 1.0);
+        }
+        assert_eq!(engine.shape_run_cache_trims, 3);
+
+        // Retained layouts are not shaped again, so they do not age the cache.
+        for _ in 0..SHAPE_RUN_CACHE_TRIM_INTERVAL {
+            engine.measure("00:00 elapsed", &style, 0, 1.0);
+        }
+        assert_eq!(engine.shape_run_cache_trims, 3);
     }
 
     #[test]
