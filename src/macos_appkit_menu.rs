@@ -210,6 +210,7 @@ impl MacosAppKitMenuService {
         let model = NativeMenuModel::lower(menu_spec, self.next_native_id)?;
         let native_menu = build_appkit_menu(&model, &self.target, mtm);
         if install_as_main_menu {
+            prepend_application_menu(&native_menu, &application, mtm);
             application.setMainMenu(Some(&native_menu));
         }
         self.next_native_id = model.next_native_id();
@@ -218,6 +219,43 @@ impl MacosAppKitMenuService {
         self.menu = Some(native_menu);
         Ok(())
     }
+}
+
+pub(crate) fn ensure_application_menu(application: &NSApplication, mtm: MainThreadMarker) {
+    if application.mainMenu().is_none() {
+        let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::new());
+        prepend_application_menu(&menu, application, mtm);
+        application.setMainMenu(Some(&menu));
+    }
+}
+
+fn prepend_application_menu(menu: &NSMenu, application: &NSApplication, mtm: MainThreadMarker) {
+    let title = NSString::from_str("Application");
+    let submenu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &title);
+    let root = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &title,
+            None,
+            &NSString::new(),
+        )
+    };
+    let hide = unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &NSString::from_str("Hide"),
+            Some(sel!(hide:)),
+            &NSString::from_str("h"),
+        )
+    };
+    hide.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+    // NSApplication owns the native menu and outlives its weak action target.
+    unsafe {
+        hide.setTarget(Some(application));
+    }
+    submenu.addItem(&hide);
+    root.setSubmenu(Some(&submenu));
+    menu.insertItem_atIndex(&root, 0);
 }
 
 impl Drop for MacosAppKitMenuService {

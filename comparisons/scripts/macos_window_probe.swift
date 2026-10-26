@@ -51,6 +51,22 @@ func visibleWindows(processIds: Set<Int>) -> [[String: Any]] {
     }
 }
 
+func requestHide(_ application: NSRunningApplication) -> String {
+    if application.hide() { return "nsrunningapplication" }
+    // Exercise the application's standard native Hide action when the
+    // cross-process management API rejects a live, regular application.
+    guard let source = CGEventSource(stateID: .combinedSessionState),
+          let down = CGEvent(keyboardEventSource: source, virtualKey: 4, keyDown: true),
+          let up = CGEvent(keyboardEventSource: source, virtualKey: 4, keyDown: false) else {
+        fail("could not construct native Command-H events")
+    }
+    down.flags = .maskCommand
+    up.flags = .maskCommand
+    down.postToPid(application.processIdentifier)
+    up.postToPid(application.processIdentifier)
+    return "native_command_h"
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard let command = arguments.first else {
     fail("usage: macos-window-probe windows <pid,...> | hide <pid> | churn <pid> <seconds> <hz>")
@@ -130,16 +146,15 @@ case "hide":
     guard application.isActive else {
         fail("NSRunningApplication did not become active before hide")
     }
-    guard application.hide() else {
-        fail("NSRunningApplication rejected hide: pid=\(processId), policy=\(application.activationPolicy.rawValue), active=\(application.isActive), hidden=\(application.isHidden), terminated=\(application.isTerminated), launched=\(application.isFinishedLaunching), bundle=\(application.bundleURL?.path ?? "none"), controllerPolicy=\(NSRunningApplication.current.activationPolicy.rawValue)")
-    }
+    let method = requestHide(application)
     for _ in 0..<40 {
         if visibleWindows(processIds: [Int(processId)]).isEmpty {
+            FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: ["method": method, "hidden": true]))
             exit(0)
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     }
-    fail("NSRunningApplication.hide left an on-screen application window")
+    fail("hide did not remove the native window: method=\(method), policy=\(application.activationPolicy.rawValue), active=\(application.isActive), hidden=\(application.isHidden), launched=\(application.isFinishedLaunching)")
 case "churn":
     guard
         (4...5).contains(arguments.count),
@@ -161,7 +176,7 @@ case "churn":
     let deadline = Date().addingTimeInterval(seconds)
     while Date() < deadline {
         autoreleasepool {
-            _ = application.hide()
+            _ = requestHide(application)
             usleep(halfInterval)
             _ = application.unhide()
             _ = application.activate(options: [.activateIgnoringOtherApps])

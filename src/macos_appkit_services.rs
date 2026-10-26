@@ -497,6 +497,7 @@ impl MacosAppKitWindowService {
         let mtm = appkit_main_thread_marker("NSApplication")?;
         let application = NSApplication::sharedApplication(mtm);
         application.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+        crate::macos_appkit_menu::ensure_application_menu(&application, mtm);
         Ok(Self {
             _application: application,
             windows: HashMap::new(),
