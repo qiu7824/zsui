@@ -218,6 +218,11 @@ path = "examples/compact_service_panel.rs"
 required-features = ["window", "button", "label", "toggle"]
 
 [[example]]
+name = "zsui_proxy_client"
+path = "examples/zsui_proxy_client.rs"
+required-features = ["window", "button", "label", "textbox", "toggle", "list"]
+
+[[example]]
 name = "text_geometry_proof"
 path = "examples/text_geometry_proof.rs"
 required-features = ["windows-text-proof"]

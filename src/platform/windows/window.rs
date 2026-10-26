@@ -22,6 +22,36 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
     true
 }
 
+/// Installs a rebuilt plan and invalidates only the pixels it changes, so a
+/// ticking counter repaints its own text instead of the whole window.
+fn install_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) {
+    use crate::render_protocol::{native_draw_plan_damage, NativeDrawPlanDamage};
+
+    let damage = window_draw_plan(hwnd).map_or(NativeDrawPlanDamage::Full, |previous| {
+        native_draw_plan_damage(&previous, &plan)
+    });
+    if !set_windows_win32_window_draw_plan(hwnd, plan) {
+        return;
+    }
+    let area = match damage {
+        NativeDrawPlanDamage::Unchanged => return,
+        NativeDrawPlanDamage::Area(rect) => Some(RECT {
+            left: rect.x,
+            top: rect.y,
+            right: rect.x.saturating_add(rect.width),
+            bottom: rect.y.saturating_add(rect.height),
+        }),
+        NativeDrawPlanDamage::Full => None,
+    };
+    unsafe {
+        InvalidateRect(
+            hwnd,
+            area.as_ref().map_or(null(), |area| area as *const RECT),
+            0,
+        );
+    }
+}
+
 /// Lets an existing painter adopt the View route's text resources.
 fn adopt_windows_win32_window_renderer_resources(hwnd: HWND, resources: WindowsGdiResourceCache) {
     let hwnd = hwnd as isize;
@@ -546,15 +576,165 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
-            paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect);
-        } else {
-            paint_window_client_rect_to_dc(hwnd, target, rect);
+        let dirty = RECT {
+            left: ps.rcPaint.left.max(rect.left),
+            top: ps.rcPaint.top.max(rect.top),
+            right: ps.rcPaint.right.min(rect.right),
+            bottom: ps.rcPaint.bottom.min(rect.bottom),
+        };
+        if dirty.right > dirty.left
+            && dirty.bottom > dirty.top
+            && !paint_window_bands(hwnd, target, dirty)
+        {
+            if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
+                paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect);
+            } else {
+                paint_window_client_rect_to_dc(hwnd, target, rect);
+            }
         }
     }
 
     EndPaint(hwnd, &ps);
     0
+}
+
+/// Pixel budget of the per-thread paint band: 128 Ki pixels, 512 KiB BGRA.
+const WINDOWS_PAINT_BAND_PIXELS: u32 = 128 * 1024;
+/// Very wide windows keep a usable band height instead of the pixel budget.
+const WINDOWS_PAINT_BAND_MIN_ROWS: u32 = 32;
+
+thread_local! {
+    /// Windows on one UI thread paint one at a time, so they share a single
+    /// band. Its size depends on the widest dirty area, never on window
+    /// height or on how many windows exist.
+    static WINDOWS_PAINT_BAND: RefCell<Option<WindowsPaintBand>> = const { RefCell::new(None) };
+}
+
+/// A top-down 32-bit DIB section that composes one horizontal band of the
+/// dirty area off-screen. Each band reaches the window in a single `BitBlt`,
+/// so no pixel ever shows an erased or partially drawn state.
+struct WindowsPaintBand {
+    dc: windows_sys::Win32::Graphics::Gdi::HDC,
+    bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
+    previous: windows_sys::Win32::Graphics::Gdi::HGDIOBJ,
+    width: u32,
+    rows: u32,
+}
+
+impl WindowsPaintBand {
+    fn rows_for_width(width: u32) -> u32 {
+        (WINDOWS_PAINT_BAND_PIXELS / width.max(1)).max(WINDOWS_PAINT_BAND_MIN_ROWS)
+    }
+
+    unsafe fn new(reference: windows_sys::Win32::Graphics::Gdi::HDC, width: u32) -> Option<Self> {
+        use windows_sys::Win32::Graphics::Gdi::{
+            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject,
+            BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+        };
+
+        let rows = Self::rows_for_width(width);
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: i32::try_from(width).ok()?,
+                biHeight: -i32::try_from(rows).ok()?,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                ..zeroed()
+            },
+            ..zeroed()
+        };
+        let dc = CreateCompatibleDC(reference);
+        if dc.is_null() {
+            return None;
+        }
+        let mut bits = null_mut();
+        let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+        if bitmap.is_null() || bits.is_null() {
+            DeleteDC(dc);
+            return None;
+        }
+        let previous = SelectObject(dc, bitmap as _);
+        if previous.is_null() {
+            DeleteObject(bitmap as _);
+            DeleteDC(dc);
+            return None;
+        }
+        Some(Self {
+            dc,
+            bitmap,
+            previous,
+            width,
+            rows,
+        })
+    }
+}
+
+impl Drop for WindowsPaintBand {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, SelectObject};
+
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            DeleteObject(self.bitmap as _);
+            DeleteDC(self.dc);
+        }
+    }
+}
+
+/// Paints `dirty` band by band through the shared off-screen band. Returns
+/// `false` when no band could be prepared, so the caller falls back to a
+/// whole-surface buffered paint.
+unsafe fn paint_window_bands(hwnd: HWND, target: windows_sys::Win32::Graphics::Gdi::HDC, dirty: RECT) -> bool {
+    use windows_sys::Win32::Graphics::Gdi::{
+        BitBlt, IntersectClipRect, RestoreDC, SaveDC, SetViewportOrgEx, SRCCOPY,
+    };
+
+    let width = (dirty.right - dirty.left) as u32;
+    WINDOWS_PAINT_BAND.with(|slot| {
+        // A nested paint during this one keeps the whole-surface fallback.
+        let Ok(mut slot) = slot.try_borrow_mut() else {
+            return false;
+        };
+        if slot.as_ref().is_none_or(|band| band.width < width) {
+            // Release the narrower band before allocating its replacement.
+            *slot = None;
+            *slot = WindowsPaintBand::new(target, width);
+        }
+        let Some(band) = slot.as_ref() else {
+            return false;
+        };
+        let surface = window_paint_surface(hwnd);
+        let mut top = dirty.top;
+        while top < dirty.bottom {
+            let area = RECT {
+                left: dirty.left,
+                top,
+                right: dirty.right,
+                bottom: (top + band.rows as i32).min(dirty.bottom),
+            };
+            let saved = SaveDC(band.dc);
+            SetViewportOrgEx(band.dc, -area.left, -area.top, null_mut());
+            IntersectClipRect(band.dc, area.left, area.top, area.right, area.bottom);
+            surface.paint(band.dc, area, Some(rect_from_win(area)));
+            RestoreDC(band.dc, saved);
+            GdiFlush();
+            BitBlt(
+                target,
+                area.left,
+                area.top,
+                area.right - area.left,
+                area.bottom - area.top,
+                band.dc,
+                0,
+                0,
+                SRCCOPY,
+            );
+            top = area.bottom;
+        }
+        true
+    })
 }
 
 unsafe fn paint_window_client_to_dc(
@@ -577,51 +757,66 @@ unsafe fn paint_window_client_rect_to_dc(
     target: windows_sys::Win32::Graphics::Gdi::HDC,
     rect: RECT,
 ) {
-    let paint_state = window_paint_state(hwnd);
-    let draw_plan = paint_state.as_ref().map(|(plan, _)| plan.as_ref());
-    let resources = paint_state
-        .as_ref()
-        .map(|(_, resources)| resources.clone())
-        .unwrap_or_default();
-    let palette = windows_palette_for_draw_plan(draw_plan);
+    window_paint_surface(hwnd).paint(target, rect, None);
+}
+
+/// Everything one paint pass needs, resolved once and reused by every band.
+struct WindowsPaintSurface {
+    draw_plan: Option<Arc<NativeDrawPlan>>,
+    resources: WindowsGdiResourceCache,
+    palette: WindowsGdiPalette,
+    high_contrast: bool,
+    dpi: crate::Dpi,
+}
+
+unsafe fn window_paint_surface(hwnd: HWND) -> WindowsPaintSurface {
+    let (draw_plan, resources) = window_paint_state(hwnd)
+        .map_or((None, WindowsGdiResourceCache::default()), |(plan, resources)| {
+            (Some(plan), resources)
+        });
+    let palette = windows_palette_for_draw_plan(draw_plan.as_deref());
     let high_contrast = resolved_windows_theme_mode(
         draw_plan
+            .as_ref()
             .map(|plan| plan.theme_mode)
             .unwrap_or(crate::ZsuiThemeMode::System),
     ) == crate::ZsuiThemeMode::HighContrast;
     let dpi = crate::Dpi::new(GetDpiForWindow(hwnd).max(96) as f32);
-    paint_win32_surface(
-        target,
-        rect,
+    WindowsPaintSurface {
+        draw_plan,
+        resources,
         palette,
         high_contrast,
         dpi,
-        draw_plan,
-        resources,
-    );
+    }
 }
 
-unsafe fn paint_win32_surface(
-    dc: windows_sys::Win32::Graphics::Gdi::HDC,
-    rect: RECT,
-    palette: WindowsGdiPalette,
-    high_contrast: bool,
-    dpi: crate::Dpi,
-    draw_plan: Option<&NativeDrawPlan>,
-    resources: WindowsGdiResourceCache,
-) {
-    let mut renderer = WindowsGdiRenderer::with_dpi_and_resources(dc, dpi, resources.clone());
-    renderer.fill_rect(rect_from_win(rect), palette.surface);
-    drop(renderer);
-    if let Some(plan) = draw_plan {
-        let mut sink = WindowsGdiDrawSink::with_palette_contrast_dpi_and_resources(
-            dc,
-            palette,
-            high_contrast,
-            dpi,
-            resources,
-        );
-        sink.draw_native_plan(plan);
+impl WindowsPaintSurface {
+    /// Fills `rect` and draws the plan; with `cull`, only commands that can
+    /// touch that area are replayed.
+    unsafe fn paint(
+        &self,
+        dc: windows_sys::Win32::Graphics::Gdi::HDC,
+        rect: RECT,
+        cull: Option<crate::Rect>,
+    ) {
+        let mut renderer =
+            WindowsGdiRenderer::with_dpi_and_resources(dc, self.dpi, self.resources.clone());
+        renderer.fill_rect(rect_from_win(rect), self.palette.surface);
+        drop(renderer);
+        if let Some(plan) = &self.draw_plan {
+            let mut sink = WindowsGdiDrawSink::with_palette_contrast_dpi_and_resources(
+                dc,
+                self.palette,
+                self.high_contrast,
+                self.dpi,
+                self.resources.clone(),
+            );
+            match cull {
+                Some(area) => sink.draw_native_plan_within(plan, area),
+                None => sink.draw_native_plan(plan),
+            }
+        }
     }
 }
 

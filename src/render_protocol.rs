@@ -1231,6 +1231,147 @@ pub trait NativeDrawCommandSink {
     }
 }
 
+impl NativeDrawCommand {
+    /// A conservative rectangle containing every pixel this command can
+    /// touch, or `None` for clip changes, which affect all later commands.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn paint_bounds(&self) -> Option<Rect> {
+        let bounds = match self {
+            Self::FillRect { rect, .. } => *rect,
+            Self::StrokeRect { rect, width, .. } => inflate_rect(*rect, (*width).max(1)),
+            Self::StrokeArc { rect, width, .. } => inflate_rect(*rect, (*width).max(1) + 1),
+            Self::FillTriangle { points, .. } => {
+                let left = points.iter().map(|point| point.x).min().unwrap_or(0);
+                let top = points.iter().map(|point| point.y).min().unwrap_or(0);
+                let right = points.iter().map(|point| point.x).max().unwrap_or(0);
+                let bottom = points.iter().map(|point| point.y).max().unwrap_or(0);
+                inflate_rect(
+                    Rect {
+                        x: left,
+                        y: top,
+                        width: right.saturating_sub(left),
+                        height: bottom.saturating_sub(top),
+                    },
+                    1,
+                )
+            }
+            Self::RoundRect { rect, .. } | Self::RoundFill { rect, .. } => inflate_rect(*rect, 1),
+            Self::Text(command) => inflate_rect(command.bounds, 1),
+            #[cfg(feature = "password-box")]
+            Self::SecureText(command) => inflate_rect(command.bounds, 1),
+            Self::Icon(command) => inflate_rect(command.bounds, 1),
+            Self::Image(command) => command.bounds,
+            Self::PushClip { .. } | Self::PopClip => return None,
+        };
+        Some(bounds)
+    }
+
+    /// Whether two commands produce the same pixels. Image frames compare by
+    /// identity, never by decoded content, so equal-looking frames from
+    /// different decodes count as a change.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn paints_same_as(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Image(left), Self::Image(right)) => {
+                left.source == right.source
+                    && left.bounds == right.bounds
+                    && left.interpolation == right.interpolation
+                    && left.frame.is_same_frame(&right.frame)
+            }
+            _ => self == other,
+        }
+    }
+}
+
+impl ZsImageFrame {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn is_same_frame(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.width == other.width
+            && self.height == other.height
+            && Arc::ptr_eq(&self.premultiplied_bgra8, &other.premultiplied_bgra8)
+    }
+}
+
+/// The surface area whose pixels can differ after replacing one plan with
+/// another.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeDrawPlanDamage {
+    Unchanged,
+    Area(Rect),
+    Full,
+}
+
+/// Compares two plans command by command. A changed command damages both its
+/// old and new bounds; any structural difference (theme, typography, command
+/// count or clip state) damages the whole surface.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn native_draw_plan_damage(
+    previous: &NativeDrawPlan,
+    next: &NativeDrawPlan,
+) -> NativeDrawPlanDamage {
+    if previous.theme_mode != next.theme_mode
+        || previous.typography_scale_per_mille != next.typography_scale_per_mille
+        || previous.commands.len() != next.commands.len()
+    {
+        return NativeDrawPlanDamage::Full;
+    }
+    let mut area: Option<Rect> = None;
+    for (before, after) in previous.commands.iter().zip(&next.commands) {
+        if before.paints_same_as(after) {
+            continue;
+        }
+        let (Some(before), Some(after)) = (before.paint_bounds(), after.paint_bounds()) else {
+            return NativeDrawPlanDamage::Full;
+        };
+        for bounds in [before, after] {
+            if bounds.width > 0 && bounds.height > 0 {
+                area = Some(area.map_or(bounds, |area| union_rect(area, bounds)));
+            }
+        }
+    }
+    area.map_or(NativeDrawPlanDamage::Unchanged, NativeDrawPlanDamage::Area)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const fn rects_intersect(left: Rect, right: Rect) -> bool {
+    left.x < right.x.saturating_add(right.width)
+        && right.x < left.x.saturating_add(left.width)
+        && left.y < right.y.saturating_add(right.height)
+        && right.y < left.y.saturating_add(left.height)
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn inflate_rect(rect: Rect, amount: i32) -> Rect {
+    Rect {
+        x: rect.x.saturating_sub(amount),
+        y: rect.y.saturating_sub(amount),
+        width: rect.width.saturating_add(amount.saturating_mul(2)),
+        height: rect.height.saturating_add(amount.saturating_mul(2)),
+    }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn union_rect(left: Rect, right: Rect) -> Rect {
+    let x = left.x.min(right.x);
+    let y = left.y.min(right.y);
+    let right_edge = left
+        .x
+        .saturating_add(left.width)
+        .max(right.x.saturating_add(right.width));
+    let bottom_edge = left
+        .y
+        .saturating_add(left.height)
+        .max(right.y.saturating_add(right.height));
+    Rect {
+        x,
+        y,
+        width: right_edge.saturating_sub(x),
+        height: bottom_edge.saturating_sub(y),
+    }
+}
+
 #[cfg(test)]
 mod draw_command_tests {
     use super::*;
@@ -1244,6 +1385,151 @@ mod draw_command_tests {
         fn draw_command(&mut self, command: &NativeDrawCommand) {
             self.commands.push(command.operation());
         }
+    }
+
+    fn text_at(value: &str, x: i32, y: i32) -> NativeDrawCommand {
+        NativeDrawCommand::Text(NativeDrawTextCommand::new(
+            value,
+            Rect {
+                x,
+                y,
+                width: 80,
+                height: 20,
+            },
+            SemanticTextStyle::body(),
+        ))
+    }
+
+    fn background() -> NativeDrawCommand {
+        NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+            },
+            fill: NativeDrawFill::Role(ColorRole::Surface),
+        }
+    }
+
+    #[test]
+    fn plan_damage_covers_old_and_new_bounds_of_changed_commands_only() {
+        let previous = NativeDrawPlan::new([
+            background(),
+            text_at("1.2 MB/s", 20, 40),
+            text_at("Title", 20, 10),
+        ]);
+        let next = NativeDrawPlan::new([
+            background(),
+            text_at("1.9 MB/s", 30, 60),
+            text_at("Title", 20, 10),
+        ]);
+
+        assert_eq!(
+            native_draw_plan_damage(&previous, &previous.clone()),
+            NativeDrawPlanDamage::Unchanged
+        );
+        assert_eq!(
+            native_draw_plan_damage(&previous, &next),
+            NativeDrawPlanDamage::Area(Rect {
+                x: 19,
+                y: 39,
+                width: 92,
+                height: 42,
+            })
+        );
+    }
+
+    #[test]
+    fn structural_plan_changes_damage_the_whole_surface() {
+        let previous = NativeDrawPlan::new([background(), text_at("A", 0, 0)]);
+        let longer = NativeDrawPlan::new([background(), text_at("A", 0, 0), text_at("B", 0, 30)]);
+        let clipped = NativeDrawPlan::new([
+            NativeDrawCommand::PushClip {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 10,
+                    height: 10,
+                },
+            },
+            NativeDrawCommand::PopClip,
+        ]);
+        let reclipped = NativeDrawPlan::new([
+            NativeDrawCommand::PushClip {
+                rect: Rect {
+                    x: 0,
+                    y: 0,
+                    width: 20,
+                    height: 10,
+                },
+            },
+            NativeDrawCommand::PopClip,
+        ]);
+        let mut rethemed = previous.clone();
+        rethemed.theme_mode = crate::ZsuiThemeMode::Dark;
+
+        for next in [&longer, &rethemed] {
+            assert_eq!(
+                native_draw_plan_damage(&previous, next),
+                NativeDrawPlanDamage::Full
+            );
+        }
+        assert_eq!(
+            native_draw_plan_damage(&clipped, &reclipped),
+            NativeDrawPlanDamage::Full
+        );
+    }
+
+    #[test]
+    fn image_damage_uses_frame_identity_not_decoded_content() {
+        let rect = Rect {
+            x: 4,
+            y: 4,
+            width: 2,
+            height: 2,
+        };
+        let image = |frame: ZsImageFrame| {
+            NativeDrawPlan::new([NativeDrawCommand::Image(NativeDrawImageCommand::new(
+                frame,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                rect,
+            ))])
+        };
+        let frame = ZsImageFrame::from_rgba8(ZsImageFrameId::new(1), 1, 1, vec![9, 9, 9, 255])
+            .expect("valid frame");
+        let redecoded = ZsImageFrame::from_rgba8(ZsImageFrameId::new(1), 1, 1, vec![9, 9, 9, 255])
+            .expect("valid frame");
+
+        assert_eq!(
+            native_draw_plan_damage(&image(frame.clone()), &image(frame.clone())),
+            NativeDrawPlanDamage::Unchanged
+        );
+        assert_eq!(
+            native_draw_plan_damage(&image(frame), &image(redecoded)),
+            NativeDrawPlanDamage::Area(rect)
+        );
+    }
+
+    #[test]
+    fn paint_bounds_cull_only_drawing_commands() {
+        let band = Rect {
+            x: 0,
+            y: 100,
+            width: 400,
+            height: 50,
+        };
+        let above = text_at("Above", 20, 10);
+        let inside = text_at("Inside", 20, 120);
+
+        assert!(!rects_intersect(above.paint_bounds().unwrap(), band));
+        assert!(rects_intersect(inside.paint_bounds().unwrap(), band));
+        assert_eq!(NativeDrawCommand::PopClip.paint_bounds(), None);
     }
 
     #[test]

@@ -292,9 +292,9 @@ pub struct WindowsNoFlickerPaintStrategy {
 pub const fn windows_no_flicker_paint_strategy() -> WindowsNoFlickerPaintStrategy {
     WindowsNoFlickerPaintStrategy {
         suppress_erase_background: true,
-        preferred_target: "uxtheme_buffered_top_down_dib",
-        fallback_target: "direct_gdi_hdc",
-        present_operation: "EndBufferedPaint(update_target=true)",
+        preferred_target: "thread_band_top_down_dib",
+        fallback_target: "uxtheme_buffered_top_down_dib",
+        present_operation: "BitBlt(band, SRCCOPY)",
     }
 }
 
@@ -1646,6 +1646,19 @@ impl WindowsGdiDrawSink {
         self.draw_plan(plan);
     }
 
+    /// Replays only the commands that can touch `area`. Clip changes always
+    /// run so nested clips stay balanced.
+    pub(crate) fn draw_native_plan_within(&mut self, plan: &NativeDrawPlan, area: Rect) {
+        for command in &plan.commands {
+            if command
+                .paint_bounds()
+                .is_none_or(|bounds| crate::render_protocol::rects_intersect(bounds, area))
+            {
+                self.draw_command(command);
+            }
+        }
+    }
+
     fn draw_round_rect(
         &mut self,
         rect: Rect,
@@ -2921,12 +2934,9 @@ mod tests {
         let strategy = windows_no_flicker_paint_strategy();
 
         assert!(strategy.suppress_erase_background);
-        assert_eq!(strategy.preferred_target, "uxtheme_buffered_top_down_dib");
-        assert_eq!(strategy.fallback_target, "direct_gdi_hdc");
-        assert_eq!(
-            strategy.present_operation,
-            "EndBufferedPaint(update_target=true)"
-        );
+        assert_eq!(strategy.preferred_target, "thread_band_top_down_dib");
+        assert_eq!(strategy.fallback_target, "uxtheme_buffered_top_down_dib");
+        assert_eq!(strategy.present_operation, "BitBlt(band, SRCCOPY)");
     }
 
     #[test]

@@ -1,11 +1,17 @@
-use std::{ffi::c_void, fmt, mem::size_of, ptr::null_mut};
+use std::{
+    ffi::c_void,
+    fmt,
+    mem::{size_of, zeroed},
+    ptr::null_mut,
+};
 
 use windows_sys::Win32::{
-    Foundation::{BOOL, HANDLE},
+    Foundation::{BOOL, HANDLE, POINT, RECT},
     Graphics::Gdi::{
-        BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush,
-        SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
-        RGBQUAD, SRCCOPY,
+        BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush, GetClipBox,
+        GetCurrentObject, GetGraphicsMode, GetMapMode, GetObjectW, LPtoDP, SelectObject,
+        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIBSECTION, DIB_RGB_COLORS, GM_COMPATIBLE, HBITMAP,
+        HDC, HGDIOBJ, MM_TEXT, NULLREGION, OBJ_BITMAP, RGBQUAD, SIMPLEREGION, SRCCOPY,
     },
     UI::WindowsAndMessaging::{
         SystemParametersInfoW, FE_FONTSMOOTHINGCLEARTYPE, FE_FONTSMOOTHINGORIENTATIONBGR,
@@ -15,12 +21,16 @@ use windows_sys::Win32::{
 };
 
 use crate::{
-    rust_text_renderer::{ZsRustTextEngine, ZsTextLineMetricPolicy, ZsTextRasterProfile},
+    rust_text_renderer::{
+        ZsRustTextEngine, ZsTextLineMetricPolicy, ZsTextPixelRect, ZsTextRasterProfile,
+    },
     Size, TextRun, TextStyle,
 };
 
-/// Per-window compositor state. Font discovery and glyph allocations are lazy,
-/// and the top-down DIB grows only to the largest text box seen by this window.
+/// Per-window compositor state. Font discovery and glyph allocations are lazy.
+/// Text normally composites straight into the destination DIB section; the
+/// private top-down DIB exists only for device-dependent targets and grows to
+/// the largest text box drawn into one.
 pub(crate) struct WindowsRustTextState {
     engine: Option<ZsRustTextEngine>,
     bitmap: Option<WindowsRustTextBitmap>,
@@ -120,6 +130,36 @@ impl WindowsRustTextState {
         if style.ellipsis && layout.overflows_horizontally() {
             return Err("Rust text ellipsis is not implemented".into());
         }
+        let raster_profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
+
+        // Buffered paint and band surfaces are DIB sections: composite into
+        // their pixels in place instead of copying through a private bitmap.
+        if let Some(mut surface) = unsafe { SelectedDibSurface::of(destination) } {
+            let origin = surface.to_device(run.bounds.x, run.bounds.y);
+            let Some(clip) = surface.clip_to(origin, run.bounds.width, run.bounds.height) else {
+                return Ok(());
+            };
+            let (width, height, stride) = (surface.width, surface.height, surface.stride);
+            unsafe {
+                GdiFlush();
+            }
+            // SAFETY: the DIB stays selected into `destination` for this whole
+            // call, GDI has been flushed and nothing else touches its memory
+            // until the slice is dropped at the end of this block.
+            let pixels = unsafe { surface.pixels_mut() };
+            return engine.composite_bgra_clipped(
+                &layout,
+                pixels,
+                width,
+                height,
+                stride,
+                origin.0,
+                origin.1,
+                clip,
+                style.color,
+                raster_profile,
+            );
+        }
 
         let width = run.bounds.width as u32;
         let height = run.bounds.height as u32;
@@ -143,7 +183,6 @@ impl WindowsRustTextState {
         }
         let bitmap_stride = bitmap.stride;
         let pixels = bitmap.pixels_mut()?;
-        let raster_profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
         engine.composite_bgra(
             &layout,
             pixels,
@@ -272,6 +311,118 @@ const fn windows_text_raster_profile(
         ZsTextRasterProfile::subpixel_bgr()
     } else {
         ZsTextRasterProfile::subpixel_rgb()
+    }
+}
+
+/// The 32-bit top-down DIB section currently selected into a device context,
+/// with the DC's logical-to-device offset and rectangular clip resolved.
+struct SelectedDibSurface {
+    bits: *mut u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    device_offset: (i32, i32),
+    /// Device-space left, top, right and bottom edges.
+    clip: (i32, i32, i32, i32),
+}
+
+impl SelectedDibSurface {
+    /// Returns `None` whenever writing the bits could differ from what GDI
+    /// itself would produce: a device-dependent bitmap, another pixel layout,
+    /// a scaling or world transform, or a non-rectangular clip region.
+    unsafe fn of(dc: HDC) -> Option<Self> {
+        if dc.is_null() || GetMapMode(dc) != MM_TEXT || GetGraphicsMode(dc) != GM_COMPATIBLE as i32
+        {
+            return None;
+        }
+        let bitmap = GetCurrentObject(dc, OBJ_BITMAP as u32);
+        if bitmap.is_null() {
+            return None;
+        }
+        let mut section: DIBSECTION = zeroed();
+        let section_size = size_of::<DIBSECTION>() as i32;
+        if GetObjectW(
+            bitmap,
+            section_size,
+            (&mut section as *mut DIBSECTION).cast(),
+        ) != section_size
+        {
+            return None;
+        }
+        let header = &section.dsBmih;
+        if section.dsBm.bmBits.is_null()
+            || section.dsBm.bmBitsPixel != 32
+            || header.biHeight >= 0
+            || header.biCompression != BI_RGB
+        {
+            return None;
+        }
+        let width = u32::try_from(section.dsBm.bmWidth).ok()?;
+        let height = section.dsBm.bmHeight.unsigned_abs();
+        let stride = usize::try_from(section.dsBm.bmWidthBytes).ok()?;
+        if stride < width as usize * 4 {
+            return None;
+        }
+
+        let mut points = [POINT { x: 0, y: 0 }, POINT { x: 1, y: 1 }];
+        if LPtoDP(dc, points.as_mut_ptr(), points.len() as i32) == 0
+            || points[1].x - points[0].x != 1
+            || points[1].y - points[0].y != 1
+        {
+            return None;
+        }
+        let device_offset = (points[0].x, points[0].y);
+        let mut clip_box: RECT = zeroed();
+        let clip = match GetClipBox(dc, &mut clip_box) {
+            SIMPLEREGION => (
+                clip_box.left.saturating_add(device_offset.0).max(0),
+                clip_box.top.saturating_add(device_offset.1).max(0),
+                clip_box
+                    .right
+                    .saturating_add(device_offset.0)
+                    .min(i32::try_from(width).ok()?),
+                clip_box
+                    .bottom
+                    .saturating_add(device_offset.1)
+                    .min(i32::try_from(height).ok()?),
+            ),
+            NULLREGION => (0, 0, 0, 0),
+            _ => return None,
+        };
+        Some(Self {
+            bits: section.dsBm.bmBits.cast(),
+            width,
+            height,
+            stride,
+            device_offset,
+            clip,
+        })
+    }
+
+    const fn to_device(&self, x: i32, y: i32) -> (i32, i32) {
+        (
+            x.saturating_add(self.device_offset.0),
+            y.saturating_add(self.device_offset.1),
+        )
+    }
+
+    /// The visible part of a box at a device origin, or `None` when GDI
+    /// would clip all of it away.
+    fn clip_to(&self, origin: (i32, i32), width: i32, height: i32) -> Option<ZsTextPixelRect> {
+        let left = origin.0.max(self.clip.0);
+        let top = origin.1.max(self.clip.1);
+        let right = origin.0.saturating_add(width).min(self.clip.2);
+        let bottom = origin.1.saturating_add(height).min(self.clip.3);
+        (right > left && bottom > top)
+            .then(|| ZsTextPixelRect::new(left, top, (right - left) as u32, (bottom - top) as u32))
+    }
+
+    /// # Safety
+    ///
+    /// The DIB must still be selected into the DC it was read from, and GDI
+    /// must have been flushed so no batched drawing writes it concurrently.
+    unsafe fn pixels_mut(&mut self) -> &mut [u8] {
+        std::slice::from_raw_parts_mut(self.bits, self.stride * self.height as usize)
     }
 }
 

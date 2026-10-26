@@ -1,0 +1,106 @@
+name: Proxy Demo Comparison
+
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - "examples/zsui_proxy_client.rs"
+      - "scripts/measure-proxy-demo-comparison.ps1"
+      - "scripts/proxy-demo-flicker-control.ps1"
+      - "src/render_protocol.rs"
+      - "src/windows_gdi_renderer.rs"
+      - "src/platform/windows/**"
+      - "src/platform/desktop_runtime/windows_smoke.rs"
+      - ".github/workflows/proxy-demo-comparison.yml"
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Ref measured as the current design
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proxy-demo-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows Server 2025 current vs new paint path
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      RUST_BACKTRACE: "1"
+
+    steps:
+      - name: Checkout new design
+        uses: actions/checkout@v7
+        with:
+          path: new
+
+      - name: Checkout current design
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.baseline_ref || 'main' }}
+          path: old
+
+      - name: Add the same demo to the current design
+        shell: pwsh
+        run: |
+          Copy-Item new/examples/zsui_proxy_client.rs old/examples/zsui_proxy_client.rs -Force
+          if (-not (Select-String -Path old/Cargo.toml -Pattern 'name = "zsui_proxy_client"' -Quiet)) {
+            Add-Content -Path old/Cargo.toml -Value @(
+              ""
+              "[[example]]"
+              'name = "zsui_proxy_client"'
+              'path = "examples/zsui_proxy_client.rs"'
+              'required-features = ["window", "button", "label", "textbox", "toggle", "list"]'
+            )
+          }
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            new -> target
+            old -> target
+
+      - name: Build both designs
+        shell: pwsh
+        run: |
+          foreach ($tree in "old", "new") {
+            cargo build `
+              --release `
+              --locked `
+              --manifest-path "$tree/Cargo.toml" `
+              --example zsui_proxy_client `
+              --no-default-features `
+              --features window,button,label,textbox,toggle,list
+            if ($LASTEXITCODE -ne 0) {
+              throw "the $tree demo build failed"
+            }
+          }
+
+      - name: Measure memory, pixels and flicker
+        shell: pwsh
+        run: |
+          ./new/scripts/measure-proxy-demo-comparison.ps1 `
+            -OldExe old/target/release/examples/zsui_proxy_client.exe `
+            -NewExe new/target/release/examples/zsui_proxy_client.exe `
+            -Output target/proxy-demo-comparison
+          Get-Content target/proxy-demo-comparison/summary.md | Add-Content $env:GITHUB_STEP_SUMMARY
+          Get-Content target/proxy-demo-comparison/summary.md
+          Get-Content target/proxy-demo-comparison/summary.json
+
+      - name: Upload measurements and screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: proxy-demo-comparison-windows-2025
+          path: target/proxy-demo-comparison
+          retention-days: 30

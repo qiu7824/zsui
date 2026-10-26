@@ -173,10 +173,7 @@ pub fn set_windows_win32_window_shell_input_route(
         });
     }
     drop(routes);
-    set_windows_win32_window_draw_plan(hwnd, plan);
-    unsafe {
-        InvalidateRect(hwnd, null(), 0);
-    }
+    install_windows_win32_window_draw_plan(hwnd, plan);
     true
 }
 
@@ -283,10 +280,7 @@ fn dispatch_windows_win32_window_shell_update(
     };
 
     if let Some(plan) = plan {
-        set_windows_win32_window_draw_plan(hwnd, plan);
-        unsafe {
-            InvalidateRect(hwnd, null(), 0);
-        }
+        install_windows_win32_window_draw_plan(hwnd, plan);
     }
     Some(result)
 }

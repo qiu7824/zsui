@@ -510,10 +510,7 @@ pub fn set_windows_win32_window_view_input_route(
     drop(routes);
     adopt_windows_win32_window_renderer_resources(hwnd, text_resources);
     if let Some(draw_plan) = draw_plan {
-        set_windows_win32_window_draw_plan(hwnd, draw_plan);
-        unsafe {
-            InvalidateRect(hwnd, null(), 0);
-        }
+        install_windows_win32_window_draw_plan(hwnd, draw_plan);
     }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     true
@@ -853,6 +850,7 @@ pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
         record.route.take_pending_draw_plan()
     };
     if let Some(draw_plan) = draw_plan {
+        // A resized surface repaints in full; exposed edges are not in the plan diff.
         set_windows_win32_window_draw_plan(hwnd, draw_plan);
         unsafe {
             InvalidateRect(hwnd, null(), 0);
@@ -893,10 +891,7 @@ pub fn sync_windows_win32_window_view_visibility(hwnd: HWND, visible: bool) -> b
     if released {
         clear_windows_win32_window_draw_plan(hwnd);
     } else if let Some(draw_plan) = draw_plan {
-        set_windows_win32_window_draw_plan(hwnd, draw_plan);
-        unsafe {
-            InvalidateRect(hwnd, null(), 0);
-        }
+        install_windows_win32_window_draw_plan(hwnd, draw_plan);
     }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     eligible
@@ -1364,10 +1359,7 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     }
 
     if let Some(draw_plan) = draw_plan {
-        set_windows_win32_window_draw_plan(hwnd, draw_plan);
-        unsafe {
-            InvalidateRect(hwnd, null(), 0);
-        }
+        install_windows_win32_window_draw_plan(hwnd, draw_plan);
     }
     if quit_requested && post_close_on_quit {
         approve_windows_win32_window_close(hwnd);
