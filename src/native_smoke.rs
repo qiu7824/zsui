@@ -11,6 +11,18 @@ use crate::{
     NativeUiBackendStatus, NativeUiPlatform, NativeWindowSmokeRunReport, ZsuiError, ZsuiResult,
 };
 
+/// Captures current-process memory through the selected native host.
+///
+/// Resident memory includes shared and mapped pages. Private-memory semantics
+/// follow the reported OS source; this does not trim the working set or change
+/// allocator behavior. Available only to native proof tools.
+#[cfg(feature = "native-smoke")]
+pub fn capture_native_process_memory(
+    sample_point: &'static str,
+) -> Option<crate::NativeProofProcessMemoryEvidence> {
+    crate::desktop_runtime::capture_process_memory(sample_point)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum NativeHostSmokeArtifactKind {
     ManifestJson,

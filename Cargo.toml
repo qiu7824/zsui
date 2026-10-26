@@ -228,6 +228,11 @@ path = "examples/ui_performance_minimal.rs"
 required-features = ["window", "button", "label"]
 
 [[example]]
+name = "ui_memory_lifecycle"
+path = "examples/ui_memory_lifecycle.rs"
+required-features = ["window", "button", "label", "textbox", "window-chrome", "native-smoke"]
+
+[[example]]
 name = "native_clipboard_smoke"
 path = "examples/native_clipboard_smoke.rs"
 required-features = ["clipboard"]
