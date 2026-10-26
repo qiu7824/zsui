@@ -61,9 +61,7 @@ fn window_draw_plan(hwnd: HWND) -> Option<Arc<NativeDrawPlan>> {
     window_paint_state(hwnd).map(|(plan, _)| plan)
 }
 
-fn window_paint_state(
-    hwnd: HWND,
-) -> Option<(Arc<NativeDrawPlan>, WindowsGdiResourceCache)> {
+fn window_paint_state(hwnd: HWND) -> Option<(Arc<NativeDrawPlan>, WindowsGdiResourceCache)> {
     if hwnd.is_null() {
         return None;
     }
@@ -546,10 +544,10 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
-            paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect);
+        if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &rect) {
+            paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect, Some(&mut buffered));
         } else {
-            paint_window_client_rect_to_dc(hwnd, target, rect);
+            paint_window_client_rect_to_dc(hwnd, target, rect, None);
         }
     }
 
@@ -566,7 +564,7 @@ unsafe fn paint_window_client_to_dc(
     }
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        paint_window_client_rect_to_dc(hwnd, target, rect);
+        paint_window_client_rect_to_dc(hwnd, target, rect, None);
         GdiFlush();
     }
     0
@@ -576,6 +574,7 @@ unsafe fn paint_window_client_rect_to_dc(
     hwnd: HWND,
     target: windows_sys::Win32::Graphics::Gdi::HDC,
     rect: RECT,
+    buffered: Option<&mut WindowsBufferedPaint>,
 ) {
     let paint_state = window_paint_state(hwnd);
     let draw_plan = paint_state.as_ref().map(|(plan, _)| plan.as_ref());
@@ -598,6 +597,7 @@ unsafe fn paint_window_client_rect_to_dc(
         dpi,
         draw_plan,
         resources,
+        buffered,
     );
 }
 
@@ -609,6 +609,7 @@ unsafe fn paint_win32_surface(
     dpi: crate::Dpi,
     draw_plan: Option<&NativeDrawPlan>,
     resources: WindowsGdiResourceCache,
+    buffered: Option<&mut WindowsBufferedPaint>,
 ) {
     let mut renderer = WindowsGdiRenderer::with_dpi_and_resources(dc, dpi, resources.clone());
     renderer.fill_rect(rect_from_win(rect), palette.surface);
@@ -621,7 +622,11 @@ unsafe fn paint_win32_surface(
             dpi,
             resources,
         );
-        sink.draw_native_plan(plan);
+        if let Some(buffered) = buffered {
+            sink.draw_native_plan_buffered(plan, buffered);
+        } else {
+            sink.draw_native_plan(plan);
+        }
     }
 }
 

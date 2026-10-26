@@ -16,7 +16,10 @@ mod tests {
                 (DialogResponse::Cancel, "取消"),
             ]
         );
-        assert_eq!(windows_native_dialog_response_id(DialogResponse::Yes), IDYES);
+        assert_eq!(
+            windows_native_dialog_response_id(DialogResponse::Yes),
+            IDYES
+        );
         assert_eq!(
             windows_native_dialog_response_id(DialogResponse::Cancel),
             IDCANCEL
@@ -106,10 +109,7 @@ mod tests {
 
     #[test]
     fn native_dialog_maps_typed_buttons_and_levels_to_win32_flags() {
-        assert_eq!(
-            windows_native_dialog_button_style(DialogButtons::Ok),
-            MB_OK
-        );
+        assert_eq!(windows_native_dialog_button_style(DialogButtons::Ok), MB_OK);
         assert_eq!(
             windows_native_dialog_button_style(DialogButtons::OkCancel),
             MB_OKCANCEL
@@ -461,9 +461,8 @@ mod tests {
             | WS_MINIMIZEBOX
             | WS_MAXIMIZEBOX
             | WS_THICKFRAME;
-        let (width, height) = unsafe {
-            windows_win32_outer_size_for_client_at_dpi(480, 320, style, 0, false, 96)
-        };
+        let (width, height) =
+            unsafe { windows_win32_outer_size_for_client_at_dpi(480, 320, style, 0, false, 96) };
 
         assert!(width >= 480);
         assert!(height >= 320);
@@ -482,14 +481,7 @@ mod tests {
             height: 320,
         });
         let hwnd = unsafe {
-            host.create_window(
-                WindowsWindowRole::Quick,
-                &title,
-                640,
-                420,
-                module,
-                &options,
-            )
+            host.create_window(WindowsWindowRole::Quick, &title, 640, 420, module, &options)
         };
         assert!(!hwnd.is_null());
 
@@ -755,14 +747,76 @@ mod tests {
             .resource_policy(crate::NativeWindowResourcePolicy::ReleaseViewWhenHidden);
 
         assert_eq!(route.hit_target_count(), 1);
+        #[cfg(feature = "windows-rust-text")]
+        assert!(route.text_resources.has_rust_text_resources());
         assert!(route.suspend_view_when_hidden());
         assert!(runtime.is_suspended());
         assert_eq!(route.hit_target_count(), 0);
         assert!(route.pending_draw_plan.is_none());
+        #[cfg(feature = "windows-rust-text")]
+        assert!(!route.text_resources.has_rust_text_resources());
         assert!(route.resume_view_when_visible());
         assert!(!runtime.is_suspended());
         assert_eq!(route.hit_target_count(), 1);
         assert!(route.take_pending_draw_plan().is_some());
+    }
+
+    #[test]
+    fn window_diagnostics_stay_bounded_without_losing_aggregate_counters() {
+        let mut report = WindowsWin32ViewInputDispatchReport::default();
+        for index in 0..10_000 {
+            report.merge(WindowsWin32ViewInputDispatchReport {
+                event_count: 1,
+                message_count: 1,
+                pointer_move_count: 1,
+                app_command_count: 1,
+                app_command_names: vec!["custom"],
+                ui_command_ids: vec!["custom"],
+                app_command_errors: vec![format!("error {index}")],
+                events: vec![format!("event {index}")],
+                ..Default::default()
+            });
+        }
+        assert_eq!(report.event_count, 10_000);
+        assert_eq!(report.message_count, 10_000);
+        assert_eq!(report.pointer_move_count, 10_000);
+        assert_eq!(report.app_command_count, 10_000);
+        assert_eq!(report.events.len(), WINDOWS_DIAGNOSTIC_HISTORY_LIMIT);
+        assert_eq!(report.events.first().unwrap(), WINDOWS_DIAGNOSTIC_TRUNCATED);
+        assert!(report.events.iter().any(|event| event == "event 0"));
+        assert_eq!(report.events.last().unwrap(), "event 9999");
+        assert_eq!(
+            report.app_command_errors.len(),
+            WINDOWS_DIAGNOSTIC_ERROR_LIMIT
+        );
+        assert_eq!(report.app_command_errors.last().unwrap(), "error 9999");
+        assert_eq!(
+            report.app_command_names.len(),
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT
+        );
+        assert_eq!(
+            report.ui_command_ids.len(),
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT
+        );
+    }
+
+    #[test]
+    fn window_diagnostics_drop_oversized_backing_allocations_on_utf8_boundaries() {
+        let oversized = "中文🦀".repeat(5000);
+        let mut report = WindowsWin32ViewInputDispatchReport::default();
+        report.merge(WindowsWin32ViewInputDispatchReport {
+            events: vec![oversized.clone()],
+            app_command_errors: vec![oversized],
+            ..Default::default()
+        });
+        let event = report.events.last().unwrap();
+        assert!(event.len() <= WINDOWS_DIAGNOSTIC_TEXT_BYTES);
+        assert!(event.capacity() <= WINDOWS_DIAGNOSTIC_TEXT_BYTES);
+        assert!(event.ends_with("… [truncated]"));
+        let error = report.app_command_errors.last().unwrap();
+        assert!(error.len() <= WINDOWS_DIAGNOSTIC_ERROR_BYTES);
+        assert!(error.capacity() <= WINDOWS_DIAGNOSTIC_ERROR_BYTES);
+        assert!(error.ends_with("… [truncated]"));
     }
 
     #[cfg(all(feature = "button", feature = "label"))]
@@ -931,9 +985,10 @@ mod tests {
         assert_eq!(second_focus.focus_traversal_count, 1);
         assert_eq!(second_focus.focus_visual_count, 1);
         assert_eq!(second_focus.focused_widget, Some(second.0));
-        assert!(focused_plan.commands.iter().any(
-            |command| matches!(command, crate::NativeDrawCommand::StrokeRect { width: 2, .. })
-        ));
+        assert!(focused_plan.commands.iter().any(|command| matches!(
+            command,
+            crate::NativeDrawCommand::StrokeRect { width: 2, .. }
+        )));
         assert_eq!(key.ui_command_ids, vec!["zsui.test.win32.second"]);
         assert_eq!(blur.focus_visual_count, 1);
         assert!(!blurred_plan
@@ -1231,7 +1286,10 @@ mod tests {
         let enter = dispatch_windows_win32_window_view_key_down_with_shift(hwnd, 0x0D, false)
             .expect("Enter should reach the focused editor");
         assert!(enter.handled);
-        assert_eq!(enter.ui_command_ids, vec!["zsui.test.win32.composer_submitted"]);
+        assert_eq!(
+            enter.ui_command_ids,
+            vec!["zsui.test.win32.composer_submitted"]
+        );
         // WM_CHAR delivers the carriage return after WM_KEYDOWN; it must not edit.
         let swallowed = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
             .expect("carriage return should still be routed");
@@ -1243,7 +1301,10 @@ mod tests {
         assert!(shift_enter.ui_command_ids.is_empty());
         let line_break = dispatch_windows_win32_window_view_text_input(hwnd, "\r")
             .expect("Shift+Enter carriage return should edit");
-        assert_eq!(line_break.ui_command_ids, vec!["zsui.test.win32.composer_changed"]);
+        assert_eq!(
+            line_break.ui_command_ids,
+            vec!["zsui.test.win32.composer_changed"]
+        );
         clear_windows_win32_window_view_input_route(hwnd);
     }
 
@@ -1275,20 +1336,13 @@ mod tests {
         assert!(set_windows_win32_window_view_input_route(hwnd, route));
         dispatch_windows_win32_window_view_click(hwnd, crate::Point { x: 20, y: 20 })
             .expect("registered route should focus textbox");
-        let preedit = dispatch_windows_win32_window_view_ime_preedit(
-            hwnd,
-            "临时🙂",
-            Some((2, 2)),
-        )
-        .expect("focused textbox should accept provisional IME text");
+        let preedit = dispatch_windows_win32_window_view_ime_preedit(hwnd, "临时🙂", Some((2, 2)))
+            .expect("focused textbox should accept provisional IME text");
         let cancelled = dispatch_windows_win32_window_view_ime_cancel(hwnd)
             .expect("active provisional IME text should cancel");
-        let preedit_again = dispatch_windows_win32_window_view_ime_preedit(
-            hwnd,
-            "输入🙂",
-            Some((2, 2)),
-        )
-        .expect("focused textbox should accept a second provisional string");
+        let preedit_again =
+            dispatch_windows_win32_window_view_ime_preedit(hwnd, "输入🙂", Some((2, 2)))
+                .expect("focused textbox should accept a second provisional string");
         let committed = dispatch_windows_win32_window_view_ime_commit(hwnd, "输入🙂")
             .expect("focused textbox should commit IME text");
         let aggregate = windows_win32_window_view_input_report(hwnd)
@@ -1302,7 +1356,10 @@ mod tests {
         assert_eq!(preedit_again.ime_preedit_update_count, 1);
         assert_eq!(committed.ime_commit_count, 1);
         assert_eq!(committed.message_count, 1);
-        assert_eq!(committed.ui_command_ids, vec!["zsui.test.win32.ime_changed"]);
+        assert_eq!(
+            committed.ui_command_ids,
+            vec!["zsui.test.win32.ime_changed"]
+        );
         assert_eq!(aggregate.ime_preedit_update_count, 2);
         assert_eq!(aggregate.ime_cancel_count, 1);
         assert_eq!(aggregate.ime_commit_count, 1);
@@ -2022,13 +2079,8 @@ mod tests {
         });
         route.dispatch_text_input("A中");
 
-        let selected = route.dispatch_key_down_with_all_modifiers(
-            'A' as u32,
-            false,
-            true,
-            false,
-            false,
-        );
+        let selected =
+            route.dispatch_key_down_with_all_modifiers('A' as u32, false, true, false, false);
         assert!(selected.handled);
         assert_eq!(selected.key_down_count, 1);
         assert_eq!(selected.unhandled_key_count, 0);
@@ -2036,13 +2088,8 @@ mod tests {
         assert_eq!(selected.text_selection, Some((0, 2)));
 
         route.dispatch_text_input("X");
-        let undone = route.dispatch_key_down_with_all_modifiers(
-            'Z' as u32,
-            false,
-            true,
-            false,
-            false,
-        );
+        let undone =
+            route.dispatch_key_down_with_all_modifiers('Z' as u32, false, true, false, false);
         assert!(undone.handled);
         assert_eq!(undone.key_down_count, 1);
         assert_eq!(undone.unhandled_key_count, 0);
@@ -2068,32 +2115,19 @@ mod tests {
                 bounds,
                 crate::ViewHitTargetKind::NumberBox,
             )]),
-            crate::number_box::<UiCommand>(
-                Some(12.0),
-                crate::ZsNumberRange::new(0.0, 100.0),
-            )
-            .id(widget),
+            crate::number_box::<UiCommand>(Some(12.0), crate::ZsNumberRange::new(0.0, 100.0))
+                .id(widget),
         );
         route.dispatch_click(crate::Point {
             x: bounds.x + 8,
             y: bounds.y + bounds.height / 2,
         });
 
-        let selected = route.dispatch_key_down_with_all_modifiers(
-            'A' as u32,
-            false,
-            true,
-            false,
-            false,
-        );
+        let selected =
+            route.dispatch_key_down_with_all_modifiers('A' as u32, false, true, false, false);
         route.dispatch_text_input("9.5");
-        let undone = route.dispatch_key_down_with_all_modifiers(
-            'Z' as u32,
-            false,
-            true,
-            false,
-            false,
-        );
+        let undone =
+            route.dispatch_key_down_with_all_modifiers('Z' as u32, false, true, false, false);
 
         assert!(selected.handled);
         assert_eq!(selected.text_edit_command_count, 1);
@@ -2267,11 +2301,9 @@ mod tests {
         }
 
         let widget = crate::WidgetId::new(35);
-        let mut view = crate::items_repeater(
-            20,
-            (0..20).map(|index| (index, ())),
-            |index, _| crate::spacer().id(crate::WidgetId::new(3_500 + index as u64)),
-        )
+        let mut view = crate::items_repeater(20, (0..20).map(|index| (index, ())), |index, _| {
+            crate::spacer().id(crate::WidgetId::new(3_500 + index as u64))
+        })
         .id(widget)
         .item_height(crate::Dp::new(32.0))
         .item_metric(crate::ZsItemsRepeaterItemMetric::new(
@@ -3235,9 +3267,12 @@ mod tests {
             "Discard",
             "Cancel",
         ] {
-            assert!(draw.commands.iter().any(|command| {
-                matches!(command, crate::NativeDrawCommand::Text(text) if text.text == expected)
-            }), "missing dialog text: {expected}");
+            assert!(
+                draw.commands.iter().any(|command| {
+                    matches!(command, crate::NativeDrawCommand::Text(text) if text.text == expected)
+                }),
+                "missing dialog text: {expected}"
+            );
         }
 
         let closed = route.dispatch_key_down(ZSUI_WIN32_VK_RETURN);

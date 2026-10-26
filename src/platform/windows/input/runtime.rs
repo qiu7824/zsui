@@ -105,6 +105,7 @@ impl WindowsWin32ViewInputRoute {
         if changed {
             self.pending_utf16_high_surrogate = None;
             self.pending_draw_plan = None;
+            self.text_resources.release_idle_memory();
             self.sync_shared_host_state();
         }
         changed
@@ -216,7 +217,9 @@ impl WindowsWin32ViewInputRoute {
 
     #[cfg(feature = "window-chrome")]
     fn dispatch_window_state(&mut self, maximized: bool) -> WindowsWin32ViewInputDispatchReport {
-        let report=self.shared_runtime.dispatch_window_state(crate::ZsWindowState {maximized});
+        let report = self
+            .shared_runtime
+            .dispatch_window_state(crate::ZsWindowState { maximized });
         self.adapt_shared_report(report, WindowsSharedInputKind::Background)
     }
 
@@ -509,17 +512,14 @@ impl WindowsWin32ViewInputRoute {
         }
 
         if self.pending_draw_plan.is_some() && report.live_view_revision > 0 {
-            report.events.push(format!(
+            report.push_trace(format!(
                 "win32_live_view_repaint:{}",
                 report.live_view_revision
             ));
         }
-        report.events.extend(
-            shared
-                .errors
-                .iter()
-                .map(|error| format!("win32_shared_input_error:{error}")),
-        );
+        for error in &shared.errors {
+            report.push_trace(format!("win32_shared_input_error:{error}"));
+        }
         #[cfg(feature = "text-input-core")]
         {
             report.text_edit_command_count = shared.text_edit_command_count;

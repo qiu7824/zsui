@@ -1,11 +1,11 @@
 use std::{ffi::c_void, fmt, mem::size_of, ptr::null_mut};
 
 use windows_sys::Win32::{
-    Foundation::{BOOL, HANDLE},
+    Foundation::{BOOL, HANDLE, RECT},
     Graphics::Gdi::{
-        BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush,
+        BitBlt, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GdiFlush, GetClipBox,
         SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
-        RGBQUAD, SRCCOPY,
+        NULLREGION, RGBQUAD, SRCCOPY,
     },
     UI::WindowsAndMessaging::{
         SystemParametersInfoW, FE_FONTSMOOTHINGCLEARTYPE, FE_FONTSMOOTHINGORIENTATIONBGR,
@@ -16,11 +16,14 @@ use windows_sys::Win32::{
 
 use crate::{
     rust_text_renderer::{ZsRustTextEngine, ZsTextLineMetricPolicy, ZsTextRasterProfile},
-    Size, TextRun, TextStyle,
+    Rect, Size, TextRun, TextStyle, ZsTextPixelRect,
 };
 
-/// Per-window compositor state. Font discovery and glyph allocations are lazy,
-/// and the top-down DIB grows only to the largest text box seen by this window.
+const TEXT_TILE_WIDTH: u32 = 512;
+const TEXT_TILE_HEIGHT: u32 = 64;
+
+/// Per-window compositor state. Ordinary painting borrows the final surface;
+/// arbitrary native DCs use a reusable scratch tile capped at 128 KiB.
 pub(crate) struct WindowsRustTextState {
     engine: Option<ZsRustTextEngine>,
     bitmap: Option<WindowsRustTextBitmap>,
@@ -34,6 +37,9 @@ pub(crate) struct WindowsRustTextStats {
     pub(crate) draw_attempts: u64,
     pub(crate) draw_successes: u64,
     pub(crate) fallback_count: u64,
+    pub(crate) direct_draws: u64,
+    pub(crate) bitmap_bytes: usize,
+    pub(crate) max_bitmap_bytes: usize,
 }
 
 impl Default for WindowsRustTextState {
@@ -66,6 +72,62 @@ impl fmt::Debug for WindowsRustTextState {
 }
 
 impl WindowsRustTextState {
+    #[cfg(any(feature = "windows-win32", test))]
+    pub(crate) fn release_idle_memory(&mut self) {
+        self.bitmap = None;
+        self.engine = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_retained_resources(&self) -> bool {
+        self.engine.is_some() || self.bitmap.is_some()
+    }
+
+    pub(crate) fn draw_text_buffered(
+        &mut self,
+        surface: &mut crate::windows_gdi_renderer::WindowsBufferedTextSurface<'_>,
+        clip: ZsTextPixelRect,
+        run: &TextRun,
+        style: &TextStyle,
+        dpi_scale: f32,
+    ) -> bool {
+        if run.text.is_empty() || run.bounds.width <= 0 || run.bounds.height <= 0 {
+            return false;
+        }
+        self.stats.draw_attempts = self.stats.draw_attempts.saturating_add(1);
+        let was_uninitialized = self.engine.is_none();
+        let engine = self.engine.get_or_insert_with(|| {
+            ZsRustTextEngine::new()
+                .with_line_metric_policy(ZsTextLineMetricPolicy::WindowsDirectWrite)
+        });
+        if was_uninitialized {
+            self.stats.engine_initializations = self.stats.engine_initializations.saturating_add(1);
+        }
+        let layout = engine.layout(
+            &run.text,
+            style,
+            run.bounds.width,
+            run.bounds.height,
+            dpi_scale,
+        );
+        if style.ellipsis && layout.overflows_horizontally() {
+            self.stats.fallback_count = self.stats.fallback_count.saturating_add(1);
+            return false;
+        }
+        let profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
+        if surface
+            .composite(engine, &layout, run.bounds, clip, style.color, profile)
+            .is_ok()
+        {
+            self.stats.draw_successes = self.stats.draw_successes.saturating_add(1);
+            self.stats.direct_draws = self.stats.direct_draws.saturating_add(1);
+            true
+        } else {
+            self.stats.fallback_count = self.stats.fallback_count.saturating_add(1);
+            false
+        }
+    }
+
     pub(crate) fn draw_text(
         &mut self,
         destination: HDC,
@@ -100,6 +162,9 @@ impl WindowsRustTextState {
         style: &TextStyle,
         dpi_scale: f32,
     ) -> Result<(), String> {
+        let Some(visible) = visible_text_rect(destination, run.bounds)? else {
+            return Ok(());
+        };
         let was_uninitialized = self.engine.is_none();
         let engine = self.engine.get_or_insert_with(|| {
             ZsRustTextEngine::new()
@@ -121,53 +186,72 @@ impl WindowsRustTextState {
             return Err("Rust text ellipsis is not implemented".into());
         }
 
-        let width = run.bounds.width as u32;
-        let height = run.bounds.height as u32;
-        let bitmap = ensure_bitmap(&mut self.bitmap, destination, width, height)?;
-        unsafe {
-            GdiFlush();
-            if BitBlt(
-                bitmap.dc,
-                0,
-                0,
-                width as i32,
-                height as i32,
-                destination,
-                run.bounds.x,
-                run.bounds.y,
-                SRCCOPY,
-            ) == 0
-            {
-                return Err("could not copy the native background into the Rust text DIB".into());
-            }
-        }
-        let bitmap_stride = bitmap.stride;
-        let pixels = bitmap.pixels_mut()?;
         let raster_profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
-        engine.composite_bgra(
-            &layout,
-            pixels,
-            width,
-            height,
-            bitmap_stride,
-            style.color,
-            raster_profile,
-        )?;
-        unsafe {
-            GdiFlush();
-            if BitBlt(
-                destination,
-                run.bounds.x,
-                run.bounds.y,
-                width as i32,
-                height as i32,
-                bitmap.dc,
-                0,
-                0,
-                SRCCOPY,
-            ) == 0
-            {
-                return Err("could not present the Rust text DIB".into());
+        let start_x = visible.x.saturating_sub(run.bounds.x) as u32;
+        let start_y = visible.y.saturating_sub(run.bounds.y) as u32;
+        let end_x = start_x + visible.width as u32;
+        let end_y = start_y + visible.height as u32;
+        for y in (start_y..end_y).step_by(TEXT_TILE_HEIGHT as usize) {
+            for x in (start_x..end_x).step_by(TEXT_TILE_WIDTH as usize) {
+                let width = (end_x - x).min(TEXT_TILE_WIDTH);
+                let height = (end_y - y).min(TEXT_TILE_HEIGHT);
+                let bitmap = ensure_bitmap(&mut self.bitmap, destination, width, height)?;
+                self.stats.max_bitmap_bytes = self
+                    .stats
+                    .max_bitmap_bytes
+                    .max(bitmap.stride * bitmap.height as usize);
+                let left = run.bounds.x.saturating_add(x as i32);
+                let top = run.bounds.y.saturating_add(y as i32);
+                unsafe {
+                    GdiFlush();
+                    if BitBlt(
+                        bitmap.dc,
+                        0,
+                        0,
+                        width as i32,
+                        height as i32,
+                        destination,
+                        left,
+                        top,
+                        SRCCOPY,
+                    ) == 0
+                    {
+                        return Err(
+                            "could not copy the native background into the Rust text tile".into(),
+                        );
+                    }
+                }
+                let stride = bitmap.stride;
+                let pixels = bitmap.pixels_mut()?;
+                engine.composite_bgra_clipped(
+                    &layout,
+                    pixels,
+                    width,
+                    height,
+                    stride,
+                    -(x as i32),
+                    -(y as i32),
+                    ZsTextPixelRect::full(width, height),
+                    style.color,
+                    raster_profile,
+                )?;
+                unsafe {
+                    GdiFlush();
+                    if BitBlt(
+                        destination,
+                        left,
+                        top,
+                        width as i32,
+                        height as i32,
+                        bitmap.dc,
+                        0,
+                        0,
+                        SRCCOPY,
+                    ) == 0
+                    {
+                        return Err("could not present the Rust text tile".into());
+                    }
+                }
             }
         }
         Ok(())
@@ -214,9 +298,38 @@ impl WindowsRustTextState {
         )
     }
 
-    pub(crate) const fn stats(&self) -> WindowsRustTextStats {
-        self.stats
+    pub(crate) fn stats(&self) -> WindowsRustTextStats {
+        let mut stats = self.stats;
+        stats.bitmap_bytes = self
+            .bitmap
+            .as_ref()
+            .map_or(0, |bitmap| bitmap.stride * bitmap.height as usize);
+        stats
     }
+}
+
+fn visible_text_rect(dc: HDC, bounds: Rect) -> Result<Option<Rect>, String> {
+    let mut clip = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    match unsafe { GetClipBox(dc, &mut clip) } {
+        0 => return Err("could not query the native text clip".into()),
+        NULLREGION => return Ok(None),
+        _ => {}
+    }
+    let left = bounds.x.max(clip.left);
+    let top = bounds.y.max(clip.top);
+    let right = bounds.x.saturating_add(bounds.width).min(clip.right);
+    let bottom = bounds.y.saturating_add(bounds.height).min(clip.bottom);
+    Ok((left < right && top < bottom).then_some(Rect {
+        x: left,
+        y: top,
+        width: right.saturating_sub(left),
+        height: bottom.saturating_sub(top),
+    }))
 }
 
 const fn windows_rust_text_raster_profile(
@@ -399,6 +512,9 @@ fn ensure_bitmap<'a>(
     width: u32,
     height: u32,
 ) -> Result<&'a mut WindowsRustTextBitmap, String> {
+    if width == 0 || height == 0 || width > TEXT_TILE_WIDTH || height > TEXT_TILE_HEIGHT {
+        return Err("Rust text scratch tile exceeds its fixed capacity".into());
+    }
     let required_width = bitmap
         .as_ref()
         .map_or(width, |value| value.width.max(width));
@@ -419,6 +535,10 @@ fn ensure_bitmap<'a>(
         .as_mut()
         .ok_or_else(|| "Rust text DIB was not initialized".into())
 }
+
+#[cfg(test)]
+#[path = "rust_renderer_memory_tests.rs"]
+mod memory_tests;
 
 #[cfg(test)]
 mod tests {

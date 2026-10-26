@@ -89,11 +89,17 @@ caret/selection geometry; it no longer constructs a second `FontSystem`,
 | `windows-text-proof` | DirectWrite reference plus `rust-text-proof` | PNG, JSON and SVG evidence |
 
 The Rust path does not add a WebView, DirectWrite/Direct2D application runtime
-or global control registry. Its Windows DIB grows only to the largest
-text box retained by that renderer. GDI remains the fallback for unsupported
+or global control registry. Ordinary Windows paint borrows the final buffered
+DIB for direct Rust text composition; other DCs and complex clips use a
+scratch tile capped at 128 KiB. GDI remains the fallback for unsupported
 overflowing ellipsis behavior. The platform adapter selects the Windows
 line-metric policy; other platforms must not inherit Windows typography
 conventions merely because they reuse the portable engine.
+
+Windows `release_view_when_hidden()` also drops renderer text and GDI caches;
+they initialize lazily after restoration. Whole-frame buffered presentation
+remains intact. [Memory ownership](memory-ownership.md) describes the measured
+lifecycle, per-window ownership and constraints on further cache sharing.
 
 Backends may composite a retained layout directly into a larger BGRA software
 surface with a physical origin and clip. This path reuses the glyph cache and
@@ -209,8 +215,9 @@ semibold cases where DirectWrite and fontdb choose different CJK/fallback
 physical faces; matched advances differ by at most 0.001 px. Maximum pixel
 difference is 9.17%, and the largest matched-origin delta is 5.342 px after the
 different fallback face changes earlier advances. These numbers are development
-evidence, not production telemetry or a completion claim, and the Rust backend
-must not replace DirectWrite by default yet.
+evidence, not production telemetry or a completion claim. Windows currently
+selects the Rust backend by default; DirectWrite remains the independent proof
+oracle, and these five cases remain explicit gaps rather than parity claims.
 
 ## Font matching rule
 

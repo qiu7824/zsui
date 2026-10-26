@@ -37,6 +37,12 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::SystemParametersInfoW,
 };
 
+#[cfg(feature = "windows-rust-text")]
+use windows_sys::Win32::Graphics::Gdi::{
+    DPtoLP, GetClipBox, GetGraphicsMode, GetLayout, GetMapMode, GM_COMPATIBLE, LAYOUT_RTL, MM_TEXT,
+    NULLREGION, RGBQUAD, SIMPLEREGION,
+};
+
 #[allow(non_camel_case_types)]
 type HPAINTBUFFER = *mut c_void;
 
@@ -111,6 +117,12 @@ unsafe extern "system" {
         phdc: *mut HDC,
     ) -> HPAINTBUFFER;
     fn EndBufferedPaint(hBufferedPaint: HPAINTBUFFER, fUpdateTarget: i32) -> i32;
+    #[cfg(feature = "windows-rust-text")]
+    fn GetBufferedPaintBits(
+        hBufferedPaint: HPAINTBUFFER,
+        ppbBuffer: *mut *mut RGBQUAD,
+        pcxRow: *mut i32,
+    ) -> i32;
 }
 
 const TRANSPARENT: i32 = 1;
@@ -302,6 +314,8 @@ pub struct WindowsBufferedPaint {
     buffer: HPAINTBUFFER,
     dc: HDC,
     update_target: bool,
+    #[cfg(feature = "windows-rust-text")]
+    rect: RECT,
 }
 
 impl WindowsBufferedPaint {
@@ -316,6 +330,8 @@ impl WindowsBufferedPaint {
                 buffer,
                 dc: paint_dc,
                 update_target: true,
+                #[cfg(feature = "windows-rust-text")]
+                rect: *rect,
             })
         }
     }
@@ -326,6 +342,122 @@ impl WindowsBufferedPaint {
 
     pub fn set_update_target(&mut self, update_target: bool) {
         self.update_target = update_target;
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn text_surface(&mut self) -> Option<WindowsBufferedTextSurface<'_>> {
+        let width = u32::try_from(self.rect.right.checked_sub(self.rect.left)?).ok()?;
+        let height = u32::try_from(self.rect.bottom.checked_sub(self.rect.top)?).ok()?;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let mut bits = std::ptr::null_mut();
+        let mut row_pixels = 0;
+        let mut origin = POINT { x: 0, y: 0 };
+        unsafe {
+            if GetMapMode(self.dc) != MM_TEXT
+                || GetGraphicsMode(self.dc) != GM_COMPATIBLE
+                || GetLayout(self.dc) & LAYOUT_RTL != 0
+                || DPtoLP(self.dc, &mut origin, 1) == 0
+                || GetBufferedPaintBits(self.buffer, &mut bits, &mut row_pixels) != 0
+            {
+                return None;
+            }
+        }
+        let row_pixels = usize::try_from(row_pixels).ok()?;
+        if bits.is_null() || row_pixels < width as usize {
+            return None;
+        }
+        let stride = row_pixels.checked_mul(4)?;
+        let len = stride.checked_mul(height as usize)?;
+        if len > isize::MAX as usize {
+            return None;
+        }
+        Some(WindowsBufferedTextSurface {
+            dc: self.dc,
+            bits: bits.cast(),
+            width,
+            height,
+            stride,
+            len,
+            origin,
+            _paint: std::marker::PhantomData,
+        })
+    }
+}
+
+/// A scoped borrow of the final top-down paint buffer; it cannot outlive or
+/// overlap another borrow of the owner that calls EndBufferedPaint.
+#[cfg(feature = "windows-rust-text")]
+pub(crate) struct WindowsBufferedTextSurface<'paint> {
+    dc: HDC,
+    bits: *mut u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    len: usize,
+    origin: POINT,
+    _paint: std::marker::PhantomData<&'paint mut WindowsBufferedPaint>,
+}
+
+#[cfg(feature = "windows-rust-text")]
+impl WindowsBufferedTextSurface<'_> {
+    fn clip(&self, bounds: Rect) -> Option<crate::ZsTextPixelRect> {
+        let mut clip = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        match unsafe { GetClipBox(self.dc, &mut clip) } {
+            NULLREGION => Some(crate::ZsTextPixelRect::full(0, 0)),
+            SIMPLEREGION => {
+                let left = clip.left.max(bounds.x);
+                let top = clip.top.max(bounds.y);
+                let right = clip.right.min(bounds.x.saturating_add(bounds.width));
+                let bottom = clip.bottom.min(bounds.y.saturating_add(bounds.height));
+                Some(crate::ZsTextPixelRect::new(
+                    left.saturating_sub(self.origin.x),
+                    top.saturating_sub(self.origin.y),
+                    right.saturating_sub(left).max(0) as u32,
+                    bottom.saturating_sub(top).max(0) as u32,
+                ))
+            }
+            // GDI retains nonrectangular clipping in the bounded fallback.
+            _ => None,
+        }
+    }
+
+    pub(crate) fn composite(
+        &mut self,
+        engine: &mut crate::ZsRustTextEngine,
+        layout: &crate::ZsRustTextLayout,
+        bounds: Rect,
+        clip: crate::ZsTextPixelRect,
+        color: Color,
+        profile: crate::ZsTextRasterProfile,
+    ) -> Result<(), String> {
+        unsafe {
+            GdiFlush();
+        }
+        // SAFETY: GetBufferedPaintBits returned this 32-bit top-down DIB.
+        // The owner borrow keeps the buffer alive and exclusive. GDI work is
+        // flushed before this short slice borrow, and the pure Rust compositor
+        // performs no GDI calls while the slice exists. Native drawing resumes
+        // only after it has returned.
+        let pixels = unsafe { std::slice::from_raw_parts_mut(self.bits, self.len) };
+        engine.composite_bgra_clipped(
+            layout,
+            pixels,
+            self.width,
+            self.height,
+            self.stride,
+            bounds.x.saturating_sub(self.origin.x),
+            bounds.y.saturating_sub(self.origin.y),
+            clip,
+            color,
+            profile,
+        )
     }
 }
 
@@ -625,6 +757,35 @@ pub(crate) struct WindowsGdiResourceCache {
 }
 
 impl WindowsGdiResourceCache {
+    #[cfg(feature = "windows-win32")]
+    pub(crate) fn release_idle_memory(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.fonts = HashMap::new();
+            entries.brushes = HashMap::new();
+            entries.pens = HashMap::new();
+            #[cfg(feature = "windows-rust-text")]
+            entries.rust_text.release_idle_memory();
+            #[cfg(feature = "windows-directwrite")]
+            {
+                entries.directwrite = Default::default();
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "windows-rust-text", feature = "windows-win32"))]
+    pub(crate) fn has_rust_text_resources(&self) -> bool {
+        self.entries
+            .lock()
+            .unwrap()
+            .rust_text
+            .has_retained_resources()
+    }
+
+    #[cfg(all(test, feature = "windows-rust-text"))]
+    pub(crate) fn rust_text_snapshot(&self) -> crate::windows_rust_text::WindowsRustTextStats {
+        self.entries.lock().unwrap().rust_text.stats()
+    }
+
     /// Whether both handles refer to the same renderer resources.
     #[cfg(test)]
     pub(crate) fn shares_with(&self, other: &Self) -> bool {
@@ -687,6 +848,22 @@ impl WindowsGdiResourceCache {
             .expect("Windows GDI resource cache should not be poisoned")
             .rust_text
             .draw_text(dc, run, style, dpi_scale)
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn draw_rust_text_buffered(
+        &self,
+        surface: &mut WindowsBufferedTextSurface<'_>,
+        clip: crate::ZsTextPixelRect,
+        run: &TextRun,
+        style: &TextStyle,
+        dpi_scale: f32,
+    ) -> bool {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .rust_text
+            .draw_text_buffered(surface, clip, run, style, dpi_scale)
     }
 
     #[cfg(feature = "windows-rust-text")]
@@ -1646,6 +1823,27 @@ impl WindowsGdiDrawSink {
         self.draw_plan(plan);
     }
 
+    pub(crate) fn draw_native_plan_buffered(
+        &mut self,
+        plan: &NativeDrawPlan,
+        paint: &mut WindowsBufferedPaint,
+    ) {
+        #[cfg(feature = "windows-rust-text")]
+        if self.hdc() == paint.hdc() {
+            if let Some(surface) = paint.text_surface() {
+                WindowsBufferedDrawSink {
+                    sink: self,
+                    surface,
+                }
+                .draw_plan(plan);
+                return;
+            }
+        }
+        #[cfg(not(feature = "windows-rust-text"))]
+        let _ = paint;
+        self.draw_plan(plan);
+    }
+
     fn draw_round_rect(
         &mut self,
         rect: Rect,
@@ -1713,6 +1911,38 @@ impl WindowsGdiDrawSink {
             text: command.text.clone(),
             bounds: command.bounds,
         };
+        self.renderer.draw_text(&run, &style);
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn draw_text_command_buffered(
+        &mut self,
+        command: &NativeDrawTextCommand,
+        surface: &mut WindowsBufferedTextSurface<'_>,
+    ) {
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.high_contrast) {
+            style.color = color;
+        }
+        command.apply_size_override(&mut style);
+        let run = TextRun {
+            text: command.text.clone(),
+            bounds: command.bounds,
+        };
+        if let Some(clip) = surface.clip(run.bounds) {
+            if clip.width == 0
+                || clip.height == 0
+                || self.renderer.resources.draw_rust_text_buffered(
+                    surface,
+                    clip,
+                    &run,
+                    &style,
+                    self.renderer.dpi_scale,
+                )
+            {
+                return;
+            }
+        }
         self.renderer.draw_text(&run, &style);
     }
 
@@ -2091,6 +2321,35 @@ fn windows_gdi_font_family_available(dc: HDC, family: &str) -> bool {
         .position(|value| *value == 0)
         .unwrap_or(selected_family.len());
     String::from_utf16_lossy(&selected_family[..end]).eq_ignore_ascii_case(family)
+}
+
+#[cfg(feature = "windows-rust-text")]
+struct WindowsBufferedDrawSink<'sink, 'paint> {
+    sink: &'sink mut WindowsGdiDrawSink,
+    surface: WindowsBufferedTextSurface<'paint>,
+}
+
+#[cfg(feature = "windows-rust-text")]
+impl NativeDrawCommandSink for WindowsBufferedDrawSink<'_, '_> {
+    fn draw_command(&mut self, command: &NativeDrawCommand) {
+        match command {
+            NativeDrawCommand::Text(text) => {
+                self.sink.operation_log.push(command.operation());
+                self.sink
+                    .draw_text_command_buffered(text, &mut self.surface);
+            }
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(text) => {
+                self.sink.operation_log.push(command.operation());
+                let rendered = text.rendered_text();
+                self.sink.draw_text_command_buffered(
+                    &NativeDrawTextCommand::new(rendered.as_str(), text.bounds, text.style),
+                    &mut self.surface,
+                );
+            }
+            _ => self.sink.draw_command(command),
+        }
+    }
 }
 
 impl NativeDrawCommandSink for WindowsGdiDrawSink {

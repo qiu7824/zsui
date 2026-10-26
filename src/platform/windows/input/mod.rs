@@ -199,6 +199,8 @@ impl WindowsWin32ViewInputRoute {
     }
 }
 
+/// Aggregate input counters with bounded first/recent diagnostic histories.
+/// Truncation is explicit in `events`; it never changes dispatch or counters.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WindowsWin32ViewInputDispatchReport {
     pub handled: bool,
@@ -332,11 +334,94 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub unhandled_key_count: usize,
     pub scroll_count: usize,
     pub unhandled_scroll_count: usize,
+    /// Bounded first/recent diagnostics; aggregate counters retain all input.
     pub events: Vec<String>,
 }
 
+const WINDOWS_DIAGNOSTIC_HISTORY_LIMIT: usize = 256;
+const WINDOWS_DIAGNOSTIC_ERROR_LIMIT: usize = 64;
+const WINDOWS_DIAGNOSTIC_TEXT_BYTES: usize = 512;
+const WINDOWS_DIAGNOSTIC_ERROR_BYTES: usize = 4096;
+const WINDOWS_DIAGNOSTIC_TRUNCATED: &str = "win32_diagnostics:history_truncated";
+
+fn retain_windows_diagnostic_history<T>(
+    history: &mut Vec<T>,
+    incoming: impl IntoIterator<Item = T>,
+    limit: usize,
+) -> bool {
+    let mut truncated = false;
+    let prefix = (limit / 4).min(32);
+    for value in incoming {
+        if history.len() >= limit {
+            let excess = history.len() + 1 - limit;
+            history.drain(prefix..prefix + excess);
+            truncated = true;
+        }
+        history.push(value);
+    }
+    truncated
+}
+
+fn retain_windows_text_history(
+    history: &mut Vec<String>,
+    incoming: impl IntoIterator<Item = String>,
+    limit: usize,
+    byte_limit: usize,
+) -> bool {
+    const SUFFIX: &str = "… [truncated]";
+    let mut shortened = false;
+    let truncated = retain_windows_diagnostic_history(
+        history,
+        incoming.into_iter().map(|text| {
+            if text.len() <= byte_limit {
+                return text;
+            }
+            let mut end = byte_limit.saturating_sub(SUFFIX.len());
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            // A new bounded allocation drops the original capacity as well as the
+            // excess text; String::truncate alone would retain the large buffer.
+            let mut bounded = String::with_capacity(end + SUFFIX.len());
+            bounded.push_str(&text[..end]);
+            bounded.push_str(SUFFIX);
+            shortened = true;
+            bounded
+        }),
+        limit,
+    );
+    truncated || shortened
+}
+
 impl WindowsWin32ViewInputDispatchReport {
+    fn mark_history_truncated(&mut self) {
+        if self
+            .events
+            .first()
+            .is_some_and(|event| event == WINDOWS_DIAGNOSTIC_TRUNCATED)
+        {
+            return;
+        }
+        if self.events.len() >= WINDOWS_DIAGNOSTIC_HISTORY_LIMIT {
+            self.events.remove(32);
+        }
+        self.events
+            .insert(0, WINDOWS_DIAGNOSTIC_TRUNCATED.to_owned());
+    }
+
+    fn push_trace(&mut self, event: String) {
+        if retain_windows_text_history(
+            &mut self.events,
+            [event],
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT,
+            WINDOWS_DIAGNOSTIC_TEXT_BYTES,
+        ) {
+            self.mark_history_truncated();
+        }
+    }
+
     fn merge(&mut self, next: WindowsWin32ViewInputDispatchReport) {
+        let mut history_truncated = false;
         self.handled |= next.handled;
         self.window_close_request_count += next.window_close_request_count;
         self.window_close_veto_count += next.window_close_veto_count;
@@ -356,21 +441,45 @@ impl WindowsWin32ViewInputDispatchReport {
         self.ui_command_failed_count += next.ui_command_failed_count;
         self.ui_command_unhandled_count += next.ui_command_unhandled_count;
         self.ui_command_event_count += next.ui_command_event_count;
-        self.ui_command_errors.extend(next.ui_command_errors);
+        history_truncated |= retain_windows_text_history(
+            &mut self.ui_command_errors,
+            next.ui_command_errors,
+            WINDOWS_DIAGNOSTIC_ERROR_LIMIT,
+            WINDOWS_DIAGNOSTIC_ERROR_BYTES,
+        );
         self.app_command_count += next.app_command_count;
         self.app_command_executed_count += next.app_command_executed_count;
         self.app_command_failed_count += next.app_command_failed_count;
         self.app_command_unhandled_count += next.app_command_unhandled_count;
         self.app_command_event_count += next.app_command_event_count;
-        self.app_command_names.extend(next.app_command_names);
-        self.app_command_errors.extend(next.app_command_errors);
-        self.ui_command_ids.extend(next.ui_command_ids);
+        history_truncated |= retain_windows_diagnostic_history(
+            &mut self.app_command_names,
+            next.app_command_names,
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT,
+        );
+        history_truncated |= retain_windows_text_history(
+            &mut self.app_command_errors,
+            next.app_command_errors,
+            WINDOWS_DIAGNOSTIC_ERROR_LIMIT,
+            WINDOWS_DIAGNOSTIC_ERROR_BYTES,
+        );
+        history_truncated |= retain_windows_diagnostic_history(
+            &mut self.ui_command_ids,
+            next.ui_command_ids,
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT,
+        );
         self.live_view_revision = self.live_view_revision.max(next.live_view_revision);
         self.background_refresh_count += next.background_refresh_count;
         self.surface_change_count += next.surface_change_count;
         self.quit_requested |= next.quit_requested;
         #[cfg(feature = "window-chrome")]
-        self.window_commands.extend(next.window_commands);
+        {
+            history_truncated |= retain_windows_diagnostic_history(
+                &mut self.window_commands,
+                next.window_commands,
+                WINDOWS_DIAGNOSTIC_HISTORY_LIMIT,
+            );
+        }
         self.unhandled_click_count += next.unhandled_click_count;
         self.focus_count += next.focus_count;
         self.focus_visual_count += next.focus_visual_count;
@@ -378,8 +487,11 @@ impl WindowsWin32ViewInputDispatchReport {
         self.focus_traversal_count += next.focus_traversal_count;
         self.text_input_count += next.text_input_count;
         self.text_navigation_count += next.text_navigation_count;
-        self.text_navigation_evidence
-            .extend(next.text_navigation_evidence);
+        history_truncated |= retain_windows_diagnostic_history(
+            &mut self.text_navigation_evidence,
+            next.text_navigation_evidence,
+            WINDOWS_DIAGNOSTIC_HISTORY_LIMIT,
+        );
         self.text_selection_change_count += next.text_selection_change_count;
         self.text_selection = next.text_selection.or(self.text_selection);
         self.text_caret = next.text_caret.or(self.text_caret);
@@ -396,8 +508,12 @@ impl WindowsWin32ViewInputDispatchReport {
             self.text_clipboard_read_count += next.text_clipboard_read_count;
             self.text_clipboard_write_count += next.text_clipboard_write_count;
             self.text_undo_count += next.text_undo_count;
-            self.text_edit_command_errors
-                .extend(next.text_edit_command_errors);
+            history_truncated |= retain_windows_text_history(
+                &mut self.text_edit_command_errors,
+                next.text_edit_command_errors,
+                WINDOWS_DIAGNOSTIC_ERROR_LIMIT,
+                WINDOWS_DIAGNOSTIC_ERROR_BYTES,
+            );
         }
         self.text_drag_count += next.text_drag_count;
         self.text_drag_scroll_count += next.text_drag_scroll_count;
@@ -468,7 +584,12 @@ impl WindowsWin32ViewInputDispatchReport {
         self.unhandled_key_count += next.unhandled_key_count;
         self.scroll_count += next.scroll_count;
         self.unhandled_scroll_count += next.unhandled_scroll_count;
-        self.events.extend(next.events);
+        for event in next.events {
+            self.push_trace(event);
+        }
+        if history_truncated {
+            self.mark_history_truncated();
+        }
     }
 }
 pub fn set_windows_win32_window_view_input_route(
@@ -846,7 +967,7 @@ pub fn refresh_windows_win32_window_live_view_surface(hwnd: HWND) -> bool {
             return true;
         }
         record.report.surface_change_count = record.report.surface_change_count.saturating_add(1);
-        record.report.events.push(format!(
+        record.report.push_trace(format!(
             "win32_native_surface_resized:{}x{}",
             bounds.width, bounds.height
         ));
@@ -1400,13 +1521,24 @@ fn post_windows_win32_window_commands(hwnd: HWND, commands: &[crate::ZsWindowCom
                 continue;
             }
             crate::ZsWindowCommand::Hide => {
-                unsafe { ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE); }
+                unsafe {
+                    ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE);
+                }
                 continue;
             }
             crate::ZsWindowCommand::Show => {
                 unsafe {
-                    use windows_sys::Win32::UI::WindowsAndMessaging::{IsIconic, SW_RESTORE, SW_SHOW, SetForegroundWindow};
-                    ShowWindow(hwnd, if IsIconic(hwnd) != 0 { SW_RESTORE } else { SW_SHOW });
+                    use windows_sys::Win32::UI::WindowsAndMessaging::{
+                        IsIconic, SetForegroundWindow, SW_RESTORE, SW_SHOW,
+                    };
+                    ShowWindow(
+                        hwnd,
+                        if IsIconic(hwnd) != 0 {
+                            SW_RESTORE
+                        } else {
+                            SW_SHOW
+                        },
+                    );
                     SetForegroundWindow(hwnd);
                 }
                 continue;
@@ -1475,7 +1607,7 @@ fn dispatch_windows_win32_window_close_requested(
     )?;
     if report.handled && !report.quit_requested {
         report.window_close_veto_count = 1;
-        report.events.push("win32_window_close_vetoed".to_string());
+        report.push_trace("win32_window_close_vetoed".to_string());
         let hwnd_value = hwnd as isize;
         if let Some(record) = window_view_input_routes()
             .lock()

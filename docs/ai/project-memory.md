@@ -1591,6 +1591,12 @@ history remain authoritative for implementation status.
   LayerTree composition. Treat this as a migration contract, not a completed
   capability, until concrete types, dirty-subtree tests and target evidence
   exist.
+- Memory ownership follows `docs/memory-ownership.md`: ordinary Windows text
+  borrows the final buffered-paint surface, arbitrary DCs use a bounded scratch
+  tile, and opt-in hidden View release drops renderer resources lazily rebuilt
+  on restoration. Preserve whole-frame no-flicker presentation. Cache caps are
+  not a process memory cap; retain exact text geometry and safe UIA snapshots
+  or synchronization before adopting shared mutable text contexts or arenas.
 - Use the current repository and generated evidence for progress numbers; do
   not copy stale counts or completion claims into this memory.
 - Performance claims use four independent release workloads: Minimal, Common,
