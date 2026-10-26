@@ -65,6 +65,31 @@ jobs:
             comparisons/scripts/macos_window_probe.swift \
             -o target/ui-performance-matrix/tools/macos-window-probe
 
+      - name: Verify native macOS measurement lifecycle
+        run: |
+          swiftc -O comparisons/scripts/macos_lifecycle_fixture.swift \
+            -o target/ui-performance-matrix/tools/macos-lifecycle-fixture
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "comparisons/scripts")
+          import measure_unix_performance_matrix as matrix
+          root = Path("target/ui-performance-matrix").resolve()
+          application = {
+              "framework": "fixture", "profile": "minimal",
+              "executable": str(root / "tools/macos-lifecycle-fixture"),
+              "working_directory": str(Path.cwd()), "arguments": [],
+          }
+          matrix.bundle_macos_application(application, root / "lifecycle-preflight")
+          probe = root / "tools/macos-window-probe"
+          launch = matrix.launch_application(application, "macos", probe)
+          try:
+              matrix.hide_application(launch, "macos", probe)
+              print("Native macOS launch/hide lifecycle passed")
+          finally:
+              matrix.stop_process(launch.process, "macos")
+          PY
+
       - name: Build 20 release matrix applications
         run: bash comparisons/scripts/build_unix_performance_matrix.sh
 

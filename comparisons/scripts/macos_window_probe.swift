@@ -115,6 +115,11 @@ case "hide":
     if arguments.count == 3 && application.launchDate.map({ String($0.timeIntervalSince1970) }) != arguments[2] {
         fail("application identity changed before hide")
     }
+    // Register this short-lived controller with AppKit before sending an
+    // application-management request; Foundation-only tools have no NSApp.
+    let controller = NSApplication.shared
+    controller.setActivationPolicy(.accessory)
+    controller.finishLaunching()
     guard application.activate(options: [.activateAllWindows, .activateIgnoringOtherApps]) else {
         fail("NSRunningApplication rejected activation")
     }
@@ -126,7 +131,7 @@ case "hide":
         fail("NSRunningApplication did not become active before hide")
     }
     guard application.hide() else {
-        fail("NSRunningApplication rejected hide")
+        fail("NSRunningApplication rejected hide: pid=\(processId), policy=\(application.activationPolicy.rawValue), active=\(application.isActive), hidden=\(application.isHidden), terminated=\(application.isTerminated), launched=\(application.isFinishedLaunching), bundle=\(application.bundleURL?.path ?? "none"), controllerPolicy=\(NSRunningApplication.current.activationPolicy.rawValue)")
     }
     for _ in 0..<40 {
         if visibleWindows(processIds: [Int(processId)]).isEmpty {
