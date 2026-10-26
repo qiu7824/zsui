@@ -151,6 +151,9 @@ typed invalidation/command channel.
 
 ## Budget model and rollout gates
 
+The [memory and stability execution plan](memory-stability-plan.md) fixes the
+comparison baseline, stage scope, measurement protocol and acceptance gates.
+
 Total memory is the sum of shared font data, per-window state, retained text,
 bounded caches, native surfaces, frame scratch and allocator/runtime costs.
 Some terms depend on window count, DPI, visible content or surface dimensions.
