@@ -18,7 +18,7 @@ class DuckDBRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.target = Path(self.temporary.name) / "target"
+        self.target = (Path(self.temporary.name) / "target").resolve()
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             for name in ("duckdb.h", "duckdb.lib", "duckdb.dll"):
