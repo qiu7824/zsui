@@ -2,1027 +2,292 @@
 
 # ZSUI
 
-**Rust-first 的轻量原生 UI 框架**
+**Rust 原生桌面 UI 框架**
 
-用组合与 trait 构建界面，用强类型消息驱动状态；控件、服务和平台后端按 Cargo feature 进入编译。
+用同一份 Rust 状态、消息和界面声明构建 Windows、macOS 与 Linux 应用。
 
+[![crates.io](https://img.shields.io/crates/v/zsui?include_prereleases)](https://crates.io/crates/zsui)
+[![Docs](https://docs.rs/zsui/badge.svg)](https://docs.rs/zsui)
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
-![Version](https://img.shields.io/badge/version-0.3.0--alpha.1-2f6fdf)
-[![License](https://img.shields.io/github/license/qiu7824/zsui)](LICENSE)
-![Core](https://img.shields.io/badge/core-Rust-dea584)
-![Windows](https://img.shields.io/badge/Windows-Win32%20%2F%20GDI%2B-0078d4)
-![Build](https://img.shields.io/badge/build-feature--gated-0f7b0f)
+[![License](https://img.shields.io/github/license/qiu7824/zsui)](https://github.com/qiu7824/zsui/blob/main/LICENSE)
 
-<a href="README.md"><strong>简体中文</strong></a>
-&nbsp;&nbsp;·&nbsp;&nbsp;
-<a href="README.en.md">English</a>
-
-<p>
-  <strong>由 Codex × GPT-5.6 协作构建</strong><br>
-  从代码库分析与 Rust 实现，到测试验证、跨平台审查和发布，Codex 与 GPT-5.6 贯穿 ZSUI 的工程闭环。<br>
-  每项变更仍以编译结果、自动化测试和目标平台证据为准。
-</p>
+[简体中文](https://github.com/qiu7824/zsui/blob/main/README.md) · [English](https://github.com/qiu7824/zsui/blob/main/README.en.md)
 
 </div>
 
-## 同一份源码，三平台真实界面
+ZSUI 使用真实的系统窗口和平台服务，在窗口内绘制由框架管理的控件。
+应用通过 `State → view → Msg → update` 更新界面，平台后端负责窗口事件、
+文字、绘制、输入法和系统集成。当前版本为 **`0.3.0-alpha.2`**，属于预发布版本。
 
-普通应用只写一份 `State / Msg / view / update` 和语义组件声明。框架内部再分别选择
-Win32、AppKit 与 Linux 的组合规则、文字栈、渲染器、窗口宿主和系统服务；应用层
-不传平台枚举、不选择渲染器，也不维护三份 View 树。
+[快速开始](#快速开始) · [Cargo features](#cargo-features) · [平台能力](#平台与能力边界) · [示例](#运行示例) · [文档](#文档导航)
+
+## 能力概览
+
+- **一份应用代码**：共享状态、消息、布局和组件声明，使用 Win32、AppKit 或 Linux 原生宿主。
+- **按需编译**：控件、系统服务和后端通过 Cargo feature 选择，默认启用 `window`、`button` 和 `label`。
+- **显式状态与身份**：类型化消息、强类型 ID、受控输入和稳定的组件身份。
+- **平台视觉**：语义主题、系统字体、图标、DPI 和平台组件参数共同决定最终界面。
+- **开发与发布两条路径**：直接编写 Rust View，或使用可校验、可热重载、可嵌入的 UI 文档。
+- **真实窗口验证**：CI 运行目标平台应用，保留最终窗口截图及布局、输入、焦点等结构化报告。
+
+组件目录包含 **47 个组件家族的运行实现**。各组件的交互、辅助功能和平台覆盖
+仍有差异，具体范围见[组件目录](https://github.com/qiu7824/zsui/blob/main/src/component_catalog.rs)。
+
+## 界面预览
+
+Gallery 在三个桌面平台上的实际窗口截图：
 
 <table>
-  <tr><th>Windows · Win32</th></tr>
+  <tr><th>Windows · Win32</th><th>macOS · AppKit</th><th>Linux · X11</th></tr>
   <tr>
-    <td><img src="docs/images/component-gallery-preview7-windows.png" alt="Windows Win32 component gallery inputs" width="100%"></td>
-  </tr>
-  <tr>
-    <td align="center">Fluent 导航与卡片</td>
-  </tr>
-  <tr><th>macOS 15 · AppKit</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit component gallery inputs" width="100%"></td>
-  </tr>
-  <tr>
-    <td align="center">AppKit source list 与表单节奏</td>
-  </tr>
-  <tr><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux component gallery inputs" width="100%"></td>
-  </tr>
-  <tr>
-    <td align="center">Linux sidebar 与 boxed rows</td>
+    <td><img src="https://raw.githubusercontent.com/qiu7824/zsui/main/docs/images/component-gallery-preview7-windows.png" alt="Windows Win32 组件界面" width="320"></td>
+    <td><img src="https://raw.githubusercontent.com/qiu7824/zsui/main/docs/platform-proof/macos/gallery-inputs-light.png" alt="macOS AppKit 组件界面" width="320"></td>
+    <td><img src="https://raw.githubusercontent.com/qiu7824/zsui/main/docs/platform-proof/linux/gallery-inputs-light.png" alt="Linux X11 组件界面" width="320"></td>
   </tr>
 </table>
 
-上图是同一套 Gallery 语义声明产生的实际窗口截图，不是把 Windows 皮肤换色后复用。
-Windows 图为本机 Win32 最终缓冲表面；macOS 图来自 `macos-15` Runner 的最终
-`NSView`；Linux 图来自 Ubuntu 24.04 X11 的最终 Softbuffer 表面。Windows Gallery
-与 Linux Gallery 使用 1180×780，macOS Gallery 使用 1024×640，因此这里比较
-平台组合与组件风格，不是逐像素基准。
+截图展示各平台的组件布局与视觉；窗口尺寸不同，逐像素比较应使用固定场景的验证报告。
+更多记事本、计算器、组件与框架对比图见[示例图库](https://github.com/qiu7824/zsui/blob/main/docs/gallery.md)。
 
-<details>
-<summary><b>展开同一 Notepad 交互场景与 Linux 双渲染配置</b></summary>
+## 快速开始
 
-<h4>同一窗口规格的未保存确认场景</h4>
-<table>
-  <tr><th>Windows · Win32</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/windows/notepad-interaction.png" alt="Windows Win32 notepad interaction" width="100%"></td>
-  </tr>
-  <tr><th>macOS 15 · AppKit</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/macos/notepad-interaction.png" alt="macOS AppKit notepad interaction" width="100%"></td>
-  </tr>
-  <tr><th>Ubuntu 24.04 · Linux</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux notepad interaction" width="100%"></td>
-  </tr>
-</table>
+在 Rust 二进制项目的 `Cargo.toml` 中添加：
 
-三张图由同一个 `examples/zsui_notepad.rs` 场景驱动，均完成输入、选择、撤销、
-滚动、关闭请求和未保存拦截；对话框动作顺序、工具栏、标签页、字体与窗口表面由
-各平台规则决定。对应结构化 JSON 与图片一起保存在 `docs/platform-proof/`。
+```toml
+[dependencies]
+zsui = "0.3.0-alpha.2"
+```
 
-<h4>Linux 默认文字栈与纯 Rust 可裁剪配置</h4>
-<table>
-  <tr><th>Cairo + Pango</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction.png" alt="Linux Cairo Pango notepad proof" width="100%"></td>
-  </tr>
-  <tr><th>tiny-skia + pure Rust text（统一上下文前的历史证据）</th></tr>
-  <tr>
-    <td><img src="docs/platform-proof/linux/notepad-interaction-lite.png" alt="Linux pure Rust historical notepad proof before shared ZSUI text context" width="100%"></td>
-  </tr>
-</table>
-
-两种 Linux 配置复用完全相同的应用代码和平台体验层，只替换框架内部的文字与
-光栅 profile。纯 Rust 配置的测量、绘制、菜单和输入几何现在共享同一个有界
-ZSUI 文字上下文。迁移前的 5 次采样中，纯 Rust 配置中位 RSS 为 15.77 MiB，默认
-配置为 25.32 MiB；完整测量见
-[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)。
-该行是历史基线，统一上下文后的数字必须由新一次相同场景测量更新。
-
-可选 `rust-text` 不是单字体替换层：它保留 UTF-8 字簇、字形推进、换行尾空格、段落
-基线、GPOS 配对和合成字重，并让测量、绘制、光标、选择与 IME 读取同一个有界布局。
-JSON、SVG、PNG 与像素比较只存在于开发期 proof feature，不进入普通应用。当前 Windows
-多字体 DirectWrite 对照为 61/66 组几何通过，剩余差异集中在物理回退字体选择；完整边界
-与验收数据见[文字渲染](docs/text-rendering.md)。
-
-</details>
-
-这些目标机证据由
-[Native UI Proof](https://github.com/qiu7824/zsui/actions/workflows/native-proof.yml)
-持续生成；共享 `DrawPlan` 图片不能替代最终平台表面截图。
-
-<table>
-  <tr>
-    <td width="68%"><img src="docs/images/notepad.png" alt="ZSUI 记事本"></td>
-    <td width="32%"><img src="docs/images/calculator.png" alt="ZSUI 计算器"></td>
-  </tr>
-  <tr>
-    <td align="center">现代文档外壳 + 原生文本服务</td>
-    <td align="center">现代标准计算器</td>
-  </tr>
-</table>
-
-<p align="center"><a href="docs/gallery.md"><b>查看完整 Demo 与对比图库</b></a></p>
-
-<details>
-<summary><b>展开 ZSUI / egui / Iced / Slint / Tauri 2 / Windows 对比图</b></summary>
-
-<h4>记事本</h4>
-<table>
-  <tr><th>ZSUI</th><th>Iced</th><th>Slint</th></tr>
-  <tr>
-    <td><img src="docs/images/notepad.png" alt="ZSUI Notepad"></td>
-    <td><img src="docs/images/notepad-iced.png" alt="Iced Notepad"></td>
-    <td><img src="docs/images/notepad-slint.png" alt="Slint Notepad"></td>
-  </tr>
-</table>
-<table>
-  <tr><th>eframe / egui</th><th>Tauri 2</th><th>Windows Notepad</th></tr>
-  <tr>
-    <td><img src="docs/images/notepad-egui.png" alt="egui Notepad"></td>
-    <td><img src="docs/images/notepad-tauri.png" alt="Tauri Notepad"></td>
-    <td><img src="docs/images/notepad-windows.png" alt="Windows Notepad"></td>
-  </tr>
-</table>
-
-<h4>计算器</h4>
-<table>
-  <tr><th>ZSUI</th><th>Windows Calculator</th></tr>
-  <tr>
-    <td><img src="docs/images/calculator.png" alt="ZSUI Calculator"></td>
-    <td><img src="docs/images/calculator-windows.png" alt="Windows Calculator"></td>
-  </tr>
-</table>
-
-</details>
-
-## 项目定位
-
-ZSUI 不是浏览器壳，也不是对 WinUI 3 的运行时封装。它的目标是用 Rust
-建立一套轻量、可组合、可裁剪的原生 UI 能力：
-
-- 公共 API 安全，平台 `unsafe` 留在后端内部
-- 组合和 trait 代替控件继承树
-- 枚举和强类型 ID 代替字符串事件与全局注册表
-- 可交互组件在布局时按 View 树路径获得稳定的自动 `WidgetId`；只有跨重排保存身份、
-  组件互相引用或外部命令定向控件时才需要显式 `.id(...)`
-- `State -> View -> Msg -> update` 显式状态循环
-- `Dp`、`Px`、`Dpi` 和主题 token 管理布局与视觉
-- 窗口、图标、位图和托盘资源由 RAII 管理
-- 控件、服务、渲染器和平台能力通过 Cargo feature 按需编译
-- 应用层写法完全统一；平台实现与能力差异由 framework-owned experience、host
-  trait 和 capability 报告在框架内部真实表达
-
-Windows 是当前最完整的真实运行路径，包含 Win32 原生窗口、缓冲无闪屏绘制、
-GDI+ 抗锯齿圆角、DPI、语义图标、输入路由和应用外壳。macOS/Linux 已进入
-真实窗口、最终表面截图和结构报告的持续 CI 验收阶段；Android 仍处于宿主与设备
-验证建设阶段。
-
-## 平台原生图标
-
-应用和控件只使用 `ZsIcon` 语义值，不直接写字体私有码点。Windows 运行时先检测
-系统的 Segoe Fluent Icons，不存在时使用 Windows 10 自带的 Segoe MDL2 Assets；
-仓库不携带这两套字体。macOS 使用 SF Symbols 名称；Linux `linux-direct` 默认使用
-内置 Cairo symbolic 矢量图标，避免轻量应用仅为 SVG 图标常驻整套解码动态库。
-需要精确跟随当前 freedesktop 图标主题时可启用 `linux-system-icons`，`linux-gtk`
-兼容后端继续使用 GTK 图标主题。系统源找不到图标时，可使用 `fluent-icons`
-提供的 MIT Fluent System Icons SVG 子集作为回退。
-
-Windows 字体检测和 GDI 绘制已经接入真实运行路径。macOS 的 AppKit `NSImage`
-查找、Linux 的 freedesktop/GTK 主题查找及最终像素输出仍分别经过目标机证明，因此
-capability 保持 partial，不会因为只有名称映射就标记为完成。详见
-[平台原生图标](docs/native-icons.md)。
-
-## 一句话创建原生窗口
+将下面的代码保存为 `src/main.rs`：
 
 ```rust,no_run
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-fn main() -> zsui::ZsuiResult<()> {
-    zsui::native_window("Example")
-        .size(900, 620)
-        .run()?;
-    Ok(())
-}
-```
-
-普通应用不需要接触 `HWND`、消息循环或 GDI 句柄。Windows 的 PE 子系统由最终
-应用 crate 决定；面向用户的发布版应保留上面的 crate 属性，使双击启动时不创建
-控制台窗口。debug 构建仍保留控制台，便于诊断。ZSUI 自带 GUI 示例和发布包通过
-`scripts/check-windows-gui-subsystem.ps1` 检查这条边界。
-
-输入控件继续沿用同一套强类型消息，例如按步长约束的 Slider：
-
-```rust,no_run
-use zsui::{slider, SliderRange, ViewNode};
+use zsui::prelude::{button, column, text, window, Dp, Element, UpdateContext};
 
 #[derive(Clone)]
-enum Msg {
-    VolumeChanged(f32),
+enum Message {
+    Increment,
 }
-
-fn volume_control(value: f32) -> ViewNode<Msg> {
-    slider(value, SliderRange::new(0.0, 100.0).step(5.0))
-        .on_slide(Msg::VolumeChanged)
-}
-```
-
-启用 `accessibility` 后，同一范围和步长会直接投影为 UIA 与 AppKit
-Accessibility 语义；Linux Direct 另外启用 `linux-direct-accessibility` 后投影为
-AccessKit 的可调原生 RangeValue 语义。辅助技术设置数值或执行
-增减动作时，仍通过同一 `VolumeChanged` 消息更新应用状态。
-
-保持按下状态的 ToggleButton 也是独立可选组件；状态由应用显式持有，点击或
-Space 都通过同一强类型消息返回：
-
-```rust,no_run
-use zsui::{toggle_button, ViewNode};
-
-#[derive(Clone)]
-enum Msg { PinChanged(bool) }
-
-fn pin_button(checked: bool) -> ViewNode<Msg> {
-    toggle_button("Pin panel", checked).on_toggle(Msg::PinChanged)
-}
-```
-
-启用 `accessibility`（Linux Direct 使用 `linux-direct-accessibility`）后，这个显式
-布尔状态同时进入三平台原生无障碍树：
-Windows 保持 `Button` 控件类型并仅暴露有状态的 `TogglePattern`，AppKit 以
-按钮值和 `accessibilityPerformPress` 表达，Linux Direct 则投影为 AccessKit
-`toggled` 状态与 `Click` 动作。辅助技术触发后仍回到同一 `PinChanged` 消息，
-不会在平台后端保存第二份状态。
-
-可编辑数值输入同样是独立的可选组件；草稿与已提交值分离，输入过程中不会被
-格式化逻辑反复改写：
-
-```rust,no_run
-use zsui::{number_box, ViewNode, ZsNumberRange};
-
-#[derive(Clone)]
-enum Msg { AmountChanged(Option<f64>) }
-
-fn amount_control(value: Option<f64>) -> ViewNode<Msg> {
-    number_box(value, ZsNumberRange::new(0.0, 1000.0).step(0.5).large_step(10.0))
-        .placeholder("Optional amount")
-        .fraction_digits(1)
-        .on_number_change(Msg::AmountChanged)
-}
-```
-
-启用 `accessibility`（Linux Direct 使用 `linux-direct-accessibility`）后，有值的
-NumberBox 在 Windows 暴露 Spinner 与可写
-RangeValue，同时保留 Edit 的 Value/TextPattern；AppKit 使用 Incrementor 数值及增减
-选择器，Linux Direct 使用 AccessKit SpinButton 数值动作。设置值会先按显示精度归一，
-再通过原有 `AmountChanged` 消息回写，屏幕朗读值不会与可见文本分离。
-
-密码输入使用独立的 `password-box` feature。`ZsPassword` 在释放时清零自己持有的
-字符串分配，`Debug` 固定脱敏且不实现序列化；默认掩码、IME 预编辑报告、事件 JSON
-和绘制计划都不携带明文。Windows 的眼睛按钮是按住临时显示，macOS 与 GTK 默认
-完全隐藏，三者都复用 ZSUI 的自绘树而不是嵌入平台子控件：
-
-```rust,no_run
-use zsui::{password_box, ViewNode, ZsPassword, ZsPasswordRevealMode};
-
-#[derive(Clone)]
-enum Msg { PasswordChanged(ZsPassword) }
-
-fn password_control(value: &ZsPassword) -> ViewNode<Msg> {
-    password_box(value)
-        .placeholder("Password")
-        .reveal_mode(ZsPasswordRevealMode::Peek)
-        .on_password_change(Msg::PasswordChanged)
-}
-```
-
-`textbox`、多行 `text_editor`、`password_box`、`number_box`、`auto_suggest_box`、
-`combo_box` 与 `command_palette` 统一支持 `.placeholder(...)`。提示只在真实值为空时
-以主题次要文字显示，不会进入输入值、文本选择、剪贴板、IME 提交或密码安全通道。
-阶段化的后续字段语义与三平台证据计划见
-[`docs/v0.3-input-experience.md`](docs/v0.3-input-experience.md)。
-
-RadioButton 不维护全局注册表；同一 `row` 或 `column` 的直接子项会形成局部分组，
-框架即时保证互斥，并按 WinUI 规则提供单一 Tab 停靠点和不循环的方向键导航；
-普通方向键让选择跟随焦点，Ctrl+方向键只移动焦点。应用仍用显式状态持久化最终
-选择：
-
-```rust,no_run
-use zsui::{radio_button, ViewNode};
-
-#[derive(Clone, Copy, PartialEq)]
-enum Mode { Balanced, Performance }
-
-#[derive(Clone)]
-enum ModeMsg { Choose(Mode) }
-
-fn mode_option(mode: Mode, current: Mode) -> ViewNode<ModeMsg> {
-    let label = match mode { Mode::Balanced => "Balanced", Mode::Performance => "Performance" };
-    radio_button(label, current == mode).on_choose(ModeMsg::Choose(mode))
-}
-```
-
-确定进度使用独立范围，不需要启用 Slider：
-
-```rust,no_run
-use zsui::{progress_bar, ProgressRange, ViewNode};
-
-fn download_progress(percent: f32) -> ViewNode<()> {
-    progress_bar(percent, ProgressRange::new(0.0, 100.0))
-}
-```
-
-Windows 的 ProgressBar 直接按 WinUI 3 模板资源绘制 3 DP 指示器、1 DP 强轨道，
-并支持正常、暂停、错误和不确定状态；它仍是 ZSUI 缓冲原生绘制计划的一部分，不创建
-经典 Win32 `PROGRESS_CLASS`、XAML Island 或第二套控件树：
-
-```rust,no_run
-use zsui::{
-    indeterminate_progress_bar, progress_bar_from_spec, ProgressRange, ViewNode,
-    ZsProgressBarSpec, ZsProgressBarStatus,
-};
-
-fn progress_states() -> [ViewNode<()>; 2] {
-    [
-        progress_bar_from_spec(
-            ZsProgressBarSpec::determinate(45.0, ProgressRange::new(0.0, 100.0))
-                .status(ZsProgressBarStatus::Paused),
-        ),
-        indeterminate_progress_bar(),
-    ]
-}
-```
-
-环形等待反馈使用独立的 `progress-ring` feature；不需要把 ProgressBar 一起打包：
-
-```rust,no_run
-use zsui::{progress_ring, ViewNode, ZsProgressRingSpec};
-
-fn connecting() -> ViewNode<()> {
-    progress_ring(ZsProgressRingSpec::indeterminate())
-}
-```
-
-独立语义图标使用 `icon` feature。应用只选择符号、语义尺寸和主题颜色，Win32、
-AppKit 与 Linux 分别解析平台图标来源和逻辑尺寸：
-
-```rust,no_run
-use zsui::{icon, ColorRole, ViewNode, ZsIcon, ZsIconSize};
-
-fn status_icon() -> ViewNode<()> {
-    icon(ZsIcon::Success)
-        .icon_size(ZsIconSize::Large)
-        .icon_color(ColorRole::Success)
-}
-```
-
-信息徽章使用独立的 `badge` feature，并明确区分点、数字和语义图标内容。应用只选择
-内容与语义色调，平台 profile 负责胶囊尺寸、数字字体、图标尺寸和系统主题颜色：
-
-```rust,no_run
-use zsui::{badge, ViewNode, ZsBadgeContent, ZsBadgeTone, ZsIcon};
-
-fn unread_badges() -> [ViewNode<()>; 3] {
-    [
-        badge(ZsBadgeContent::Dot),
-        badge(ZsBadgeContent::number(12)),
-        badge(ZsBadgeContent::icon(ZsIcon::Success))
-            .badge_tone(ZsBadgeTone::Success),
-    ]
-}
-```
-
-Badge 本身不接收点击或焦点。使用独立 Badge 时，辅助功能标签和状态变化通知应放在
-可聚焦的父元素上；导航、标签页等复合组件可在自己的语义提供者中合并 Badge 状态。
-
-拆分视图使用独立的 `split-view` feature。应用只持有窗格开关状态和语义布局模式，
-框架分别解析 WinUI SplitView、AppKit NSSplitView 与 Libadwaita OverlaySplitView 的
-窗格宽度、分隔线、覆盖层和窄窗降级参数：
-
-```rust,no_run
-use zsui::{
-    split_view, text, ViewNode, WidgetId, ZsSplitViewDisplayMode, ZsSplitViewSpec,
-};
-
-#[derive(Clone)]
-enum Msg { PaneOpenChanged(bool) }
-
-fn workspace(open: bool) -> ViewNode<Msg> {
-    split_view(
-        WidgetId::new(20),
-        ZsSplitViewSpec::new(open)
-            .display_mode(ZsSplitViewDisplayMode::Adaptive),
-        text("工具 / Tools"),
-        text("内容 / Content"),
-    )
-    .on_split_view_open_change(Msg::PaneOpenChanged)
-}
-```
-
-`Adaptive` 仅根据窗格与内容最小宽度选择并排或覆盖，不在应用代码中出现平台分支。
-覆盖模式的窗格外点击与 Esc 都发送 `false`；应用在 `update` 中保存该状态。
-
-文档 Canvas 使用独立的 `canvas` feature，把有界 retained scene 编译到同一个原生
-绘制协议。场景只包含本地 DP 几何、语义颜色、系统文字角色和 `ZsIcon`；不会序列化
-GDI、Core Graphics、Cairo 或 renderer 句柄。应用可用强类型绑定保持动态场景和指针消息：
-
-```rust,no_run
-use zsui::ui_document::{UiBindingManifest, UiCanvasPointerEvent, UiCanvasPrimitive};
-
-# struct State { scene: Vec<UiCanvasPrimitive> }
-# enum Msg { CanvasPointer(UiCanvasPointerEvent) }
-let mut bindings = UiBindingManifest::<State, Msg>::new();
-bindings.register_canvas_primitives_property("dashboard_scene", |state| state.scene.clone())?;
-bindings.register_canvas_pointer_action("dashboard_pointer", |event| {
-    Ok(Msg::CanvasPointer(event))
-})?;
-# Ok::<(), zsui::ui_document::UiBindingRegistrationError>(())
-```
-
-`canvas_pointer_event` 保留 press/move/release/cancel、按钮、修饰键、本地 DP 坐标和
-`inside`；作者节点身份仍由稳定 `UiNodeId` 提供，私有数值 `WidgetId` 不进入文档。
-
-ComboBox 的选中项和展开状态同样由应用显式持有；弹层选项通过强类型消息回传：
-
-```rust,no_run
-use zsui::{combo_box, ViewNode};
-
-#[derive(Clone)]
-enum Msg { Selected(usize), Expanded(bool) }
-
-fn mode_picker(selected: Option<usize>, expanded: bool) -> ViewNode<Msg> {
-    combo_box(["均衡", "性能", "安静"], selected)
-        .expanded(expanded)
-        .on_select(Msg::Selected)
-        .on_expanded_change(Msg::Expanded)
-}
-```
-
-组合框获得键盘焦点后可直接输入选项前缀；Win32、AppKit 和 Linux 共用一秒的
-大小写不敏感搜索缓冲，重复输入同一字符会从当前项继续循环，并仍通过
-`on_select` 的强类型消息更新应用状态。长选项弹层按 WinUI 默认最多显示
-15 项，并继续受当前窗口可用空间约束；初次展开会保证选中项可见，鼠标滚轮
-通过框架内部强类型事件滚动可见窗口，不要求应用维护滚动偏移，也不依赖
-`scroll` feature。
-
-Tabs 使用独立的 `ZsTabId` 作为身份，标签文字不是事件键；只有当前页面参与
-布局、绘制、命中测试和事件分发。Windows 上方向键只移动页签焦点，按
-Enter/Space 选中，Ctrl+Tab 循环切换；AppKit 方向键直接切换页面，GTK4 用
-方向键/Home/End 移动页签焦点、Space 选中，并支持 Ctrl+PageUp/PageDown
-切页。标签页内容自动获得平台内容边距，文字与紧凑控件保持原生固有高度；窄窗口
-会裁剪溢出的标签条，不会把标签文字压缩到平台最小宽度以下。应用代码不需要平台
-`cfg`：
-
-```rust,no_run
-use zsui::{tab_view, text, ViewNode, WidgetId, ZsTabId, ZsTabItem};
-
-#[derive(Clone)]
-enum Msg { SelectTab(ZsTabId) }
-
-fn pages(selected: ZsTabId) -> ViewNode<Msg> {
-    tab_view([
-        ZsTabItem::new(ZsTabId::new(1), "常规", text("常规设置")),
-        ZsTabItem::new(ZsTabId::new(2), "高级", text("高级设置")),
-    ], Some(selected))
-        .id(WidgetId::new(10))
-        .on_tab_select(Msg::SelectTab)
-}
-```
-
-Flyout 接受任意 View 内容。应用只持有打开状态与强类型关闭结果；Windows 使用
-Fluent Flyout 组合，macOS 使用 Popover 组合，Linux 使用 GTK Popover 组合，应用
-代码不需要平台枚举：
-
-```rust,no_run
-use zsui::{button, column, flyout, Dp, ViewNode, WidgetId, ZsFlyoutDismissReason, ZsFlyoutSpec};
-
-const FLYOUT: WidgetId = WidgetId::new(20);
-const TARGET: WidgetId = WidgetId::new(21);
-
-#[derive(Clone)]
-enum Msg { Open, Apply, Dismissed(ZsFlyoutDismissReason) }
-
-fn settings(open: bool) -> ViewNode<Msg> {
-    let page = button("More settings").id(TARGET).on_click(Msg::Open);
-    let content = column([
-        button("Apply").on_click(Msg::Apply),
-    ]);
-    flyout(
-        FLYOUT,
-        open,
-        TARGET,
-        ZsFlyoutSpec::new(Dp::new(240.0), Dp::new(96.0)),
-        content,
-        page,
-    )
-    .on_flyout_dismiss(Msg::Dismissed)
-}
-```
-
-## 强类型状态与消息
-
-```rust,no_run
-use zsui::{button, column, native_window, text, AppCx, ViewNode, WidgetId};
 
 struct State {
     count: u32,
 }
 
-#[derive(Clone)]
-enum Msg {
-    Increment,
-}
-
-fn view(state: &State) -> ViewNode<Msg> {
+fn view(state: &State) -> Element<Message> {
     column([
         text(format!("Count: {}", state.count)),
-        button("Increment")
-            .id(WidgetId::new(1))
-            .on_click(Msg::Increment),
-    ])
-}
-
-fn update(state: &mut State, msg: Msg, _cx: &mut AppCx) {
-    match msg {
-        Msg::Increment => state.count += 1,
-    }
-}
-
-fn main() -> zsui::ZsuiResult<()> {
-    native_window("Counter")
-        .size(480, 320)
-        .stateful_view(State { count: 0 }, view, update)
-        .run()?;
-    Ok(())
-}
-```
-
-状态所有权、消息来源和修改入口都可以被 Rust 与 rust-analyzer 检查。
-
-常驻监控型应用可以启用隐藏窗口资源回收：
-
-```rust,no_run
-# use zsui::{native_window, spacer, AppCx, ViewNode};
-# #[derive(Clone)] enum Msg {}
-# struct State;
-# fn view(_: &State) -> ViewNode<Msg> { spacer() }
-# fn update(_: &mut State, msg: Msg, _: &mut AppCx) { match msg {} }
-native_window("Monitor")
-    .release_view_when_hidden()
-    .stateful_view(State, view, update)
-    .run()?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-窗口最小化或隐藏后，ZSUI 会释放 `View` 树、绘制/命中计划和临时输入缓存；应用状态、命令路由及应用持有的监控服务继续存活。窗口重新显示时，界面从保留的状态重新构建。
-
-原生消息对话框也使用同一套安全类型：
-
-```rust,no_run
-use zsui::{
-    DialogButtonLabels, DialogButtons, DialogLevel, NativeDesktopDialogService,
-    NativeDialogService, NativeDialogSpec,
-};
-
-let response = NativeDesktopDialogService::new().show_native_dialog(
-    &NativeDialogSpec::message("保存更改？", "未保存的编辑将会丢失。")
-        .level(DialogLevel::Warning)
-        .buttons(DialogButtons::YesNoCancel)
-        .button_labels(DialogButtonLabels::new("确定", "取消", "是", "否")),
-)?;
-# Ok::<(), zsui::ZsuiError>(())
-```
-
-应用只处理 `DialogResponse`，也可以一次提供四个本地化语义按钮文本；框架仍按目标
-平台决定按钮顺序。Windows 在存在活动窗口时使用绑定所有者的系统 `MessageBoxW`，
-否则使用任务模态表面，并用一次性的线程钩子设置显式按钮文本；macOS 使用 `NSAlert`
-窗口 Sheet，GTK 兼容后端使用
-`GtkAlertDialog`。默认 Linux 轻量宿主调用桌面提供的 Zenity 表面，并在提供者不存在时
-明确返回 `ZsuiError::Unsupported`。
-
-这项 API 是操作系统消息服务，不是 ZSUI 的 `ContentDialog` 组件样式。应用内
-`content_dialog(...)` 继续使用统一 Rust 声明；Windows 配置按当前 WinUI 3
-`ContentDialog` 资源绘制分层内容区和命令区、等宽操作列及 Accent 默认按钮，macOS
-与 Linux 则分别使用各自的平台组件配置。
-
-## 稳定 API
-
-长期维护的应用从 `zsui::prelude` 或 `zsui::stable` 导入。这个门面只暴露不透明的
-`Element<Msg>`、逻辑布局单位、原生窗口和强类型状态更新循环；渲染计划、平台句柄、
-证明驱动器与后端适配器不进入稳定接口。
-
-```rust,no_run
-use zsui::prelude::{button, column, text, window, Dp, Element, UpdateContext};
-
-#[derive(Clone)]
-enum Msg { Increment }
-struct State { count: u32 }
-
-fn view(state: &State) -> Element<Msg> {
-    column([
-        text(format!("计数：{}", state.count)),
-        button("增加").on_click(Msg::Increment),
+        button("Increment").on_click(Message::Increment),
     ])
     .gap(Dp::new(12.0))
     .padding(Dp::new(20.0))
 }
 
-fn update(state: &mut State, msg: Msg, _cx: &mut UpdateContext<'_>) {
-    match msg { Msg::Increment => state.count += 1 }
+fn update(state: &mut State, message: Message, _cx: &mut UpdateContext<'_>) {
+    match message {
+        Message::Increment => state.count += 1,
+    }
 }
 
-window("ZSUI 稳定 API")
-    .size(480, 320)
-    .stateful(State { count: 0 }, view, update)
-    .run()?;
-# Ok::<(), zsui::stable::Error>(())
+fn main() -> Result<(), zsui::stable::Error> {
+    window("ZSUI")
+        .size(480, 320)
+        .stateful(State { count: 0 }, view, update)
+        .run()
+}
 ```
 
-稳定接口在 `0.2.x` 内遵守兼容承诺，Rustdoc 公开项覆盖率由 CI 强制不低于 70%；
-当前实测为 100%。历史根模块继续用于源码兼容与后端开发，但不属于该稳定承诺。
-完整规则见[API 稳定性](docs/api-stability.md)。
-
-### 小型应用默认使用基础 View
-
-普通工具窗、服务控制面板和少量操作组成的窗口，默认使用 `column`、`row`、`text`、
-`button`、`toggle` 等基础组件。不要因为名称中出现“管理器”“控制台”“服务”“任务”或
-“日志”就套用导航、检查器或编辑器外壳；复合外壳只有在产品明确需要其完整
-工作流时才启用。
-
-```powershell
-cargo run --example compact_service_panel `
-  --no-default-features `
-  --features window,button,label,toggle
+```sh
+cargo run
 ```
 
-这个示例只保留状态与操作两个区域，不复制 Gallery 的窗口尺寸、占位内容
-和附加导航。AI 编写应用时遵循[应用编写契约](docs/ai/app-authoring.md)，框架组件开发仍
-按对应 context pack 执行。
+按钮产生 `Message`，`update` 修改应用状态，运行时随后重建界面并重绘。
+普通应用从 `zsui::prelude` 或 `zsui::stable` 导入；接口兼容范围见
+[API 稳定性](https://github.com/qiu7824/zsui/blob/main/docs/api-stability.md)。
 
-后台任务、流式响应或文件监视需要刷新状态时，使用稳定接口中的
-`InvalidationHandle`：为每个窗口创建一个句柄，将它附加到 `WindowBuilder` 后使用
-`stateful(...)` 安装可重建的状态化 View；后台线程更新应用自有的共享状态后调用
-`request_rebuild()`。请求会合并为一次原生事件循环唤醒和 UI 线程重建，无需把零高度
-Video、动画或隐藏控件当成定时器，空闲时也不会因此持续轮询。句柄不能在多个窗口间
-复用，也不能搭配固定的 `view(...)` 或 DrawPlan。
+### 构建环境
 
-## 按需编译
+使用当前稳定版 Rust 工具链及对应平台的本地开发工具：
 
-从 crates.io 使用：
+| 平台 | 环境 |
+| --- | --- |
+| Windows | MSVC 工具链、Visual Studio Build Tools 的 C++ 构建工具与 Windows SDK |
+| macOS | Xcode Command Line Tools |
+| Linux 默认后端 | C/C++ 构建工具、pkg-config、D-Bus、Cairo 和 Pango 开发包 |
+| Linux GTK4 后端 | 在对应构建环境中额外安装 GTK4 4.10 或更新版本的开发包 |
+
+Ubuntu 24.04 的默认 Linux 后端依赖可安装为：
+
+```sh
+sudo apt-get install build-essential pkg-config libdbus-1-dev libcairo2-dev libpango1.0-dev
+```
+
+选择 `linux-gtk` 时还需要 `libgtk-4-dev`。其他发行版安装对应开发包。
+后端选择与移植约束见[平台移植](https://github.com/qiu7824/zsui/blob/main/docs/porting.md)。
+
+## Cargo features
+
+默认配置提供窗口、按钮与文本。需要额外控件时按功能启用：
 
 ```toml
 [dependencies]
-zsui = { version = "0.3.0-alpha.1", default-features = false, features = [
-    "window",
-    "button",
-    "label",
-    "scroll",
-    "list",
-    "dark-mode",
+zsui = { version = "0.3.0-alpha.2", default-features = false, features = [
+    "window", "button", "label", "textbox", "clipboard", "dialog",
 ] }
 ```
 
-高级能力独立开启：
+| 用途 | 主要 features |
+| --- | --- |
+| 窗口与后端 | `window`、`windows-win32`、`macos-appkit`、`linux-direct`、`linux-direct-lite`、`linux-gtk` |
+| 基础界面与布局 | `button`、`label`、`icon`、`grid`、`scroll`、`split-view`、`resize` |
+| 文本与数值输入 | `textbox`、`password-box`、`number-box`、`auto-suggest`、`command-palette` |
+| 选择与日期 | `checkbox`、`toggle`、`toggle-button`、`radio`、`slider`、`combo`、`date-picker`、`time-picker`、`color-picker` |
+| 集合 | `list`、`virtual-list`、`paged-list`、`grid-view`、`tree`、`table` |
+| 弹层与反馈 | `dialog`、`flyout`、`menu-flyout`、`context-menu`、`tooltip`、`toast`、`info-bar`、`teaching-tip`、`progress`、`progress-ring` |
+| 组合组件 | `shell`、`document-shell`、`tabs`、`accordion`、`breadcrumb`、`badge`、`calculator` |
+| 媒体 | `image`、`image-preview`、`video` |
+| 系统与主题 | `clipboard`、`tray`、`hotkey`、`settings`、`style`、`dark-mode`、`localization` |
+| 辅助功能 | `accessibility`、`linux-direct-accessibility` |
+| UI 文档与工具 | `ui-document`、`ui-document-runtime`、`ui-viewer` |
+| 汇总配置 | `all-widgets`、`full` |
 
-```toml
-zsui = { version = "0.3.0-alpha.1", default-features = false, features = [
-    "document-shell",
-    "calculator",
-    "window",
-] }
-```
+`window` 通过目标平台依赖选择默认桌面宿主。Linux 默认使用 `linux-direct`；
+选择 GTK4 或 `linux-direct-lite` 时，关闭默认 features 并显式选择后端，避免同时
+带入默认 Linux 渲染栈。`linux-direct-lite` 使用 tiny-skia 和框架的 Rust 文字引擎。
 
-未开启的可选依赖不会进入构建；同一依赖图中的 Cargo feature 会取并集，因此
-ZSUI 的目标是保持默认集合小、重依赖 optional，并在接口稳定后继续拆分较大的
-控件与后端模块。这里承诺的是 feature/crate 级按需编译，不宣称编译器能自动
-删除已启用 crate 中的每一个未调用符号。`grid`、`toggle-button`、`number-box`、
-`password-box`、`tooltip`、`dialog`、`toast`、`teaching-tip`、`info-bar`、`breadcrumb`、`accordion`、`context-menu`、`grid-view`、`auto-suggest`、`color-picker`、`command-palette`、`tree`、`table`、`progress-ring`、`tabs`、`date-picker`、`time-picker` 等控件均可单独
-开启；原生文本无障碍桥接也只在显式开启时进入编译。`accessibility` 提供共享语义、
-Win32 UI Automation Edit/Value/TextPattern、AppKit Accessibility 和 GTK4
-Accessibility；`linux-direct-accessibility` 才额外编译 AccessKit/AccessKit-Winit 并
-投影到 AT-SPI，因此 GTK4 应用不会为辅助功能误打包 Winit/Softbuffer。
-Direct 路径由真实 Weston Wayland Runner 验证菜单与辅助功能事件；GTK4 路径由独立
-ApplicationWindow/AT-SPI 探针验证。`linux-direct-lite` 也可显式组合该 Direct 桥接。
-这些路径均不嵌入平台子编辑器或 WebView。`all-widgets` 和 `full` 只在应用显式选择
-时才会打包全部能力。
+`accessibility` 提供共享语义及 Win32、AppKit、GTK4 桥接；Linux Direct 的
+AccessKit/AT-SPI 桥接另外启用 `linux-direct-accessibility`。
+Cargo features 在依赖图中取并集，`full` 会开启广泛的控件、后端和验证能力，
+适合框架验证；应用应选择自己使用的功能。项目目前以单个 crate 发布。
 
-v0.2 的开发体验目标还包括一个版本化的语义 UI 文档、强类型绑定校验器和预编译
-原生 Viewer：仅修改文字、token、布局和兼容组件树时，可以保存后直接重载，不调用
-Cargo。`zsui-uic handoff` 可把验证后的文档、绑定 schema、值快照和可选原生 PNG
-输出为稳定排序、无时间戳和绝对路径的 AI 交接目录；`zsui-uic embed` 则生成可由
-`include_bytes!` 纳入二进制的确定性制品。独立 `ui-document-runtime` 把制品解码为共享
-`ViewNode<Msg>`，自身不启用全部控件，也不携带 Viewer、文件监听、截图或额外进程。
-UiDocument 的 `page_padding`、`content_padding` 和 `content_gap` 等语义间距在目标
-平台解析；Text 可声明语义字阶、换行、省略、字重和对齐。共享布局会递归计入嵌套
-容器的内边距、间距、子节点行框和控件最小尺寸，并按横向行中实际分配的宽度计算
-多行文字高度，避免中英文被压缩、截断或覆盖相邻节点。`settings_card` 声明一个
-非空语义标题和类型化内容子树；同一文档在 Windows 组合为 Fluent 分组卡，在 macOS
-组合为 AppKit 表单分组，在 Linux 组合为 GTK boxed list，应用不选择平台枚举。
-`items_repeater` 则以稳定子节点 ID 到全局索引的完整映射描述当前实例化窗口，可用稀疏
-`item_heights` 覆盖已知项目的逻辑 DP 高度；选择和视口通过强类型绑定回到应用，滚动条
-采用各目标平台 profile 并把滚轮、轨道点击和滑块拖动统一路由为视口更新。即使逻辑项目
-总数很大，文档也不携带完整数据集或平台句柄。
-普通 `scroll(...)` 与 `.auto_scroll_y()` 也使用同一套滚动条规则：视觉宽度保持平台原生
-的细轨道，命中区域独立扩展；轨道和滑块分别识别，轨道点击按滑块中心映射，拖动保留
-按下点在滑块内的偏移并持续夹取到有效范围。应用不需要自行计算 Win32 矩形。
-`image` 接收有界的不可变预乘像素帧以及 Contain/Cover/Stretch 和插值语义，最终仍由
-Win32、Core Graphics 或 GTK/Cairo 绘制；大型动态 PNG 保持使用应用拥有的后台解码状态。
-现有 Rust `view` builder 继续保留，完整
-拖放式设计器不属于 v0.2 完成门槛，浏览器模拟也不能替代三平台真实运行证据。
-可选 `ui-document` feature、`UiBindingManifest<State, Msg>` 和 `zsui-uic check`
-负责验证 schema、组件 feature、稳定 ID、属性和绑定；可选 `ui-viewer` feature 则
-提供已经编译好的原生 Viewer。Viewer 在同一个原生窗口中轮询文档变更，保留
-`UiViewerState`，并把稳定节点 ID 映射为稳定 `WidgetId`，所以修改受支持的文字、
-token、布局和组件树不需要重新运行 Cargo。同 ID 且控件状态类别兼容的重载会保留
-原生焦点、文本选择和文本编辑器视口；删除节点、更换控件类型或在单行/多行文本框间
-切换会生成确定性重置报告并清理不兼容的临时状态。格式、命令及当前覆盖范围见
-[UI Document 文档](docs/ui-document.md)。
-文本、切换、滑块、列表和滚动容器的带值动作已经通过按控件持有的类型化回调进入显式
-Viewer 状态。`list` 以直接子节点的稳定 ID 作为选择值，因此项目重排不会改变语义身份；
-`progress_ring` 用 nullable number 在确定与不确定进度间切换，并由平台 profile 决定尺寸
-和动画；`password_box` 使用独立的 `ZsPassword` 状态/动作通道，拒绝文档字面量和
-`values.json` 明文，Viewer、交接包、证明报告及普通动作日志只保留脱敏元数据。
-`date_picker` 使用规范 ISO 日期绑定和强类型 `ZsDate` 映射，并把选中日期、可见月份及
-展开状态作为三个显式受控槽位；日期选择和月份导航在热重建后不会回退。
-`time_picker` 使用规范 `HH:MM` 状态格式和强类型 `ZsTime` 映射，分钟步长、平台默认或
-显式时制以及选择/展开状态均经过 schema 与发布运行时校验；本地化显示文本不会进入状态。
-`color_picker` 使用规范大写 `#RRGGBBAA` 和强类型 `Color` 映射；颜色、展开状态与活动
-通道均可独立受控，alpha 策略在 schema 和发布运行时重复校验，而色谱、滑轨和弹层尺寸
-继续由 WinUI、AppKit 或 GTK 体验参数解析。
-`auto_suggest` 使用稳定语义字符串 ID 的建议数组，查询、可空高亮和展开状态均可独立
-受控；选择和结构化提交经强类型绑定进入应用消息，发布运行时再确定性映射为内部
-`ZsAutoSuggestionId`，因此建议重排和 Viewer 热重建不会改变项目身份。
-`command_palette` 使用稳定语义字符串 ID 的命令数组，保留标题、副标题、关键字、快捷键、
-语义图标和启用状态；查询、高亮和打开状态显式受控，调用只返回强类型命令 ID，不在
-框架内执行产品行为。发布运行时使用节点作用域的私有数值 ID，命令重排不会改变身份。
-`tree` 使用全树唯一的稳定语义字符串 ID、递归节点数组、完整展开集合和可空选择；选择、
-展开与调用分别进入强类型消息，发布运行时才映射为私有 `ZsTreeNodeId`。折叠隐藏选中行、
-节点重排或 Viewer 热重建都不会把状态退化为数组下标或平台控件模型。
-`grid_view` 使用唯一稳定语义字符串 ID 的磁贴数组，保留标题、副标题和语义图标；可空
-选择、选择动作与调用动作形成受控闭环，发布运行时才映射为私有 `ZsGridViewItemId`。
-项目重排、响应式列数变化和 Viewer 热重建不会改变项目身份，三平台磁贴参数仍由各自
-体验 profile 解析。
-`navigation` 使用同一组稳定语义条目、可选页脚条目、受控选择和一个内容子树；应用不写
-Windows、AppKit 或 Linux 枚举。发布运行时把条目映射为稳定的内部控件 ID，平台体验层再
-分别生成 Fluent 自适应窗格、AppKit source list 和 Linux 侧边栏组合。`pane_width` 与
-`minimum_content_width` 只表达应用约束，不覆盖各平台的字体、间距、折叠与选中样式。
-`scroll` 以一个内容子树、显式内容高度、受控偏移和 number 动作构成闭环，布局
-会夹取越界偏移；绑定后的状态在 View 重建后继续保留，不使用全局注册表。v0.2 的
-47 个组件文档覆盖、兼容状态迁移和三平台固定 Viewer 证据已纳入阻断 CI；更复杂的
-富文本对象、任意模板与大型数据源编辑属于后续增量能力。
+## 平台与能力边界
 
-多语言是独立的 `localization` 服务 feature。应用持有 `ZsLocalizer`，使用稳定消息
-ID、Fluent 参数/复数规则、Unicode locale 回退和系统语言检测；切换语言走普通的
-强类型状态更新与 View 重建，不依赖全局可变翻译表。完整用法见
-[多语言文档](docs/localization.md)。
-
-## 已有应用外壳
-
-| 能力 | 当前内容 | Feature |
+| 平台 | 原生宿主与绘制 | 系统集成 |
 | --- | --- | --- |
-| 导航/卡片外壳 | 左侧导航、右侧内容、分组卡片、设置项、说明、操作区、滚动条 | `settings` / `full` |
-| 文档外壳 | 标签、命令栏、编辑器边框、状态栏、稳定命中区域、UTF-8/UTF-16 文本加载与事务式保存 | `document-shell` |
-| 计算器 | Decimal 运算、内存、历史、三平台自适应键盘布局、语义图标 | `calculator` |
-| 基础 View | 文本与输入、选择控件、弹层反馈、导航、日期时间、进度、列表、树和数据表格 | 按控件启用 |
-| 图片预览 | 后台解码、请求合并、旧结果隔离、保留上一完整帧、原子换帧 | `image-preview` |
-| 视频/摄像头预览 | 线程安全的最新帧源、无界队列抑制、播放状态与按需刷新、Contain/Cover/Stretch | `video` |
-| 分页虚拟列表 | 可见区绘制、方向感知预取、请求去重、LRU 页缓存、同步重排锚点 | `paged-list` |
+| Windows | Win32 窗口、缓冲 GDI/GDI+ 绘制，默认使用 Rust 文字引擎 | IME、UI Automation、剪贴板、文件面板、菜单、托盘 |
+| macOS | NSApplication/NSWindow、AppKit/Core Graphics、Core Text | NSTextInputClient、NSAccessibility、剪贴板、文件面板、菜单、NSStatusItem |
+| Linux | 默认 Wayland/X11 + Softbuffer + Cairo/Pango；可选 tiny-skia 或 GTK4 宿主 | IME、剪贴板、XDG portal、菜单；AT-SPI 由所选辅助功能桥接提供 |
+| Android | 宿主、生命周期与 FFI 契约 | Activity 运行实现和真机验证仍待完成 |
 
-组件目录记录 47 个桌面控件家族，全部已有第一阶段运行面。Flyout 接受任意 View
-内容，并由 Windows、macOS 与 Linux 的独立组件 profile 决定放置、圆角、箭头和间距。
-控件均通过独立 Cargo feature 按需启用，并复用强类型状态、布局、绘制和事件协议。
-Accordion 使用稳定项目 ID、单选/多选展开策略和完整的下一展开集合，并允许内容继续
-嵌套 Accordion。Context Menu 包装任意页面、表格、树或空白区域；宿主直接处理右键、
-指针锚点、轻量关闭和键盘菜单导航，应用只接收类型化命令。
-详细能力与验证状态以 [`src/component_catalog.rs`](src/component_catalog.rs) 和
-[`docs/v0.2-desktop-native.md`](docs/v0.2-desktop-native.md) 为准。
+控件由 ZSUI 在原生窗口中绘制；平台宿主提供系统窗口、事件循环和桌面服务，
+组件布局与视觉参数由各平台实现管理。系统服务的可用范围随后端和桌面环境变化，
+以能力报告及操作返回值为准。Linux Direct 的托盘宿主尚未接入统一事件循环。
 
-## 真实示例
+应用使用语义图标。Windows 使用系统图标字体，macOS 使用 SF Symbols；
+Linux 默认使用内置符号图形，精确的桌面图标主题解码通过 `linux-system-icons` 启用。
+SVG 回退及许可见[平台图标](https://github.com/qiu7824/zsui/blob/main/docs/native-icons.md)。
 
-### 三桌面统一示例
+输入法协议、光标几何和辅助功能桥接有自动化验证；真实候选窗位置与
+Narrator/NVDA、VoiceOver、Orca 的朗读和焦点体验还需目标环境人工检查。
+触摸与惯性滚动、复杂富文本、部分集合控件的编辑/虚拟化，以及 Android 运行时
+仍在扩展。组件与平台的运行实现、目标验证和完整体验分别记录。
 
-```powershell
-cargo run --example desktop_native_showcase --features full
+## 状态、后台任务与资源
+
+应用拥有业务状态，界面通过类型化消息更新。普通控件可使用结构路径生成的自动身份；
+列表重排、跨组件引用或外部定向操作应提供显式稳定 ID。
+
+后台任务使用窗口的 `InvalidationHandle` 请求重建。请求会合并，并由原生 UI 线程
+执行状态化界面重建。文件操作、异步任务与原生服务的使用见
+[应用效果与命令](https://github.com/qiu7824/zsui/blob/main/docs/app-effects.md)。
+
+文字引擎使用按条目及字节限制的布局/字形缓存，并定期老化成形 run。
+这些上限约束对应的框架缓存；应用数据、系统字体和平台资源仍有各自的生命周期。
+窗口可选择 `release_view_when_hidden()` 释放隐藏期间的界面资源；Wayland 等宿主对
+主动隐藏、恢复和焦点请求有平台限制。详见
+[文字渲染](https://github.com/qiu7824/zsui/blob/main/docs/text-rendering.md)、
+[桌面运行约束](https://github.com/qiu7824/zsui/blob/main/docs/desktop-hardening-plan.md)。
+
+## UI 文档与原生 Viewer
+
+`ui-document` 定义版本化的语义组件树和类型化绑定清单。Rust 持有状态与消息，
+文档描述组件、布局、主题、本地化键、辅助功能和稳定节点 ID。
+
+- `zsui-uic check`：检查 schema、features、属性、节点身份和绑定类型。
+- `zsui-viewer`：在原生窗口中重载有效文档，保留兼容的焦点、选择、滚动和控件状态。
+- `zsui-uic embed` 与 `ui-document-runtime`：将验证后的文档嵌入发布应用，按所用组件裁剪。
+
+在仓库根目录运行校验器或 Viewer：
+
+```sh
+cargo run --locked --bin zsui-uic --no-default-features --features ui-document,button,label -- check examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json
+cargo run --locked --bin zsui-viewer --no-default-features --features ui-viewer -- examples/ui-documents/basic.json --bindings examples/ui-documents/basic.bindings.json --values examples/ui-documents/basic.values.json
 ```
 
-同一个 `State`、`Msg`、`view` 和 `update` 包含左侧导航、命令栏、单行/多行
-输入、列表滚动、主题开关与原生菜单声明。统一入口现在分别进入 Win32、
-`NSApplication` 和 Linux Wayland/X11 原生窗口事件循环。固定 CI 已真实启动 AppKit、
-X11 与 Weston Wayland 窗口，导出最终平台表面截图和结构化运行报告；发布前的真实
-输入法候选窗与人工辅助功能体验仍是单独验收门槛。
+Viewer 编译后，保存兼容的文档修改即可更新同一个窗口，无需重新调用 Cargo。
+正式应用使用 `ui-document-runtime`，Viewer 的轮询、开发诊断和全组件配置属于独立工具。
+格式、绑定、密码安全通道与发布嵌入见
+[UI Document](https://github.com/qiu7824/zsui/blob/main/docs/ui-document.md)。
 
-应用层使用 `section`、`navigation_view(ZsNavigationViewSpec)`、
-`command_bar(ZsCommandBarSpec)` 和 `toolbar_button` 声明语义界面，不传平台枚举。
-平台专用组合、度量和图标来源在框架内部解析；应用仍可通过公共 spec、
-`ZsuiSpacingTokens::default()` 和 View 尺寸/间距修饰器统一修改参数，无需增加平台分支。
-`navigation_view` 通过 `.content(WidgetId, ViewNode)` 同时拥有侧边栏和内容，框架内部
-分别采用 WinUI Auto、AppKit 约束折叠和 Libadwaita split-view 规则；紧凑栏、最小模式、
-覆盖层、焦点和收起交互不需要应用编写平台枚举或 `cfg`。
-UiDocument 同样可声明 `command_bar`：直接子节点的稳定 ID 决定首尾分组，Button 只声明
-语义呈现和图标，仍复用框架的 `ZsCommandBarSpec`、类型化事件和三平台 profile。
+## 运行示例
 
-### 完整组件 Gallery
+克隆仓库后，在仓库根目录执行：
 
-```powershell
-cargo run --release --example component_gallery --no-default-features --features component-gallery-demo
+```sh
+cargo run --locked --example stable_api
+cargo run --locked --example component_gallery --no-default-features --features component-gallery-demo
+cargo run --locked --example zsui_notepad --no-default-features --features notepad-demo
+cargo run --locked --example zsui_calculator --no-default-features --features calculator-demo
 ```
 
-Gallery 通过独立 profile 显式启用全部控件，包含输入、集合、导航、反馈、弹层、
-布局和组件目录五页，界面文案同屏提供中文与英文。普通应用仍按控件 feature 选择
-依赖；默认构建不打包完整组件集。
-Windows 截图验收可追加 `-- --smoke --page inputs`，页面参数还支持
-`collections`、`navigation`、`feedback` 和 `catalog`。
-
-### 十万行分页虚拟列表
-
-```powershell
-cargo run --example paged_virtual_list --no-default-features --features window,button,label,paged-list
-```
-
-示例只声明分页数据源、行视图和强类型消息。可见范围计算、后台连续预取、请求
-去重、过期结果隔离和 5 页 LRU 缓存均由框架处理，详见
-[分页虚拟列表](docs/paged-virtual-list.md)。
-
-### 无闪屏图片预览
-
-```powershell
-cargo run --example image_preview --no-default-features --features window,button,label,image-preview
-```
-
-预览状态在后台解码 PNG，只发布当前 generation 的完整帧；新图加载期间继续绘制
-上一完整帧。Win32 将图片与其余绘制命令写入同一缓冲目标后统一提交，详见
-[图片预览](docs/image-preview.md)。
-
-### 视频与摄像头预览
-
-`ZsVideoSource` 可由摄像头回调或解码线程克隆持有，每次只发布一个完整 RGBA 帧；
-`video(...)` 只保留最新帧，并在播放或缓冲状态下通过原有原生绘制计时器刷新。
-设备枚举、权限、解码、网络重连和音频输出仍由应用或可选媒体适配器负责，不会进入
-只使用普通控件的依赖图。接口与边界见[视频表面](docs/video.md)。
-
-### 应用性能对比
-
-发票重命名工具还提供 ZSUI、eframe/egui、Iced、Slint 和 Tauri 2 的同功能
-[截图与 release 测量对比](docs/invoice-tool-comparison.md)：
-
-```powershell
-cargo run --release --example invoice_tool --no-default-features --features window,shell
-```
-
-框架性能另按 Minimal、Common、Full Native App 和 Viewer 四个同复杂度档位分别
-构建并与 egui、Iced、Slint、Tauri 2 比较；正式应用和开发期 Viewer 不混算。完整
-Windows 启动、RSS、Private RSS、隐藏后内存、峰值及 CPU 结果见
-[UI 性能测试矩阵](docs/ui-performance-matrix.md)。
-
-### 现代记事本
-
-```powershell
-cargo run --example zsui_notepad --no-default-features --features notepad-demo
-```
-
-Linux 还可以从同一份应用源码选择不链接 Cairo/Pango 的纯 Rust 渲染配置：
-
-```powershell
-cargo run --example zsui_notepad_lite --no-default-features --features notepad-demo-lite
-```
-
-它用同一份 Rust `State / Msg / view / update` 代码运行在 Win32、AppKit 和 Linux
-原生宿主上，组合自绘多行编辑器、原生菜单和原生文件对话框，并把三平台标题栏关闭
-统一路由到强类型未保存确认。长文档视觉行/页导航、滚轮、边缘拖拽滚动、裁剪视口及
-关闭软换行后的横向插入点自动显现由编辑器内部共享视口模型处理，不要求应用维护滚
-动状态；Uniscribe、Core Text 和 Pango 的原生成形宽度统一驱动比例字体、双向文本
-插入点、选择、换行和命中，组合附加符与连接 emoji 仍按完整字素处理，也不使用 WebView。
-[验收与测量说明](docs/notepad-demo.md)记录了能力边界、代码量和验证方法。
-仓库 CI 还会检查根包依赖图和 Rust 源码入口，阻止 WebView2、WKWebView、
-WebKitGTK、Wry、Tauri 等浏览器壳能力进入 ZSUI；`comparisons/` 中隔离的基准不属于框架。
-
-统一文字上下文前，Ubuntu 24.04 固定双语场景的 5 次首帧空闲采样中，纯 Rust
-配置的中位 RSS 为
-15.77 MiB、私有 RSS 为 10.74 MiB、PSS 为 12.09 MiB，可执行文件为 5.14 MiB；
-默认 Cairo/Pango 配置分别为 25.32、15.15、18.18 和 3.14 MiB。该结果来自
-[UI Memory Comparison #21](https://github.com/qiu7824/zsui/actions/runs/29677560838)，
-不代表当前提交或所有发行版、字体集、显示服务器上的固定值；当前实现需要重新运行
-同一矩阵。
-
-### 现代计算器
-
-```powershell
-cargo run --example zsui_calculator --no-default-features --features calculator-demo
-```
-
-标准模式包含四则运算、上下文百分比、连续等号、倒数、平方、开方、内存、
-历史和强类型交互。同一份 `State / Msg / view / update` 源码由 `window` 自动进入
-Win32、AppKit 或 Linux 后台；应用不包含平台 `cfg`、原始句柄或平台事件循环。
-[完整说明](docs/calculator-demo.md)记录了三平台入口、真实 Windows smoke 和本机
-Windows Calculator 对比方法，并区分工作集、私有工作集与私有字节。
-
-## 内存与缓存
-
-长时间运行的应用会不断产生新文本，例如每秒更新的播放进度、滚动歌词和大型歌单。
-ZSUI 的文字与绘制缓存全部有上限，内存不会随运行时间持续增长：
-
-| 缓存 | 上限 | 归属 |
+| 示例 | 内容 | 文档 |
 | --- | --- | --- |
-| 文本布局 | 256 条或 2 MiB，最久未用先淘汰 | 每个 `ZsRustTextEngine`；Win32 每个窗口一个 |
-| 字形位图 | 2048 条或 4 MiB，最久未用先淘汰 | 同上 |
-| cosmic-text 成形 run | 每 64 次新排版老化一轮，连续 4 轮未复用即淘汰 | 同上 |
-| hinting 实例 | 8 个 | 同上 |
-| View 文本测量 | 4096 条 | 每个 View 运行时 |
-| 文本输入成形 | 256 条 | 每个文本输入运行时 |
-| Win32 GDI 字体 / 画刷 / 画笔 | 32 / 64 / 64 | 每个窗口 |
+| `component_gallery` | 组件、主题和平台布局 | [图库](https://github.com/qiu7824/zsui/blob/main/docs/gallery.md) |
+| `zsui_notepad` | 同一份三平台记事本、编辑命令与文件面板 | [记事本](https://github.com/qiu7824/zsui/blob/main/docs/notepad-demo.md) |
+| `zsui_calculator` | Decimal 运算、内存与历史、自适应键盘 | [计算器](https://github.com/qiu7824/zsui/blob/main/docs/calculator-demo.md) |
+| `resizable_layout` | 导航栏、SplitView 与 DataGrid 的受控尺寸 | [可调整布局](https://github.com/qiu7824/zsui/blob/main/docs/resizable-layout.md) |
+| `paged_virtual_list` | 后台分页、预取、稳定滚动锚点和 LRU 页缓存 | [分页虚拟列表](https://github.com/qiu7824/zsui/blob/main/docs/paged-virtual-list.md) |
+| `image_preview` | 后台 PNG 解码、请求合并与完整帧切换 | [图片预览](https://github.com/qiu7824/zsui/blob/main/docs/image-preview.md) |
 
-0.3.0-alpha.1 没有修剪 cosmic-text 的成形 run 缓存。Win32 改为每个窗口复用一个文本
-引擎后，出现过的每个新字符串都会被永久保留，因此持续刷新文本的应用内存只增不减。
-用计数分配器逐个排版 6 万个不同的时间、歌词和歌单字符串，修复前堆内存增长 63 MiB，
-修复后稳定在 1.1 MiB 左右。应用升级 ZSUI 即可获得修复，无需修改代码。
+`video` 接收应用提供的最新像素帧并处理布局与呈现；摄像头采集、编解码、音频、
+拖动进度和字幕由媒体适配层负责。接口范围见
+[视频与帧源](https://github.com/qiu7824/zsui/blob/main/docs/video.md)。
 
-托盘常驻或长时间最小化的应用还可以使用上文的 `release_view_when_hidden()`，在窗口
-不可见时释放 `View` 树、绘制/命中计划和临时输入缓存。
+## 文档导航
 
-## 平台状态
+| 主题 | 文档 |
+| --- | --- |
+| 架构与职责 | [架构](https://github.com/qiu7824/zsui/blob/main/docs/architecture.md) · [框架目标](https://github.com/qiu7824/zsui/blob/main/docs/framework-goals.md) |
+| API 与兼容性 | [Rustdoc](https://docs.rs/zsui) · [API 稳定性](https://github.com/qiu7824/zsui/blob/main/docs/api-stability.md) |
+| 布局、主题与平台视觉 | [平台设计契约](https://github.com/qiu7824/zsui/blob/main/docs/platform-design-contracts.md) · [可调整布局](https://github.com/qiu7824/zsui/blob/main/docs/resizable-layout.md) |
+| 本地化 | [Fluent 与语言切换](https://github.com/qiu7824/zsui/blob/main/docs/localization.md) |
+| 输入与辅助功能 | [输入体验](https://github.com/qiu7824/zsui/blob/main/docs/v0.3-input-experience.md) · [人工检查清单](https://github.com/qiu7824/zsui/blob/main/docs/quality/manual-assistive-technology-checklist.md) |
+| 原生验证 | [Native Proof CI](https://github.com/qiu7824/zsui/blob/main/docs/v0.3-native-proof-ci.md) · [目标机验证](https://github.com/qiu7824/zsui/blob/main/docs/native-host-smoke.md) |
+| 性能测量 | [四档性能矩阵](https://github.com/qiu7824/zsui/blob/main/docs/ui-performance-matrix.md) · [应用对比](https://github.com/qiu7824/zsui/blob/main/docs/invoice-tool-comparison.md) |
+| 分发与更新 | [安装包、签名与更新清单](https://github.com/qiu7824/zsui/blob/main/docs/distribution.md) |
+| 发布记录 | [0.3.0-alpha.2](https://github.com/qiu7824/zsui/blob/main/docs/releases/v0.3.0-alpha.2.md) |
 
-| 平台 | 当前状态 | 说明 |
-| --- | --- | --- |
-| Windows | 真实运行路径 | Win32 窗口、缓冲绘制、输入、DPI、图标、托盘基础能力 |
-| macOS | 原生运行与 CI 证据 | 统一入口进入 NSApplication/NSWindow；AppKit 最终 NSView 截图、输入、布局报告及 NSStatusItem 状态栏菜单已由 macos-15 Runner 验证 |
-| Linux | 原生运行与 CI 证据 | 默认 `linux-direct` 创建真实 Wayland/X11 窗口并使用 Cairo/Pango；可选 `linux-direct-lite` 使用共享的 ZSUI Rust 文字上下文与 tiny-skia；同一 Notepad 源码还由真实 GTK4 ApplicationWindow/DrawingArea 启动并导出 GSK 最终截图；X11、Wayland/AT-SPI、GTK4/AT-SPI 与菜单均有目标机证据 |
-| Android | 宿主契约 | Activity/FFI 与真实设备运行仍待完成 |
+性能文档按平台、构建 features、窗口场景和工作负载记录结果。
+Minimal、Common、Full Native App 与 Viewer 分别测量，比较时应保持相同条件。
 
-平台能力必须经过代码、目标机 smoke 和系统集成三层证据。仅有声明或脚手架时，
-不会标记为完成。
-
-Linux 的“原生”指真实系统窗口、窗口管理器事件、系统字体/文字成形、输入法、
-剪贴板、图标主题和桌面 portal 集成；ZSUI 控件仍是针对 Linux 平台参数自绘的
-框架控件，不是 `GtkWidget`。因此它属于原生窗口上的自绘 UI，而不是 GTK 原生控件树。
-
-可选 `clipboard` feature 通过统一的 `ClipboardData`/`ClipboardService` API 在
-Win32、AppKit 和 Linux 后端读写 UTF-8 文本及经过尺寸与字节数校验的 RGBA 图像；
-应用代码不接触平台剪贴板对象。文件列表传输仍保持明确的不支持状态。
-可编辑文本能力统一提供平台主修饰键快捷键：Windows/Linux 使用
-`Ctrl+A/C/V/X/Z`，macOS 使用 `Command+A/C/V/X/Z`。`TextBox`、`TextEditor`、
-`NumberBox`、`AutoSuggestBox` 和 `CommandPalette` 启用完整编辑策略；`PasswordBox`
-允许全选、粘贴和安全撤销，但禁止复制与剪切。复制、粘贴和剪切需要启用
-`clipboard` feature。新增文本组件只需组合该能力，不修改平台快捷键路由。
-
-## 目录
-
-- `src/`：公共 API、运行时、布局、协议和平台后端
-- `examples/`：可运行的窗口、控件、记事本和计算器
-- `docs/`：架构、目标机验证、应用测量和 AI 文档
-- `scripts/check-feature-matrix.ps1`：全部公开 feature 检查
-
-核心边界请阅读：
-
-- [架构](docs/architecture.md)
-- [Rust-first 目标](docs/framework-goals.md)
-- [0.3 Native Proof CI](docs/v0.3-native-proof-ci.md)
-- [平台宿主约束](docs/porting.md)
-- [目标机验证](docs/native-host-smoke.md)
-
-## 验证
+## 开发与验证
 
 ```powershell
-cargo fmt --check
-cargo test --no-default-features
-cargo test --features full
+cargo fmt --all -- --check
+cargo test --locked --no-default-features
+cargo test --locked --features full
+cargo check --locked --manifest-path tools/native-proof/Cargo.toml
+.\scripts\check-native-boundary.ps1 -Locked
 .\scripts\check-feature-matrix.ps1 -Locked
 ```
 
-CI 同时检查默认/无默认 feature、Windows 全功能构建、feature 矩阵，以及
-Linux/macOS 桌面目标。
+CI 还运行桌面目标编译、原生交互、最终表面截图和 ARM64 验证。
+贡献代码前阅读[开发入口](https://github.com/qiu7824/zsui/blob/main/docs/ai-agent.md)，
+按模块加载对应上下文和检查命令。
 
-`Native UI Proof` 在推送到 `main` 或修改相关路径的 PR 上运行完整的 Win32、AppKit、
-X11 和 Wayland/AT-SPI 目标机证明；手动触发并勾选 `controls_only` 时只运行控件、
-调整大小与目录选择证明，不能替代完整证明。Linux 文件对话框中按 Esc 或关闭窗口
-（XDG portal 响应 1 或 2）返回取消，portal 报错、返回格式错误或提供方断开才返回错误。
+## 支持与许可证
 
-## v0.2 之后
+ZSUI 使用 [MPL-2.0](https://github.com/qiu7824/zsui/blob/main/LICENSE)。
+内置 Fluent System Icons SVG 回退资源使用 MIT 许可证，详见
+[第三方许可](https://github.com/qiu7824/zsui/blob/main/THIRD_PARTY_NOTICES.md)。
 
-- v0.2 的桌面发布门槛已经覆盖三平台原生窗口、最终表面、共享布局/输入、菜单、
-  剪贴板、文件面板、IME 协议、辅助功能桥接、47 个组件运行面和可裁剪构建。
-- 后续版本可继续扩展 UIA 富文本属性与嵌入对象范围、富文本编辑、任意数据模板、
-  大型 TreeView/DataGrid 虚拟化和更完整的拖放/触摸交互；这些增量不改变 v0.2 API 闭环。
-- 真实中文输入法候选窗、VoiceOver/Narrator/Orca 以及更多桌面环境仍采用发布前人工
-  体验检查，自动化证据只覆盖可确定复现的协议、几何和桥接行为。
-- 大型控件与后端可在公共契约稳定后继续拆分 crate；现有独立 Cargo feature 保持兼容。
+欢迎通过 [GitHub Star](https://github.com/qiu7824/zsui) 或赞赏支持项目。
 
-## 赞赏支持
+<details>
+<summary>赞赏支持</summary>
 
-如果这个项目对你有帮助，欢迎支持我继续完善 Rust 原生 UI 能力。
+![赞赏支持](https://raw.githubusercontent.com/qiu7824/zsui/main/docs/images/donate.png)
 
-![赞赏支持](docs/images/donate.png)
+</details>
 
-## 许可证
-
-本项目使用 [MPL-2.0](LICENSE) 许可证。
-内置的 Fluent System Icons SVG 回退资源使用 MIT 许可证，详见
-[第三方许可说明](THIRD_PARTY_NOTICES.md)。
-
-## 收藏量趋势图
-
-<a href="https://github.com/qiu7824/zsui/stargazers">
-  <img src="docs/images/star-history.svg" alt="ZSUI GitHub 收藏量趋势图" width="760">
-</a>
+[![GitHub 收藏量趋势](https://raw.githubusercontent.com/qiu7824/zsui/main/docs/images/star-history.svg)](https://github.com/qiu7824/zsui/stargazers)
