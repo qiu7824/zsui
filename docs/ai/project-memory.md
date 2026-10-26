@@ -744,6 +744,19 @@ history remain authoritative for implementation status.
   must not keep a separate popup-open flag or bypass application messages.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
+- Win32 paint memory must not scale with window area. WM_PAINT composes the
+  dirty rectangle band by band in one UI-thread-owned top-down DIB (128 Ki
+  pixels, at least 32 rows) and presents each band with one `BitBlt`; uxtheme
+  buffered paint is only the fallback. A rebuilt plan invalidates only the old
+  and new bounds of changed commands (`native_draw_plan_damage`), and Rust text
+  composites directly into the destination DIB section. Proxy Demo Comparison
+  run `40285562543` (Windows Server 2025, five runs) measured private bytes
+  6.31 -> 5.35 MiB at 680x560 and 7.64 -> 5.36 MiB at 1000x720 (private growth
+  4.11 -> 0.04 bytes per window pixel), zero differing pixels for the first
+  frame and after 40 scripted partial updates, zero flicker frames while the
+  unbuffered Windows Forms control showed 41, and paint CPU 126.7 -> 50.1 ms/s.
+  The remaining 4.2 bytes-per-pixel working-set growth is shareable, not
+  private, memory.
 - Native desktop windows stay hidden until the initial draw plan, typed input
   route, appearance and icon are attached. Backends with native menu surfaces
   also attach them before showing the window. Win32, AppKit and Linux must
