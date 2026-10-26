@@ -35,6 +35,13 @@ The package uses the official DuckDB release library selected by
 `DUCKDB_DOWNLOAD_LIB=1` in `.cargo/config.toml`. The native DuckDB library must
 be included when measuring or distributing the complete application package.
 
+CI restores the pinned official release archive through a separate native-library
+cache, verifies its SHA-256, and repairs linker files and debug/release runtime
+copies before invoking Cargo. This also covers a restored Rust build whose
+DuckDB download directory or Windows import library is missing. Native release
+versions and checksums are recorded in `duckdb-runtime.json` and checked against
+`Cargo.lock`; update them together when upgrading DuckDB.
+
 The reproducible source totals and pinned reference revision are recorded in
 [`CODE_SIZE.md`](CODE_SIZE.md). Same-host Windows runtime, package, dependency
 and capability results are recorded in

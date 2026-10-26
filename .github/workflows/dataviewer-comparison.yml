@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "comparisons/zsui_dataviewer/**"
+      - "comparisons/scripts/prepare_duckdb_runtime.py"
+      - "comparisons/scripts/tests/test_duckdb_runtime.py"
       - "src/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -12,6 +14,8 @@ on:
   pull_request:
     paths:
       - "comparisons/zsui_dataviewer/**"
+      - "comparisons/scripts/prepare_duckdb_runtime.py"
+      - "comparisons/scripts/tests/test_duckdb_runtime.py"
       - "src/**"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -41,6 +45,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: comparisons/zsui_dataviewer -> target
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v5
+        with:
+          path: comparisons/zsui_dataviewer/target/duckdb-download
+          key: duckdb-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('comparisons/zsui_dataviewer/duckdb-runtime.json') }}
+      - name: Verify native library cache recovery
+        run: python -m unittest discover -s ../scripts/tests -p test_duckdb_runtime.py
+      - name: Prepare pinned DuckDB linker and runtime files
+        run: python ../scripts/prepare_duckdb_runtime.py
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo build --release --locked
@@ -79,6 +94,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: comparisons/zsui_dataviewer -> target
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v5
+        with:
+          path: comparisons/zsui_dataviewer/target/duckdb-download
+          key: duckdb-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('comparisons/zsui_dataviewer/duckdb-runtime.json') }}
+      - name: Prepare pinned DuckDB linker and runtime files
+        run: python ../scripts/prepare_duckdb_runtime.py
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo build --release --locked
@@ -140,6 +164,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: comparisons/zsui_dataviewer -> target
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v5
+        with:
+          path: comparisons/zsui_dataviewer/target/duckdb-download
+          key: duckdb-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('comparisons/zsui_dataviewer/duckdb-runtime.json') }}
+      - name: Prepare pinned DuckDB linker and runtime files
+        run: python ../scripts/prepare_duckdb_runtime.py
       - run: cargo fmt --check
       - run: cargo test --locked
       - run: cargo build --release --locked

@@ -1,0 +1,25 @@
+{
+  "schema": "zsui.duckdb-runtime/v1",
+  "crate_version": "1.10505.0",
+  "library_version": "1.5.5",
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "archive": "libduckdb-windows-amd64.zip",
+      "sha256": "8375eb1fcf2212e8a0817950354815d4dde9dd383c2d9fa7b8975b71e278c1bd",
+      "files": ["duckdb.h", "duckdb.lib", "duckdb.dll"],
+      "runtime": "duckdb.dll"
+    },
+    "aarch64-apple-darwin": {
+      "archive": "libduckdb-osx-universal.zip",
+      "sha256": "7b5b8915cc382d0708636fe6385c0cdad5a61c9ff8ba2638b3e2141640783155",
+      "files": ["duckdb.h", "libduckdb.dylib"],
+      "runtime": "libduckdb.dylib"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "archive": "libduckdb-linux-amd64.zip",
+      "sha256": "1fb8ce388157d84a25abe685a8a2520bf00c00321821968e4bb398fd766e7abb",
+      "files": ["duckdb.h", "libduckdb.so"],
+      "runtime": "libduckdb.so"
+    }
+  }
+}
