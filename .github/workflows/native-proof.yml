@@ -2806,9 +2806,21 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Wayland and AT-SPI proof runtime
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes \
+          # Keep Ubuntu's signed sources while avoiding a mirror that can
+          # consume the whole runtime-proof deadline during package download.
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          for path in (Path("/etc/apt/sources.list"), Path("/etc/apt/sources.list.d/ubuntu.sources")):
+              if path.is_file():
+                  text = path.read_text()
+                  updated = text.replace("http://azure.archive.ubuntu.com/ubuntu", "https://archive.ubuntu.com/ubuntu")
+                  if text != updated:
+                      path.write_text(updated)
+          PY
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install --yes --no-install-recommends \
             at-spi2-core \
             dbus-x11 \
             libcairo2-dev \
