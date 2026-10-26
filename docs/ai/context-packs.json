@@ -240,6 +240,8 @@
       ],
       "optional": [
         "comparisons/scripts/build_unix_performance_matrix.sh",
+        "comparisons/scripts/macos_window_probe.swift",
+        "comparisons/scripts/tests/test_performance_matrix.py",
         ".github/workflows/ui-performance-matrix.yml",
         "examples/ui_performance_minimal.rs",
         "examples/ui-documents/performance-viewer.json",
@@ -254,6 +256,7 @@
       "verify": [
         "[void][scriptblock]::Create((Get-Content -Raw scripts/measure-ui-performance-matrix.ps1))",
         "python -c \"import ast,pathlib; ast.parse(pathlib.Path('comparisons/scripts/measure_unix_performance_matrix.py').read_text(encoding='utf-8'))\"",
+        "python -m unittest discover -s comparisons/scripts/tests -p test_performance_matrix.py",
         "cargo check --example ui_performance_minimal --no-default-features --features window,button,label",
         "cargo check --example invoice_tool --no-default-features --features window,shell,list,dialog",
         "cargo check --example component_gallery --no-default-features --features component-gallery-demo",

@@ -42,6 +42,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Test measurement lifecycle
+        run: python3 -m unittest discover -s comparisons/scripts/tests -p test_performance_matrix.py
+
       - name: Assert fixed runner
         run: |
           test "$(sw_vers -productVersion | cut -d. -f1)" = "15"

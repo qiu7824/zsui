@@ -58,10 +58,8 @@ def bundle_macos_application(
 ) -> None:
     """Place a raw benchmark executable in a real application bundle.
 
-    NSRunningApplication intentionally refuses to hide some executable-only
-    processes. The matrix measures desktop applications, so its macOS launch
-    shape must include the same bundle identity and activation policy expected
-    of a distributed app.
+    The matrix launches these bundles through LaunchServices and measures the
+    returned application PID, rather than executing Contents/MacOS directly.
     """
     source = pathlib.Path(application["executable"])
     name = f"{application['framework']}-{application['profile']}"
@@ -346,8 +344,54 @@ def linux_windows(process_ids: list[int]) -> list[dict[str, Any]]:
     return windows
 
 
+@dataclass
+class MacosApplicationProcess:
+    """A LaunchServices process, identified independently of the launcher PID."""
+
+    pid: int
+    launch_token: str
+    probe: pathlib.Path
+
+    def command(self, action: str) -> dict[str, Any]:
+        return json.loads(run([str(self.probe), action, str(self.pid), self.launch_token]).stdout)
+
+    def poll(self) -> int | None:
+        return None if self.command("state")["alive"] else 0
+
+    def terminate(self) -> None:
+        self.command("terminate")
+
+    def kill(self) -> None:
+        self.command("kill")
+
+    def wait(self, timeout: float) -> int:
+        deadline = time.monotonic() + timeout
+        while self.poll() is None:
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(str(self.pid), timeout)
+            time.sleep(0.05)
+        return 0
+
+
+def launch_macos_application(
+    application: dict[str, Any], probe: pathlib.Path, arguments: list[str]
+) -> MacosApplicationProcess:
+    # LaunchServices does not inherit the command-line process's working
+    # directory. Resolve existing file arguments before crossing that boundary.
+    directory = pathlib.Path(application["working_directory"])
+    resolved = [str((directory / value).resolve())
+                if not value.startswith("-") and (directory / value).is_file()
+                else value for value in arguments]
+    result = json.loads(run([str(probe), "launch", application["macos_bundle"], *resolved], timeout=25).stdout)
+    process = MacosApplicationProcess(int(result["pid"]), str(result["launch_token"]), probe)
+    if pathlib.Path(result["bundle"]).resolve() != pathlib.Path(application["macos_bundle"]).resolve():
+        process.terminate()
+        raise RuntimeError("LaunchServices returned a different application bundle")
+    return process
+
+
 def wait_for_window(
-    process: subprocess.Popen[bytes],
+    process: subprocess.Popen[bytes] | MacosApplicationProcess,
     platform: str,
     probe: pathlib.Path | None,
     started: float,
@@ -405,7 +449,25 @@ def capture_window(window: dict[str, Any], platform: str, output: pathlib.Path) 
     )
 
 
-def stop_process(process: subprocess.Popen[bytes], platform: str) -> None:
+def stop_process(process: subprocess.Popen[bytes] | MacosApplicationProcess, platform: str) -> None:
+    if isinstance(process, MacosApplicationProcess):
+        # Never signal a possibly reused PID or the LaunchServices parent.
+        if process.poll() is None:
+            descendants = {pid: run(["ps", "-o", "lstart=", "-p", str(pid)], check=False).stdout.strip()
+                           for pid in process_tree(process.pid, platform) if pid != process.pid}
+            process.terminate()
+            try:
+                process.wait(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+            for pid, birth in descendants.items():
+                if birth and run(["ps", "-o", "lstart=", "-p", str(pid)], check=False).stdout.strip() == birth:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+        return
     pids = process_tree(process.pid, platform)
     if process.poll() is None:
         process.terminate()
@@ -426,7 +488,7 @@ def stop_process(process: subprocess.Popen[bytes], platform: str) -> None:
 
 @dataclass
 class Launch:
-    process: subprocess.Popen[bytes]
+    process: subprocess.Popen[bytes] | MacosApplicationProcess
     window: dict[str, Any]
     startup_ms: float
     first_frame_ms: float
@@ -441,13 +503,18 @@ def launch_application(
 ) -> Launch:
     arguments = list(application.get("arguments", [])) + list(extra_arguments or [])
     started = time.monotonic()
-    process = subprocess.Popen(
-        [application["executable"], *arguments],
-        cwd=application["working_directory"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    if platform == "macos":
+        if probe is None or not application.get("macos_bundle"):
+            raise ValueError("macOS measurements require a probe and an application bundle")
+        process = launch_macos_application(application, probe, arguments)
+    else:
+        process = subprocess.Popen(
+            [application["executable"], *arguments],
+            cwd=application["working_directory"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     try:
         window, startup_ms = wait_for_window(process, platform, probe, started)
         capture = frame_probe or pathlib.Path(tempfile.gettempdir()) / f"zsui-frame-{process.pid}.png"
@@ -465,6 +532,8 @@ def launch_application(
 
 
 def hide_application(launch: Launch, platform: str, probe: pathlib.Path | None) -> None:
+    if launch.process.poll() is not None:
+        raise RuntimeError("measurement process exited before the hidden phase")
     if platform == "linux":
         result = run(
             ["xdotool", "windowunmap", str(launch.window["window_id"])],
@@ -472,9 +541,20 @@ def hide_application(launch: Launch, platform: str, probe: pathlib.Path | None) 
             check=False,
         )
     else:
-        result = run([str(probe), "hide", str(launch.process.pid)], timeout=10, check=False)
+        token = [launch.process.launch_token] if isinstance(launch.process, MacosApplicationProcess) else []
+        result = run([str(probe), "hide", str(launch.process.pid), *token], timeout=10, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"could not hide process {launch.process.pid}: {result.stderr}")
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if launch.process.poll() is not None:
+            raise RuntimeError("measurement process exited during the hidden phase")
+        pids = process_tree(launch.process.pid, platform)
+        windows = linux_windows(pids) if platform == "linux" else macos_windows(probe, pids)
+        if not windows:
+            return
+        time.sleep(0.05)
+    raise RuntimeError("hide request completed but a measured window remains visible")
 
 
 def drive_linux_repaint(window: dict[str, Any], seconds: float, hz: int) -> None:
@@ -515,8 +595,9 @@ def measure_cpu(
             drive_linux_repaint(launch.window, seconds, 60)
             driver = "x11_configure_expose_60hz"
         else:
+            token = [launch.process.launch_token] if isinstance(launch.process, MacosApplicationProcess) else []
             run(
-                [str(probe), "churn", str(launch.process.pid), str(seconds), "60"],
+                [str(probe), "churn", str(launch.process.pid), str(seconds), "60", *token],
                 timeout=seconds + 10,
             )
             driver = "nsrunningapplication_visibility_churn_60hz"

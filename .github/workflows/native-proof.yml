@@ -1961,8 +1961,9 @@ jobs:
           PY
 
       - name: Run owner-bound GTK4 Notepad file-dialog proof
+        timeout-minutes: 3
         run: |
-          dbus-run-session -- xvfb-run -a bash -euo pipefail -c '
+          xvfb-run -a dbus-run-session -- bash -euo pipefail -c '
             export GTK_USE_PORTAL=0
             root=target/native-proof/ubuntu-24.04-x86_64-gtk4
 
@@ -2001,7 +2002,9 @@ jobs:
                 echo "the GTK4 file dialog is not transient for the ZSUI Notepad window: $transient" >&2
                 exit 1
               fi
-              xdotool windowactivate --sync "$dialog" 2>/dev/null || true
+              # Bare Xvfb has no EWMH window manager; --sync activation can
+              # otherwise wait forever. Focus is sent directly to this window.
+              timeout 2s xdotool windowfocus --sync "$dialog" 2>/dev/null || true
               sleep 0.25
               if ! import -window "$dialog" "$screenshot" 2>/dev/null \
                 || [ ! -s "$screenshot" ] \
@@ -2034,6 +2037,11 @@ jobs:
             capture_owner_dialog \
               "Save text document" \
               "$root/notepad-owner-save-panel.png"
+            if ! timeout 30s tail --pid="$proof_pid" -f /dev/null; then
+              kill "$proof_pid" 2>/dev/null || true
+              echo "GTK4 Notepad did not exit after the owner-dialog proof" >&2
+              exit 1
+            fi
             wait "$proof_pid"
           '
           python3 - <<'PY'
