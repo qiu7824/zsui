@@ -2014,13 +2014,21 @@ jobs:
                 echo "the owner-bound GTK4 file dialog did not produce a valid capture" >&2
                 exit 1
               fi
-              # The dialog closes on the key press, so xdotool can fail to send the
-              # release to a window that no longer exists; only a live dialog is an error.
-              if ! xdotool key --window "$dialog" Escape 2>/dev/null \
-                && xwininfo -id "$dialog" >/dev/null 2>&1; then
+              # XTest reaches GTK4 through its focused native input path;
+              # --window would send a synthetic XSendEvent instead.
+              timeout 2s xdotool key --clearmodifiers Escape
+              closed=0
+              for attempt in $(seq 1 50); do
+                if ! xwininfo -id "$dialog" 2>/dev/null | grep -q "Map State: IsViewable"; then
+                  closed=1
+                  break
+                fi
+                sleep 0.1
+              done
+              if [ "$closed" != 1 ]; then
+                xwininfo -id "$dialog" >&2 || true
                 kill "$proof_pid" 2>/dev/null || true
-                wait "$proof_pid" 2>/dev/null || true
-                echo "the owner-bound GTK4 file dialog did not accept Escape" >&2
+                echo "the owner-bound GTK4 dialog remained visible after Escape: $title" >&2
                 exit 1
               fi
             }
