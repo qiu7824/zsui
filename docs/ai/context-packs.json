@@ -299,10 +299,14 @@
         "src/platform/windows/dpi.rs",
         "src/platform/windows/input",
         "src/platform/windows/services",
-        "src/platform/windows/text"
+        "src/platform/windows/text",
+        "examples/zsui_proxy_client.rs",
+        "scripts/measure-proxy-demo-comparison.ps1",
+        ".github/workflows/proxy-demo-comparison.yml"
       ],
       "verify": [
         "cargo test --features full --quiet",
+        "cargo check --example zsui_proxy_client --no-default-features --features window,button,label,textbox,toggle,list",
         "cargo test --no-default-features --features windows-rust-text --quiet",
         "cargo test --no-default-features --features rust-text-proof --quiet",
         "cargo check --example text_geometry_proof --no-default-features --features windows-text-proof",

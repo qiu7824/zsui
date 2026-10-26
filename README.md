@@ -238,6 +238,7 @@ cargo run --locked --example zsui_calculator --no-default-features --features ca
 | `resizable_layout` | 导航栏、SplitView 与 DataGrid 的受控尺寸 | [可调整布局](https://github.com/qiu7824/zsui/blob/main/docs/resizable-layout.md) |
 | `paged_virtual_list` | 后台分页、预取、稳定滚动锚点和 LRU 页缓存 | [分页虚拟列表](https://github.com/qiu7824/zsui/blob/main/docs/paged-virtual-list.md) |
 | `image_preview` | 后台 PNG 解码、请求合并与完整帧切换 | [图片预览](https://github.com/qiu7824/zsui/blob/main/docs/image-preview.md) |
+| `zsui_proxy_client` | VLESS 分享链接解析、模拟流量刷新与内存/闪屏对比 | [代理演示](https://github.com/qiu7824/zsui/blob/main/docs/proxy-demo.md) |
 
 `video` 接收应用提供的最新像素帧并处理布局与呈现；摄像头采集、编解码、音频、
 拖动进度和字幕由媒体适配层负责。接口范围见
