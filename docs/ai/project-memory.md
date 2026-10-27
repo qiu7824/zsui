@@ -750,14 +750,16 @@ history remain authoritative for implementation status.
   composed there and presented with one `BitBlt`, and taller updates use an
   update-sized uxtheme buffered paint. The band lends its pixels to buffered
   Rust text and is released after one second without painting. Never split
-  one update across several presentations: paired run `40445169295` against
-  main `3d95284` showed that band-split presentation tore (12 vs 2 torn frames
-  on the composed desktop, 7 vs 0 through `PrintWindow`), raised restore p95
-  from 31.7 to 44.3 ms and kept the band while hidden (+490 KiB), even though
-  it confirmed lower visible private bytes (-15.9% at 680x560, -30.5% at
-  1000x720), private growth of 0.05 instead of 4.04 bytes per window pixel,
-  half the paint CPU, unchanged input/scroll latency and pixel-identical
-  scroll, dialog, resize and occlusion scenes.
+  one update across several presentations: paired run `40445169295` showed
+  band-split presentation tearing (12 vs 2 and 7 vs 0 torn frames), restore
+  p95 rising from 31.7 to 44.3 ms and +490 KiB while hidden. Paired run
+  `40448862373` (main `3d95284` vs `b1ce8ee`) accepted the single-present
+  path: visible private bytes -15.9% at 680x560 and -30.3% at 1000x720,
+  private growth 0.04 instead of 4.03 bytes per window pixel, hidden memory
+  unchanged, peak working set +1.3% (within `max(3%, 256 KiB)`), paint CPU
+  -38% to -57%, input/scroll/restore p95 within `max(5%, 1 ms)`, eight
+  pixel-identical scenes and 0 torn frames against main's 2 and 1. DPI above
+  100%, physical multi-monitor setups and long-running loops remain uncovered.
 - Native desktop windows stay hidden until the initial draw plan, typed input
   route, appearance and icon are attached. Backends with native menu surfaces
   also attach them before showing the window. Win32, AppKit and Linux must

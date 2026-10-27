@@ -114,6 +114,10 @@ G0 已修复 macOS 启动身份及原生隐藏确认、GTK 对话框 Escape 输�
 确认；没有省略隐藏或文件对话框阶段。Windows 交互延迟另在独立 CI 桌面
 进行配对测量，并拒绝未建立前台焦点的样本。
 
+G4 的 Win32 局部重绘在[配对测量](https://github.com/qiu7824/zsui/actions/runs/40448862373)
+中满足内存、CPU、延迟、像素、撕裂与闪屏条件；DPI 缩放、物理多显示器和
+长时循环尚未覆盖。
+
 同条件数据、未达到的内存目标、已知文字差异及实验特性的采用边界见
 [Windows 文字内存与稳定性评估](memory-stability-results.md)。
 
