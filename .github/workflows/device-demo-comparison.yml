@@ -2,7 +2,7 @@ name: Device Demo Comparison
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/device-demo-validation]
     paths:
       - "examples/device_console.rs"
       - "examples/support/device_demo.rs"
