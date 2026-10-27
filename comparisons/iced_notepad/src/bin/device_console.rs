@@ -274,7 +274,7 @@ fn main() -> iced::Result {
                     empty: model::has_flag("--benchmark-empty"),
                     repaint,
                     started: std::time::Instant::now(),
-                    theme: Theme::custom("Device Console".into(), palette),
+                    theme: Theme::custom("Device Console", palette),
                 },
                 if repaint {
                     repaint_task()

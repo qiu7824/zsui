@@ -22,74 +22,136 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows:
+  build:
+    name: Build ${{ matrix.framework }} Windows demo
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: zsui
+            workspace: .
+            manifest: Cargo.toml
+            kind: example
+            target: device_console
+            features: window,button,label,textbox,checkbox,slider,progress,grid
+          - framework: egui
+            workspace: comparisons/egui_notepad
+            manifest: comparisons/egui_notepad/Cargo.toml
+            kind: bin
+            target: egui-device-console
+            features: ""
+          - framework: iced
+            workspace: comparisons/iced_notepad
+            manifest: comparisons/iced_notepad/Cargo.toml
+            kind: bin
+            target: iced-device-console
+            features: ""
+          - framework: slint
+            workspace: comparisons/slint_notepad
+            manifest: comparisons/slint_notepad/Cargo.toml
+            kind: bin
+            target: slint-device-console
+            features: ""
+          - framework: tauri
+            workspace: comparisons/tauri_notepad
+            manifest: comparisons/tauri_notepad/Cargo.toml
+            kind: bin
+            target: tauri-device-console
+            features: device-demo
+          - framework: gpui
+            workspace: comparisons/gpui_kit
+            manifest: comparisons/gpui_kit/Cargo.toml
+            kind: bin
+            target: gpui-device-console
+            features: ""
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_BUILD_JOBS: "2"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
+      DEMO_FRAMEWORK: ${{ matrix.framework }}
+      DEMO_MANIFEST: ${{ matrix.manifest }}
+      DEMO_TARGET: ${{ matrix.target }}
+      DEMO_KIND: ${{ matrix.kind }}
+      DEMO_FEATURES: ${{ matrix.features }}
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - name: Resolve GPUI Kit lockfile
-        run: |
-          if (-not (Test-Path comparisons/gpui_kit/Cargo.lock)) {
-            cargo generate-lockfile --manifest-path comparisons/gpui_kit/Cargo.toml
-            if ($LASTEXITCODE -ne 0) { throw 'GPUI Kit dependency resolution failed' }
-          }
       - name: Inspect build capacity
         run: |
           Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free
-          "CARGO_TARGET_DIR=$env:RUNNER_TEMP\zsui-device-comparison\target" >> $env:GITHUB_ENV
-          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$env:RUNNER_TEMP\zsui-device-$env:DEMO_FRAMEWORK\target" >> $env:GITHUB_ENV
       - uses: Swatinem/rust-cache@v2
         with:
-          key: device-demo-windows-v1
-          workspaces: . -> ${{ runner.temp }}/zsui-device-comparison/target
+          key: device-demo-${{ matrix.framework }}-windows
+          workspaces: ${{ matrix.workspace }} -> ${{ runner.temp }}/zsui-device-${{ matrix.framework }}/target
           cache-on-failure: true
       - name: Validate shared interaction model
+        if: matrix.framework == 'zsui'
         run: |
           rustc --edition 2024 --test examples/support/device_demo.rs -o "$env:RUNNER_TEMP/device-model-tests.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Model test compilation failed' }
           & "$env:RUNNER_TEMP/device-model-tests.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Shared interaction contract failed' }
-      - name: Build six release demos
+      - name: Build and identify release application
         id: build
         run: |
-          ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -BuildOnly -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
-      - name: Record reproducible demo artifacts
-        id: manifest
-        run: |
-          $bin=Join-Path $env:RUNNER_TEMP 'zsui-device-comparison/bin-performance-matrix'
-          $artifacts=@()
-          foreach($framework in @('zsui','egui','iced','slint','tauri','gpui')) {
-            $path=Join-Path $bin "$framework-device.exe"
-            if(-not (Test-Path -LiteralPath $path)){throw "Missing $framework executable"}
-            $artifacts+=@{framework=$framework;file="$framework-device.exe";bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-FileHash -LiteralPath $path).Hash}
-          }
-          @{schema='zsui.device-demo-build/v1';source=(& git rev-parse HEAD);rustc=(& rustc -V);profile='release: opt-level=z, thin LTO, codegen-units=1, strip=symbols, panic=abort';shared_model_sha256=(Get-FileHash examples/support/device_demo.rs).Hash;artifacts=$artifacts} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $bin 'build-manifest.json') -Encoding utf8
-          Copy-Item LICENSE (Join-Path $bin 'LICENSE-ZSUI.txt')
-          Copy-Item comparisons/device_demo/README.md (Join-Path $bin 'README.md')
-          "Native measurements require a desktop with the renderers' graphics APIs. This job verifies builds and the shared model; it does not certify GPU timing or native screenshots." >> $env:GITHUB_STEP_SUMMARY
-      - name: Upload measurements and lockfile
-        if: always()
+          $ErrorActionPreference='Stop'
+          $arguments=@('build','--release','--locked','--manifest-path',$env:DEMO_MANIFEST,"--$env:DEMO_KIND",$env:DEMO_TARGET)
+          if($env:DEMO_FEATURES){$arguments+=@('--no-default-features','--features',$env:DEMO_FEATURES)}
+          & cargo @arguments
+          if($LASTEXITCODE -ne 0){throw "$env:DEMO_FRAMEWORK release build failed"}
+          $release=Join-Path $env:CARGO_TARGET_DIR 'release'
+          if($env:DEMO_KIND -eq 'example'){$release=Join-Path $release 'examples'}
+          $output=Join-Path $env:RUNNER_TEMP 'device-artifact'
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $file="$env:DEMO_FRAMEWORK-device.exe"
+          Copy-Item -LiteralPath (Join-Path $release "$env:DEMO_TARGET.exe") -Destination (Join-Path $output $file)
+          @{framework=$env:DEMO_FRAMEWORK;file=$file;bytes=(Get-Item (Join-Path $output $file)).Length;sha256=(Get-FileHash (Join-Path $output $file)).Hash;source=(& git rev-parse HEAD);rustc=(& rustc -V);shared_model_sha256=(Get-FileHash examples/support/device_demo.rs).Hash} | ConvertTo-Json | Set-Content (Join-Path $output "$env:DEMO_FRAMEWORK.json") -Encoding utf8
+      - name: Upload compiled application
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v6
         with:
-          name: device-demo-build-records-windows-2025
-          path: |
-            ${{ runner.temp }}/zsui-device-comparison/results
-            comparisons/gpui_kit/Cargo.lock
-          if-no-files-found: error
+          name: device-demo-bin-${{ matrix.framework }}
+          path: ${{ runner.temp }}/device-artifact
           retention-days: 14
-      - name: Upload demo applications
-        if: always() && steps.manifest.outcome == 'success'
-        uses: actions/upload-artifact@v6
+
+  bundle:
+    name: Assemble verified six-framework bundle
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: device-demo-bin-*
+          path: bundle
+          merge-multiple: true
+      - name: Verify identities and write bundle manifest
+        shell: python
+        run: |
+          import hashlib, json, pathlib, shutil, os
+          root=pathlib.Path('bundle')
+          records=[]
+          for name in ('zsui','egui','iced','slint','tauri','gpui'):
+              item=json.loads((root/f'{name}.json').read_text(encoding='utf-8-sig'))
+              assert item['source']==os.environ['GITHUB_SHA']
+              assert hashlib.sha256((root/item['file']).read_bytes()).hexdigest()==item['sha256'].lower()
+              records.append(item)
+          assert len({x['shared_model_sha256'] for x in records})==1
+          result=dict(schema='zsui.device-demo-build/v1', source=os.environ['GITHUB_SHA'],rustc=records[0]['rustc'],profile='release: opt-level=z, thin LTO, codegen-units=1, strip=symbols, panic=abort',shared_model_sha256=records[0]['shared_model_sha256'],artifacts=records)
+          (root/'build-manifest.json').write_text(json.dumps(result,indent=2)+'\n')
+          shutil.copyfile('LICENSE',root/'LICENSE-ZSUI.txt')
+          shutil.copyfile('comparisons/device_demo/README.md',root/'README.md')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as out:
+              out.write('Six locked release builds and their identities verified. Native measurements run on a supported graphics desktop; hosted build success does not certify GPU timing or native screenshots.\n')
+      - uses: actions/upload-artifact@v6
         with:
           name: device-demo-applications-windows-2025
-          path: ${{ runner.temp }}/zsui-device-comparison/bin-performance-matrix
+          path: bundle
           retention-days: 14
