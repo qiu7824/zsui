@@ -585,7 +585,19 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
             // the thread's band when the update fits, otherwise through a
             // buffered paint the size of the update.
             let surface = window_paint_surface(hwnd);
-            if !paint_window_band(&surface, target, dirty) {
+            let full_client = dirty.left == rect.left
+                && dirty.top == rect.top
+                && dirty.right == rect.right
+                && dirty.bottom == rect.bottom;
+            if full_client {
+                // Restore and explicit whole-window redraws keep the established
+                // replay path; damage culling cannot save work for a full frame.
+                if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &rect) {
+                    surface.paint(buffered.hdc(), rect, Some(&mut buffered));
+                } else {
+                    surface.paint(target, rect, None);
+                }
+            } else if !paint_window_band(&surface, target, dirty) {
                 if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &dirty) {
                     surface.paint_area(buffered.hdc(), dirty, &mut buffered);
                 } else {

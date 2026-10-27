@@ -278,9 +278,13 @@ using System.Runtime.InteropServices;
 public static class ZsuiPerformanceMatrixWindow {
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X; public int Y; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
+    [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern bool GetUpdateRect(IntPtr hwnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
@@ -555,6 +559,26 @@ function Measure-EmptyWindow {
     }
 }
 
+function Get-DeviceLoadSignature {
+    param([IntPtr]$Window)
+    $previous=[ZsuiPerformanceMatrixWindow]::SetThreadDpiAwarenessContext([IntPtr](-4))
+    $bitmap=$null; $graphics=$null; $stream=$null
+    try {
+        $origin=New-Object ZsuiPerformanceMatrixWindow+POINT
+        if(-not [ZsuiPerformanceMatrixWindow]::ClientToScreen($Window,[ref]$origin)){throw 'Missing live client origin'}
+        $scale=[ZsuiPerformanceMatrixWindow]::GetDpiForWindow($Window)/96.0
+        $bitmap=New-Object System.Drawing.Bitmap ([int](260*$scale)),([int](48*$scale))
+        $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.CopyFromScreen($origin.X+[int](650*$scale),$origin.Y+[int](132*$scale),0,0,$bitmap.Size)
+        $stream=New-Object IO.MemoryStream
+        $bitmap.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)
+        return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream.ToArray()))
+    } finally {
+        if($graphics){$graphics.Dispose()}; if($bitmap){$bitmap.Dispose()}; if($stream){$stream.Dispose()}
+        if($previous -ne [IntPtr]::Zero){[void][ZsuiPerformanceMatrixWindow]::SetThreadDpiAwarenessContext($previous)}
+    }
+}
+
 function Measure-RepaintApplication {
     param([pscustomobject]$Application)
     $repaintArguments = @($Application.arguments)
@@ -569,10 +593,19 @@ function Measure-RepaintApplication {
             throw "$($Application.framework_name) $($Application.profile_name) repaint process did not present"
         }
         Start-Sleep -Seconds $WarmupSeconds
+        if ($DeviceDemo) {
+            $signatures=@()
+            for($check=0;$check -lt 3;$check++) {
+                $signatures+=Get-DeviceLoadSignature -Window $launch.process.MainWindowHandle
+                Start-Sleep -Milliseconds 350
+            }
+            if(@($signatures | Sort-Object -Unique).Count -lt 2){throw "$($Application.framework_name) did not update the visible load metric"}
+        }
         $externalRedraw = $Application.framework -eq "zsui" -and -not $DeviceDemo
         $cpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $launch.process.MainWindowHandle -ForceRepaint $externalRedraw
         $cpu.requested_hz = 60
         $cpu | Add-Member -NotePropertyName driver -NotePropertyValue $(if ($externalRedraw) { "win32_redraw_window" } else { "application_render_loop" })
+        if ($DeviceDemo) { $cpu | Add-Member -NotePropertyName dynamic_metric_verified -NotePropertyValue $true }
         $snapshot = Get-ProcessSnapshot -RootProcessId $launch.process.Id
         $cpu | Add-Member -NotePropertyName peak_rss_bytes -NotePropertyValue $snapshot.peak_working_set_bytes
         return $cpu

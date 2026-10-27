@@ -19,7 +19,7 @@ on:
       baseline_ref:
         description: Ref measured as the whole-frame baseline
         type: string
-        default: main
+        default: 3d95284ae8be4503de64b60edb4f527fb7e203d5
 
 permissions:
   contents: read
@@ -63,7 +63,7 @@ jobs:
       - name: Checkout current design
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.baseline_ref || 'main' }}
+          ref: ${{ inputs.baseline_ref || '3d95284ae8be4503de64b60edb4f527fb7e203d5' }}
           path: old
 
       - name: Add the same demo to the current design
