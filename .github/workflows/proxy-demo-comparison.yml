@@ -44,9 +44,14 @@ jobs:
             width: 1920
             height: 1080
             transition: 100
+          # The hosted display adapter offers at most 1920x1080.
+          - scale: 175
+            width: 1920
+            height: 1080
+            transition: 100
           - scale: 200
-            width: 2560
-            height: 1440
+            width: 1920
+            height: 1080
             transition: 100
     env:
       RUST_BACKTRACE: "1"

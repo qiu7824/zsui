@@ -101,7 +101,9 @@ public static class ZsuiDisplayScale
         int target = Array.IndexOf(Steps, percent);
         if (target < 0 || target - recommended > current.maxScaleRel || target - recommended < current.minScaleRel)
         {
-            throw new InvalidOperationException(percent + "% is not offered by this display");
+            int highest = Steps[Math.Max(0, Math.Min(Steps.Length - 1, recommended + current.maxScaleRel))];
+            throw new InvalidOperationException(percent + "% is not offered by this display; it offers "
+                + Steps[0] + "% to " + highest + "%, recommending " + Steps[Math.Min(Steps.Length - 1, recommended)] + "%");
         }
         var request = new SCALE_SET { header = current.header, scaleRel = target - recommended };
         request.header.type = -4;

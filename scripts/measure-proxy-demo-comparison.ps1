@@ -79,6 +79,23 @@ public static class ZsuiPaintProbe
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint action, uint parameter, out RECT rect, uint update);
+
+    /// Desktop area outside the taskbar, in physical pixels.
+    public static RECT WorkArea()
+    {
+        RECT area;
+        SystemParametersInfoW(0x0030, 0, out area, 0);
+        return area;
+    }
+
+    /// Client size the window actually received, in physical pixels.
+    public static string ClientSize(IntPtr window)
+    {
+        RECT client;
+        GetClientRect(window, out client);
+        return (client.Right - client.Left) + "x" + (client.Bottom - client.Top);
+    }
 
     /// Window rectangles, screen captures and UIA bounds must be physical
     /// pixels at every scale, so the measuring process is per-monitor aware.
@@ -457,6 +474,20 @@ $monitors = @($display.monitors)
 $secondMonitor = $monitors | Where-Object { $_.left -ne 0 -or $_.top -ne 0 } | Select-Object -First 1
 $factor = $Scale / 100.0
 function Px([int]$Logical) { return [int][Math]::Round($Logical * $factor) }
+# Captured windows must lie inside the work area with their frame, or a
+# composed-desktop capture would read the taskbar or off-screen pixels. When a
+# scaled size does not fit, it shrinks evenly; both variants get the same size.
+$workArea = [ZsuiPaintProbe]::WorkArea()
+function Fit([int]$Width, [int]$Height) {
+    $room = [Math]::Min(
+        ($workArea.Right - $workArea.Left - (Px 40)) / (Px $Width),
+        ($workArea.Bottom - $workArea.Top - (Px 60)) / (Px $Height))
+    $shrink = [Math]::Min(1.0, $room)
+    return @{ width = [int][Math]::Floor((Px $Width) * $shrink); height = [int][Math]::Floor((Px $Height) * $shrink) }
+}
+$captureSize = Fit 680 560
+$notepadSize = Fit 900 620
+$captureArguments = @("--always-on-top", "--width", "$($captureSize.width)", "--height", "$($captureSize.height)")
 $variants = @("baseline", "candidate")
 $proxy = @{ baseline = (Resolve-Path $BaselineProxy).Path; candidate = (Resolve-Path $CandidateProxy).Path }
 $notepad = @{ baseline = (Resolve-Path $BaselineNotepad).Path; candidate = (Resolve-Path $CandidateNotepad).Path }
@@ -571,6 +602,7 @@ foreach ($size in $sizes) {
                 "--width", "$($size.width)", "--height", "$($size.height)"
             )
             Start-Sleep -Seconds 3
+            $client = [ZsuiPaintProbe]::ClientSize($run.window)
             $visible = Measure-Phase $run
             [void][ZsuiPaintProbe]::ShowWindow($run.window, 0)
             Start-Sleep -Seconds 2
@@ -582,10 +614,17 @@ foreach ($size in $sizes) {
             $peak = $run.process.PeakWorkingSet64
             Stop-Run $run
             $memory["$variant-$($size.name)"].Add([ordered]@{
-                pair = $pair; visible = $visible; hidden = $hidden; restored = $restored; peak_working_set = $peak
+                pair = $pair; client = $client; visible = $visible; hidden = $hidden; restored = $restored; peak_working_set = $peak
             })
         }
     }
+    # Windows limits a new window to the desktop, so the size used for
+    # labels and per-pixel growth is the client size the windows received.
+    $clients = @($variants | ForEach-Object { $memory["$_-$($size.name)"] } | ForEach-Object { $_.client } | Sort-Object -Unique)
+    if ($clients.Count -ne 1) { throw "$($size.name) windows received different client sizes: $($clients -join ', ')" }
+    $received = $clients[0].Split("x")
+    $size.width = [int]$received[0]
+    $size.height = [int]$received[1]
 }
 $results.memory = $memory
 
@@ -640,9 +679,7 @@ $proxyScenes = [ordered]@{
 foreach ($scene in $proxyScenes.Keys) {
     $frames = @{}
     foreach ($variant in $variants) {
-        $run = Start-Window $proxy[$variant] ($proxyScenes[$scene] + @(
-            "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
-        ))
+        $run = Start-Window $proxy[$variant] ($proxyScenes[$scene] + $captureArguments)
         try {
             Start-Sleep -Milliseconds 3000
             [ZsuiPaintProbe]::Settle($run.window)
@@ -658,10 +695,9 @@ foreach ($scene in $proxyScenes.Keys) {
 if ($TransitionScale -gt 0) {
     $frames = @{ switched = @{}; restored = @{} }
     foreach ($variant in $variants) {
-        $run = Start-Window $proxy[$variant] @(
-            "--demo-node", "--connect", "--ticks", "20", "--tick-ms", "40",
-            "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
-        )
+        $run = Start-Window $proxy[$variant] (@(
+            "--demo-node", "--connect", "--ticks", "20", "--tick-ms", "40"
+        ) + $captureArguments)
         try {
             Start-Sleep -Milliseconds 2500
             & $displayScript -Scale $TransitionScale | Out-Null
@@ -705,10 +741,10 @@ function Switch-Scale([int]$Percent) {
 $notepadFrames = @{}
 foreach ($scene in $notepadScenes) { $notepadFrames[$scene] = @{} }
 foreach ($variant in $variants) {
-    $run = Start-Window $notepad[$variant] @("--width", "$(Px 900)", "--height", "$(Px 620)")
+    $run = Start-Window $notepad[$variant] @("--width", "$($notepadSize.width)", "--height", "$($notepadSize.height)")
     try {
         $window = $run.window
-        [ZsuiPaintProbe]::Place($window, 0, 0)
+        [ZsuiPaintProbe]::Place($window, $workArea.Left, $workArea.Top)
         Start-Sleep -Milliseconds 1500
         $uia = [System.Windows.Automation.AutomationElement]::FromHandle($window)
         $editCondition = [System.Windows.Automation.PropertyCondition]::new(
@@ -786,7 +822,7 @@ foreach ($variant in $variants) {
             Start-Sleep -Milliseconds 1500
             [ZsuiPaintProbe]::Settle($window)
             $notepadFrames["monitor-2"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
-            [ZsuiPaintProbe]::Place($window, 0, 0)
+            [ZsuiPaintProbe]::Place($window, $workArea.Left, $workArea.Top)
             Start-Sleep -Milliseconds 1500
             [ZsuiPaintProbe]::Settle($window)
             $notepadFrames["monitor-1"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
@@ -828,13 +864,11 @@ $probes = [ordered]@{}
 foreach ($kind in "tear", "flicker") {
     foreach ($mode in "screen", "print") {
         foreach ($variant in $variants) {
-            $arguments = @(
-                "--demo-node", "--connect", "--tick-ms", "30",
-                "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
-            )
+            $arguments = @("--demo-node", "--connect", "--tick-ms", "30") + $captureArguments
             if ($kind -eq "tear") { $arguments += "--tear-probe" }
             $run = Start-Window $proxy[$variant] $arguments
             try {
+                [ZsuiPaintProbe]::Place($run.window, $workArea.Left, $workArea.Top)
                 $probes["$kind-$variant-$mode"] = Measure-Probe $variant $run $kind $mode
             } finally {
                 Stop-Run $run
@@ -847,6 +881,7 @@ foreach ($kind in "tear", "flicker") {
             ) -PassThru
             try {
                 $window = [ZsuiPaintProbe]::WaitForWindow($control.Id, 15000)
+                [ZsuiPaintProbe]::Place($window, $workArea.Left, $workArea.Top)
                 $probes["flicker-control-$mode"] = Measure-Probe "control" @{ process = $control; window = $window } $kind $mode
             } finally {
                 Stop-Process -Id $control.Id -Force -ErrorAction SilentlyContinue
@@ -864,7 +899,8 @@ function Add-Statistic([string]$Name, [double[]]$Baseline, [double[]]$Candidate)
 function Field-Values([string]$Key, [scriptblock]$Select) {
     return [double[]]($memory[$Key] | Sort-Object { $_.pair } | ForEach-Object $Select)
 }
-$area = @{ small = 680 * 560; large = 1000 * 720 }
+$area = @{}
+foreach ($size in $sizes) { $area[$size.name] = $size.width * $size.height }
 foreach ($size in $sizes) {
     foreach ($phase in "visible", "hidden", "restored") {
         foreach ($field in "private_bytes", "working_set") {
@@ -911,7 +947,7 @@ $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("## 局部重绘（每次更新单次呈现）vs main 整窗重绘（Windows Server 2025，$Pairs 对交替进程）")
 $lines.Add("")
 $monitorText = @($monitors | ForEach-Object { "$($_.width)x$($_.height) @ $($_.dpi) DPI" }) -join "；"
-$lines.Add("桌面 ${screenWidth}x${screenHeight}，缩放 $Scale%（$monitorText）。窗口尺寸按缩放放大。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
+$lines.Add("桌面 ${screenWidth}x${screenHeight}，缩放 $Scale%（$monitorText）。窗口尺寸按缩放放大；截图用的窗口放不下工作区时等比缩小，基线与候选相同；内存表中的尺寸是窗口实际得到的客户区。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
 $lines.Add("")
 $lines.Add("### 私有字节与工作集（MiB，演示每 100 ms 刷新）")
 $lines.Add("")
