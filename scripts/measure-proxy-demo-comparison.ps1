@@ -174,6 +174,42 @@ public static class ZsuiPaintProbe
             new IntPtr((screenY << 16) | (screenX & 0xffff)));
     }
 
+    /// Splits a hide-and-restore into showing the window and its first full
+    /// repaint, next to a full repaint of a window that stayed visible. No
+    /// composition wait is included, so each part is the target's own work.
+    public static string RestoreParts(IntPtr window, int count)
+    {
+        var show = new double[count];
+        var firstPaint = new double[count];
+        var paint = new double[count];
+        var watch = new Stopwatch();
+        for (int index = 0; index < count; index++)
+        {
+            ShowWindow(window, 0);
+            DwmFlush();
+            watch.Restart();
+            ShowWindow(window, 4);
+            show[index] = watch.Elapsed.TotalMilliseconds;
+            watch.Restart();
+            RedrawWindow(window, IntPtr.Zero, IntPtr.Zero, 0x0181);
+            firstPaint[index] = watch.Elapsed.TotalMilliseconds;
+            DwmFlush();
+            watch.Restart();
+            RedrawWindow(window, IntPtr.Zero, IntPtr.Zero, 0x0181);
+            paint[index] = watch.Elapsed.TotalMilliseconds;
+            DwmFlush();
+        }
+        Func<double[], string> describe = values =>
+        {
+            var sorted = (double[])values.Clone();
+            Array.Sort(sorted);
+            return string.Format(CultureInfo.InvariantCulture, "{{\"median\":{0:F3},\"p95\":{1:F3},\"max\":{2:F3}}}",
+                sorted[sorted.Length / 2], sorted[(int)Math.Ceiling(sorted.Length * 0.95) - 1], sorted[sorted.Length - 1]);
+        };
+        return string.Format(CultureInfo.InvariantCulture, "{{\"show\":{0},\"first_paint\":{1},\"paint\":{2}}}",
+            describe(show), describe(firstPaint), describe(paint));
+    }
+
     public static void Close(IntPtr window)
     {
         PostMessageW(window, 0x0010, UIntPtr.Zero, IntPtr.Zero);
@@ -409,6 +445,7 @@ public static class ZsuiPaintProbe
         var diff = new Frame { Width = left.Width, Height = left.Height, Bgra = new byte[left.Bgra.Length] };
         long differing = 0;
         int maxDelta = 0;
+        int minX = left.Width, minY = left.Height, maxX = -1, maxY = -1;
         for (int offset = 0; offset < left.Bgra.Length; offset += 4)
         {
             int delta = 0;
@@ -421,6 +458,9 @@ public static class ZsuiPaintProbe
             {
                 differing++;
                 diff.Bgra[offset + 2] = 255;
+                int pixel = offset / 4, x = pixel % left.Width, y = pixel / left.Width;
+                minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
             }
             else
             {
@@ -429,9 +469,13 @@ public static class ZsuiPaintProbe
             }
         }
         SaveBmp(diff, diffPath);
+        // Where the differences are, so a log without the images still
+        // locates them.
+        string bounds = differing == 0 ? "" : string.Format(CultureInfo.InvariantCulture,
+            "{0},{1} {2}x{3}", minX, minY, maxX - minX + 1, maxY - minY + 1);
         return string.Format(CultureInfo.InvariantCulture,
-            "{{\"same_size\":true,\"size\":\"{0}x{1}\",\"differing_pixels\":{2},\"max_channel_delta\":{3}}}",
-            left.Width, left.Height, differing, maxDelta);
+            "{{\"same_size\":true,\"size\":\"{0}x{1}\",\"differing_pixels\":{2},\"max_channel_delta\":{3},\"differing_bounds\":\"{4}\"}}",
+            left.Width, left.Height, differing, maxDelta, bounds);
     }
 
     static double Median(double[] values)
@@ -473,17 +517,17 @@ $display = & $displayScript -Query | ConvertFrom-Json
 $monitors = @($display.monitors)
 $secondMonitor = $monitors | Where-Object { $_.left -ne 0 -or $_.top -ne 0 } | Select-Object -First 1
 $factor = $Scale / 100.0
-function Px([int]$Logical) { return [int][Math]::Round($Logical * $factor) }
-# Captured windows must lie inside the work area with their frame, or a
-# composed-desktop capture would read the taskbar or off-screen pixels. When a
-# scaled size does not fit, it shrinks evenly; both variants get the same size.
+# The demos take window sizes in DIPs and scale them to the display. A window
+# must still lie inside the work area with its frame, or Windows clips it and
+# a composed-desktop capture would read the taskbar or off-screen pixels, so a
+# size that does not fit at this scale shrinks evenly. Both variants always
+# get the same size.
 $workArea = [ZsuiPaintProbe]::WorkArea()
 function Fit([int]$Width, [int]$Height) {
-    $room = [Math]::Min(
-        ($workArea.Right - $workArea.Left - (Px 40)) / (Px $Width),
-        ($workArea.Bottom - $workArea.Top - (Px 60)) / (Px $Height))
-    $shrink = [Math]::Min(1.0, $room)
-    return @{ width = [int][Math]::Floor((Px $Width) * $shrink); height = [int][Math]::Floor((Px $Height) * $shrink) }
+    $roomWidth = ($workArea.Right - $workArea.Left) / $factor - 40
+    $roomHeight = ($workArea.Bottom - $workArea.Top) / $factor - 60
+    $shrink = [Math]::Min(1.0, [Math]::Min($roomWidth / $Width, $roomHeight / $Height))
+    return @{ width = [int][Math]::Floor($Width * $shrink); height = [int][Math]::Floor($Height * $shrink) }
 }
 $captureSize = Fit 680 560
 $notepadSize = Fit 900 620
@@ -586,8 +630,8 @@ function Measure-Phase($Run) {
 }
 
 $sizes = @(
-    @{ name = "small"; width = (Px 680); height = (Px 560) },
-    @{ name = "large"; width = (Px 1000); height = (Px 720) }
+    @{ name = "small"; width = 680; height = 560 },
+    @{ name = "large"; width = 1000; height = 720 }
 )
 $memory = [ordered]@{}
 foreach ($size in $sizes) {
@@ -644,11 +688,23 @@ for ($pair = 1; $pair -le $Pairs; $pair++) {
                     -Executable $notepad[$variant] -OutputDirectory $latencyRoot `
                     -Variant $variant -Trial $trial -Operations 200 -VerifyEmptyReplacement | Out-Host
                 $record = Get-Content (Join-Path $latencyRoot "$variant-$trial/latency.json") -Raw | ConvertFrom-Json
+                # Operations that took one composition interval longer than
+                # the median, by position, show whether slow ones are periodic.
+                $slow = [ordered]@{}
+                foreach ($operation in "input", "scroll", "restore") {
+                    $times = [double[]]$record."$($operation)_ms"
+                    $median = Get-Median $times
+                    $slow[$operation] = @(0..($times.Count - 1) | Where-Object { $times[$_] -gt $median + 8 })
+                    Write-Host ("{0} pair {1} {2}: median {3:N1} ms, p95 {4:N1} ms, max {5:N1} ms, {6} slow at [{7}]" -f
+                        $variant, $pair, $operation, $median, (Get-P95 $times), ($times | Measure-Object -Maximum).Maximum,
+                        $slow[$operation].Count, ($slow[$operation] -join ","))
+                }
                 $latency[$variant].Add([ordered]@{
                     pair = $pair
                     input = Get-P95 $record.input_ms
                     scroll = Get-P95 $record.scroll_ms
                     restore = Get-P95 $record.restore_ms
+                    slow_operations = $slow
                 })
                 $measured = $true
             } catch {
@@ -739,6 +795,7 @@ function Switch-Scale([int]$Percent) {
     Start-Sleep -Milliseconds 2000
 }
 $notepadFrames = @{}
+$restoreParts = [ordered]@{}
 foreach ($scene in $notepadScenes) { $notepadFrames[$scene] = @{} }
 foreach ($variant in $variants) {
     $run = Start-Window $notepad[$variant] @("--width", "$($notepadSize.width)", "--height", "$($notepadSize.height)")
@@ -827,6 +884,9 @@ foreach ($variant in $variants) {
             [ZsuiPaintProbe]::Settle($window)
             $notepadFrames["monitor-1"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
         }
+        $parts = [ZsuiPaintProbe]::RestoreParts($window, 100)
+        Write-Host "$variant restore parts (ms): $parts"
+        $restoreParts[$variant] = $parts | ConvertFrom-Json
         foreach ($scene in $notepadScenes) {
             Save-Frame $notepadFrames[$scene][$variant] (Join-Path $root "notepad-$scene-$variant")
         }
@@ -838,6 +898,7 @@ foreach ($scene in $notepadScenes) {
     Compare-Scenes $notepadFrames[$scene] "notepad-$scene"
 }
 $results.pixels = $pixels
+$results.restore_parts = $restoreParts
 
 # 4. Tearing and erase flicker while repainting every 30 ms.
 function Measure-Probe([string]$Name, $Run, [string]$Kind, [string]$Mode) {
@@ -947,7 +1008,7 @@ $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("## 局部重绘（每次更新单次呈现）vs main 整窗重绘（Windows Server 2025，$Pairs 对交替进程）")
 $lines.Add("")
 $monitorText = @($monitors | ForEach-Object { "$($_.width)x$($_.height) @ $($_.dpi) DPI" }) -join "；"
-$lines.Add("桌面 ${screenWidth}x${screenHeight}，缩放 $Scale%（$monitorText）。窗口尺寸按缩放放大；截图用的窗口放不下工作区时等比缩小，基线与候选相同；内存表中的尺寸是窗口实际得到的客户区。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
+$lines.Add("桌面 ${screenWidth}x${screenHeight}，缩放 $Scale%（$monitorText）。窗口尺寸以 DIP 给出，由程序按缩放放大；截图用的窗口放不下工作区时等比缩小，基线与候选相同；内存表中的尺寸是窗口实际得到的客户区像素。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
 $lines.Add("")
 $lines.Add("### 私有字节与工作集（MiB，演示每 100 ms 刷新）")
 $lines.Add("")
@@ -983,12 +1044,22 @@ foreach ($operation in @(@{ k = "input"; n = "输入" }, @{ k = "scroll"; n = "�
     $lines.Add(("| {0} p95 ms（记事本，整窗重绘） | {1:N3} | {2:N3} | {3} | {4:N3} 至 {5:N3} | {6} |" -f $operation.n, $s.baseline_median, $s.candidate_median, (Percent $s), $s.ci_low, $s.ci_high, $gate))
 }
 $lines.Add("")
+$lines.Add("恢复操作拆分（记事本，各 100 次，不含合成等待，ms，中位数 / p95）：")
+$lines.Add("")
+$lines.Add("| 阶段 | $($labels.baseline) | $($labels.candidate) |")
+$lines.Add("| --- | ---: | ---: |")
+foreach ($part in @(@{ k = "show"; n = "显示窗口" }, @{ k = "first_paint"; n = "显示后首次整窗重绘" }, @{ k = "paint"; n = "窗口保持可见时整窗重绘" })) {
+    $b = $restoreParts.baseline.($part.k)
+    $c = $restoreParts.candidate.($part.k)
+    $lines.Add(("| {0} | {1:N2} / {2:N2} | {3:N2} / {4:N2} |" -f $part.n, $b.median, $b.p95, $c.median, $c.p95))
+}
+$lines.Add("")
 $lines.Add("被剔除并补跑的延迟样本：$($latencyFailures.Count)。")
 $lines.Add("")
 $lines.Add("### 显示一致性（截图前只处理已有待绘区域，不强制整窗重绘）")
 $lines.Add("")
-$lines.Add("| 场景 | 尺寸 | 不同像素数 | 最大通道差 |")
-$lines.Add("| --- | --- | ---: | ---: |")
+$lines.Add("| 场景 | 尺寸 | 不同像素数 | 最大通道差 | 差异范围 |")
+$lines.Add("| --- | --- | ---: | ---: | --- |")
 $sceneNames = [ordered]@{
     "proxy-static" = "代理演示：静态首帧"
     "proxy-updated" = "代理演示：40 次局部刷新后"
@@ -1009,9 +1080,9 @@ foreach ($scene in $sceneNames.Keys) {
     if (-not $pixels.Contains($scene)) { continue }
     $result = $pixels[$scene]
     if ($result.same_size) {
-        $lines.Add("| $($sceneNames[$scene]) | $($result.size) | $($result.differing_pixels) | $($result.max_channel_delta) |")
+        $lines.Add("| $($sceneNames[$scene]) | $($result.size) | $($result.differing_pixels) | $($result.max_channel_delta) | $($result.differing_bounds) |")
     } else {
-        $lines.Add("| $($sceneNames[$scene]) | 尺寸不同：$($result.left) / $($result.right) | — | — |")
+        $lines.Add("| $($sceneNames[$scene]) | 尺寸不同：$($result.left) / $($result.right) | — | — | — |")
     }
 }
 $lines.Add("")

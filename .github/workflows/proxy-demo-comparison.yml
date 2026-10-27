@@ -44,12 +44,9 @@ jobs:
             width: 1920
             height: 1080
             transition: 100
-          # The hosted display adapter offers at most 1920x1080.
+          # The hosted display adapter offers at most 1920x1080, where
+          # Windows offers 100% to 175%.
           - scale: 175
-            width: 1920
-            height: 1080
-            transition: 100
-          - scale: 200
             width: 1920
             height: 1080
             transition: 100

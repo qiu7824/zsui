@@ -78,12 +78,14 @@ method in [memory-stability-plan.md](memory-stability-plan.md):
   window, so a clean result is shown to be a measurement and not a blind spot.
 
 Tearing and flicker are captured both from the composed desktop and through
-`PrintWindow`. The workflow repeats everything at 100% and, at 1920×1080 (the
-largest mode the hosted display adapter offers), at 150%, 175% and 200%
-scale, set on the running desktop by `scripts/set-windows-display-scale.ps1`
-the way the Settings app does. Window sizes scale to match; a captured window
-that would no longer fit the work area shrinks evenly, the same for both
-builds, and memory rows report the client size the windows received. Above
+`PrintWindow`. The workflow repeats everything at 100% and, at 1920×1080, at
+150% and 175% scale, set on the running desktop by
+`scripts/set-windows-display-scale.ps1` the way the Settings app does. That is
+the largest mode the hosted display adapter offers, and Windows offers at most
+175% for it, so 200% needs a larger physical or virtual display. Window sizes
+are given in DIPs and scale with the display; a captured window that would no
+longer fit the work area shrinks evenly, the same for both builds, and memory
+rows report the client size the windows received. Above
 100% the demo and the notepad also switch the live desktop to 100% and back,
 which sends the same
 `WM_DPICHANGED` as moving to a monitor with another DPI, and compare pixels
