@@ -28,7 +28,7 @@ impl eframe::App for Demo {
                 ui.label("6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms");
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
-                    ui.add_sized([490.0, 32.0], egui::TextEdit::singleline(&mut self.state.query));
+                    ui.add_sized([490.0, 32.0], egui::TextEdit::singleline(&mut self.state.query).hint_text("筛选设备 / Filter devices"));
                     ui.checkbox(&mut self.state.online_only, "仅在线 / Online only");
                     if ui.button("重置 / Reset").clicked() { self.state.update(Message::Reset); }
                 });

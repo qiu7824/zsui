@@ -34,7 +34,7 @@ slint::slint! {
             HorizontalLayout {
                 height: 36px;
                 spacing: 14px;
-                LineEdit { text <=> root.query; edited => { root.query-changed(self.text); } }
+                LineEdit { text <=> root.query; placeholder-text: "筛选设备 / Filter devices"; edited => { root.query-changed(self.text); } }
                 CheckBox { text: "仅在线 / Online only"; checked <=> root.online-only; toggled => { root.online-changed(self.checked); } }
                 Button { text: "重置 / Reset"; width: 120px; clicked => { root.reset(); } }
             }

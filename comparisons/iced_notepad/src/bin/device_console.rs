@@ -20,6 +20,9 @@ fn repaint_task() -> Task<Message> {
     )
 }
 impl Demo {
+    fn theme(&self) -> Theme {
+        Theme::Light
+    }
     fn update(&mut self, message: Message) -> Task<Message> {
         let repaint = matches!(message, Message::Repaint) && self.repaint;
         self.state.update(message);
@@ -37,7 +40,7 @@ impl Demo {
             text(model::TITLE).size(26),
             text("6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms"),
             row![
-                text_input("", &self.state.query).on_input(Message::Query).width(Fill),
+                text_input("筛选设备 / Filter devices", &self.state.query).on_input(Message::Query).width(Fill),
                 checkbox(self.state.online_only).label("仅在线 / Online only").on_toggle(Message::OnlineOnly),
                 button("重置 / Reset").on_press(Message::Reset),
             ].spacing(14).align_y(iced::Center),
@@ -64,7 +67,7 @@ impl Demo {
                 self.state.load
             )))
             .push(slider(0.0..=100.0, self.state.load, Message::Load))
-            .push(progress_bar(0.0..=100.0, self.state.load).height(12))
+            .push(progress_bar(0.0..=100.0, self.state.load).girth(12))
             .push(text(self.state.selection()));
         container(content)
             .padding(24)
@@ -94,7 +97,7 @@ fn main() -> iced::Result {
         Demo::view,
     )
     .title("设备控制台 / Device Console · Iced")
-    .theme(|_| Theme::Light)
+    .theme(Demo::theme)
     .window(iced::window::Settings {
         size: Size::new(model::WIDTH as f32, model::HEIGHT as f32),
         ..Default::default()

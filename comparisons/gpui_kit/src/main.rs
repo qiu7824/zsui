@@ -22,7 +22,8 @@ struct Demo {
 
 impl Demo {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let query = cx.new(|cx| InputState::new(window, cx));
+        let query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("筛选设备 / Filter devices"));
         let load = cx.new(|_| SliderState::new().min(0.0).max(100.0).default_value(42.0));
         let input_changed = cx.subscribe_in(&query, window, |this, input, event, _, cx| {
             if matches!(event, InputEvent::Change) {

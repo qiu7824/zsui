@@ -64,6 +64,19 @@ jobs:
       - name: Measure six matching native windows
         run: |
           ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -SkipBuild -RepeatRuns 5 -MemorySamples 10 -StartupRuns 5 -WarmupSeconds 3 -CpuSampleSeconds 3 -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
+      - name: Validate complete measurement evidence
+        run: |
+          $root=Join-Path $env:RUNNER_TEMP 'zsui-device-comparison/results/ui-performance-matrix/latest'
+          $report=Get-Content (Join-Path $root 'report.json') -Raw | ConvertFrom-Json
+          if($report.rounds.Count -ne 5){throw 'Missing independent measurement rounds'}
+          foreach($framework in @('zsui','egui','iced','slint','tauri','gpui')) {
+            foreach($round in $report.rounds) {
+              $entry=$round.$framework.device
+              if(-not $entry.screenshot_captured -or -not (Test-Path -LiteralPath $entry.screenshot)){throw "Missing $framework surface"}
+              if($entry.full_page_memory.private_bytes -le 0 -or $entry.full_page_memory.rss_bytes -le 0 -or $entry.warm_start.first_presented_frame_median_ms -le 0){throw "Invalid $framework measurement"}
+              if([Math]::Abs($entry.client.width_pixels*96/$entry.client.dpi-960) -gt 1 -or [Math]::Abs($entry.client.height_pixels*96/$entry.client.dpi-680) -gt 1){throw "Mismatched $framework client geometry"}
+            }
+          }
       - name: Upload measurements and lockfile
         if: always()
         uses: actions/upload-artifact@v6

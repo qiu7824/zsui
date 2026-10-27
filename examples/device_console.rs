@@ -16,6 +16,7 @@ fn view(state: &State) -> ViewNode<Message> {
         text("6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms"),
         row([
             textbox(state.query.clone())
+                .placeholder("筛选设备 / Filter devices")
                 .on_change(Message::Query)
                 .flex(1.0),
             checkbox("仅在线 / Online only", state.online_only).on_toggle(Message::OnlineOnly),

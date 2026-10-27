@@ -14,6 +14,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $script:processIdentities = @{}
 $script:measurementRound = 1
+$script:launchNumber = 0
+$script:deviceBuildFailures = [Collections.Generic.List[string]]::new()
 
 function Get-Median {
     param([object[]]$Values)
@@ -78,7 +80,14 @@ function Invoke-CargoBuildAndCopy {
     )
     Write-Host "release build: $Name"
     & cargo @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Name release build failed" }
+    if ($LASTEXITCODE -ne 0) {
+        if ($DeviceDemo) {
+            $script:deviceBuildFailures.Add($Name)
+            Write-Warning "$Name release build failed; collecting diagnostics from remaining frameworks"
+            return
+        }
+        throw "$Name release build failed"
+    }
     if (-not (Test-Path -LiteralPath $BuiltExecutable)) {
         throw "$Name did not produce $BuiltExecutable"
     }
@@ -108,6 +117,9 @@ function Build-PerformanceMatrix {
             "build", "--release", "--locked", "--manifest-path", $manifests.gpui,
             "--bin", "gpui-device-console"
         ) (Join-Path $release "gpui-device-console.exe") (Join-Path $binaryDir "gpui-device.exe")
+        if ($script:deviceBuildFailures.Count -gt 0) {
+            throw "Device demo builds failed: $($script:deviceBuildFailures -join ', ')"
+        }
         return
     }
 
@@ -275,11 +287,15 @@ public static class ZsuiPerformanceMatrixWindow {
 function Start-BenchmarkProcess {
     param([string]$Executable, [string[]]$Arguments)
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $script:launchNumber++
+    $logPrefix = "{0}-{1}-{2}" -f [IO.Path]::GetFileNameWithoutExtension($Executable), $script:measurementRound, $script:launchNumber
     $start = @{
         FilePath = $Executable
         WorkingDirectory = $workspace
         PassThru = $true
         WindowStyle = "Normal"
+        RedirectStandardOutput = Join-Path $outputDir "$logPrefix.stdout.log"
+        RedirectStandardError = Join-Path $outputDir "$logPrefix.stderr.log"
     }
     if ($Arguments.Count -gt 0) { $start.ArgumentList = $Arguments }
     $process = Start-Process @start
@@ -704,6 +720,8 @@ $report = [ordered]@{
         warmup_seconds = $WarmupSeconds
         cpu_sample_seconds = $CpuSampleSeconds
         repeat_runs = $RepeatRuns
+        cpu = @(Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors)
+        display_adapters = @(Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion)
     }
     profiles = $profiles
     implementations = $results
