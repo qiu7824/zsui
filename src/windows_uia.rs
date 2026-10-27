@@ -996,6 +996,15 @@ mod tests {
         assert_eq!(snapshot.exposed_text(), "native UIA");
         assert_eq!(snapshot.selection().caret, 10);
 
+        let empty = windows::core::HSTRING::from("");
+        unsafe { value.SetValue(&empty) }.expect("UIA should clear text");
+        let cleared =
+            crate::windows_win32_host::windows_win32_window_text_accessibility_snapshot(hwnd)
+                .expect("clearing should keep the editable provider alive");
+        assert_eq!(cleared.exposed_text(), "");
+        assert_eq!(cleared.selection().ordered(), (0, 0));
+        unsafe { value.SetValue(&empty) }.expect("clearing an empty value is idempotent");
+
         crate::windows_win32_host::clear_windows_win32_window_view_input_route(hwnd);
     }
 

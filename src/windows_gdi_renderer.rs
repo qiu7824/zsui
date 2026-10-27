@@ -1,9 +1,11 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     ffi::c_void,
     io::Cursor,
     mem::size_of,
     ptr::null,
+    rc::{Rc, Weak},
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -26,15 +28,21 @@ use windows_sys::Win32::Globalization::{
 use windows_sys::Win32::{
     Foundation::{POINT, RECT},
     Graphics::Gdi::{
-        CreateCompatibleDC, CreateFontW, CreatePen, CreateSolidBrush, DeleteDC, DeleteObject,
-        DrawTextW, FillRect, FrameRect, GdiFlush, GetDeviceCaps, GetStockObject, GetTextFaceW,
-        GetTextMetricsW, IntersectClipRect, Polygon, RestoreDC, RoundRect, SaveDC, SelectObject,
-        SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor, StretchDIBits, BITMAPINFO,
-        BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH,
-        DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HDC, HGDIOBJ, LOGPIXELSY, NULL_PEN,
-        OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY, TEXTMETRICW,
+        BitBlt, CreateCompatibleDC, CreateDIBSection, CreateFontW, CreatePen, CreateSolidBrush,
+        DeleteDC, DeleteObject, DrawTextW, FillRect, FrameRect, GdiFlush, GetDeviceCaps,
+        GetStockObject, GetTextFaceW, GetTextMetricsW, IntersectClipRect, Polygon, RestoreDC,
+        RoundRect, SaveDC, SelectObject, SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor,
+        SetViewportOrgEx, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS,
+        DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HBITMAP, HDC,
+        HGDIOBJ, LOGPIXELSY, NULL_PEN, OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY, TEXTMETRICW,
     },
     UI::WindowsAndMessaging::SystemParametersInfoW,
+};
+
+#[cfg(feature = "windows-rust-text")]
+use windows_sys::Win32::Graphics::Gdi::{
+    DPtoLP, GetClipBox, GetGraphicsMode, GetLayout, GetMapMode, GM_COMPATIBLE, LAYOUT_RTL, MM_TEXT,
+    NULLREGION, RGBQUAD, SIMPLEREGION,
 };
 
 #[allow(non_camel_case_types)]
@@ -50,7 +58,14 @@ struct BpPaintParams {
 }
 
 const BPBF_TOPDOWNDIB: u32 = 2;
-static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
+thread_local! {
+    static BUFFERED_PAINT_CONTEXT: RefCell<Weak<BufferedPaintContext>> = const { RefCell::new(Weak::new()) };
+    /// Windows on one UI thread paint one at a time, so they share one band.
+    /// Its size follows the widest dirty area, never window height or count.
+    static WINDOWS_PAINT_BAND: RefCell<Option<WindowsPaintBand>> = const { RefCell::new(None) };
+    #[cfg(test)]
+    static LAST_BUFFERED_PAINT_UNINIT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
 static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
 static WINDOWS_SYSTEM_ICON_FONT: OnceLock<WindowsSystemIconFont> = OnceLock::new();
 static WINDOWS_UI_FONT_FAMILIES: OnceLock<WindowsUiFontFamilies> = OnceLock::new();
@@ -103,6 +118,7 @@ pub const fn select_windows_system_icon_font(
 #[link(name = "uxtheme")]
 unsafe extern "system" {
     fn BufferedPaintInit() -> i32;
+    fn BufferedPaintUnInit() -> i32;
     fn BeginBufferedPaint(
         hdcTarget: HDC,
         prcTarget: *const RECT,
@@ -111,6 +127,12 @@ unsafe extern "system" {
         phdc: *mut HDC,
     ) -> HPAINTBUFFER;
     fn EndBufferedPaint(hBufferedPaint: HPAINTBUFFER, fUpdateTarget: i32) -> i32;
+    #[cfg(feature = "windows-rust-text")]
+    fn GetBufferedPaintBits(
+        hBufferedPaint: HPAINTBUFFER,
+        ppbBuffer: *mut *mut RGBQUAD,
+        pcxRow: *mut i32,
+    ) -> i32;
 }
 
 const TRANSPARENT: i32 = 1;
@@ -302,20 +324,29 @@ pub struct WindowsBufferedPaint {
     buffer: HPAINTBUFFER,
     dc: HDC,
     update_target: bool,
+    _context: Rc<BufferedPaintContext>,
+    #[cfg(feature = "windows-rust-text")]
+    rect: RECT,
 }
 
 impl WindowsBufferedPaint {
     pub unsafe fn begin(target: HDC, rect: &RECT) -> Option<Self> {
-        ensure_buffered_paint();
+        let context = acquire_buffered_paint_context()?;
         let mut paint_dc: HDC = std::ptr::null_mut();
         let buffer = BeginBufferedPaint(target, rect, BPBF_TOPDOWNDIB, null(), &mut paint_dc);
         if buffer.is_null() || paint_dc.is_null() {
+            if !buffer.is_null() {
+                EndBufferedPaint(buffer, 0);
+            }
             None
         } else {
             Some(Self {
                 buffer,
                 dc: paint_dc,
                 update_target: true,
+                _context: context,
+                #[cfg(feature = "windows-rust-text")]
+                rect: *rect,
             })
         }
     }
@@ -326,6 +357,304 @@ impl WindowsBufferedPaint {
 
     pub fn set_update_target(&mut self, update_target: bool) {
         self.update_target = update_target;
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn text_surface(&mut self) -> Option<WindowsBufferedTextSurface<'_>> {
+        let width = u32::try_from(self.rect.right.checked_sub(self.rect.left)?).ok()?;
+        let height = u32::try_from(self.rect.bottom.checked_sub(self.rect.top)?).ok()?;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let mut bits = std::ptr::null_mut();
+        let mut row_pixels = 0;
+        let mut origin = POINT { x: 0, y: 0 };
+        unsafe {
+            if GetMapMode(self.dc) != MM_TEXT
+                || GetGraphicsMode(self.dc) != GM_COMPATIBLE
+                || GetLayout(self.dc) & LAYOUT_RTL != 0
+                || DPtoLP(self.dc, &mut origin, 1) == 0
+                || GetBufferedPaintBits(self.buffer, &mut bits, &mut row_pixels) != 0
+            {
+                return None;
+            }
+        }
+        let row_pixels = usize::try_from(row_pixels).ok()?;
+        if bits.is_null() || row_pixels < width as usize {
+            return None;
+        }
+        let stride = row_pixels.checked_mul(4)?;
+        let len = stride.checked_mul(height as usize)?;
+        if len > isize::MAX as usize {
+            return None;
+        }
+        Some(WindowsBufferedTextSurface {
+            dc: self.dc,
+            bits: bits.cast(),
+            width,
+            height,
+            stride,
+            len,
+            origin,
+            _paint: std::marker::PhantomData,
+        })
+    }
+}
+
+/// Pixel budget of the per-thread paint band: 128 Ki pixels, 512 KiB BGRA.
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+const WINDOWS_PAINT_BAND_PIXELS: u32 = 128 * 1024;
+/// Very wide dirty areas keep a usable band height instead of the budget.
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+const WINDOWS_PAINT_BAND_MIN_ROWS: u32 = 32;
+
+/// A top-down 32-bit DIB section that composes one horizontal band of a dirty
+/// area off-screen. Each band reaches the window in a single `BitBlt`, so no
+/// pixel ever shows an erased or partially drawn state.
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+pub(crate) struct WindowsPaintBand {
+    dc: HDC,
+    bitmap: HBITMAP,
+    previous: HGDIOBJ,
+    #[cfg_attr(not(feature = "windows-rust-text"), allow(dead_code))]
+    bits: *mut u8,
+    width: u32,
+    rows: u32,
+}
+
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+impl WindowsPaintBand {
+    fn rows_for_width(width: u32) -> u32 {
+        (WINDOWS_PAINT_BAND_PIXELS / width.max(1)).max(WINDOWS_PAINT_BAND_MIN_ROWS)
+    }
+
+    unsafe fn new(reference: HDC, width: u32) -> Option<Self> {
+        let rows = Self::rows_for_width(width);
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: i32::try_from(width).ok()?,
+                biHeight: -i32::try_from(rows).ok()?,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                ..std::mem::zeroed()
+            },
+            ..std::mem::zeroed()
+        };
+        let dc = CreateCompatibleDC(reference);
+        if dc.is_null() {
+            return None;
+        }
+        let mut bits = std::ptr::null_mut();
+        let bitmap = CreateDIBSection(
+            dc,
+            &info,
+            DIB_RGB_COLORS,
+            &mut bits,
+            std::ptr::null_mut(),
+            0,
+        );
+        if bitmap.is_null() || bits.is_null() {
+            DeleteDC(dc);
+            return None;
+        }
+        let previous = SelectObject(dc, bitmap as HGDIOBJ);
+        if previous.is_null() {
+            DeleteObject(bitmap as HGDIOBJ);
+            DeleteDC(dc);
+            return None;
+        }
+        Some(Self {
+            dc,
+            bitmap,
+            previous,
+            bits: bits.cast(),
+            width,
+            rows,
+        })
+    }
+
+    pub(crate) const fn hdc(&self) -> HDC {
+        self.dc
+    }
+
+    pub(crate) const fn rows(&self) -> u32 {
+        self.rows
+    }
+
+    /// Composes `area` (logical client coordinates, at most `width` wide and
+    /// `rows` tall) off-screen and presents it to `target` with one `BitBlt`.
+    pub(crate) unsafe fn present(
+        &mut self,
+        target: HDC,
+        area: RECT,
+        draw: impl FnOnce(&mut Self, RECT),
+    ) -> bool {
+        let saved = SaveDC(self.dc);
+        if saved == 0 {
+            return false;
+        }
+        SetViewportOrgEx(self.dc, -area.left, -area.top, std::ptr::null_mut());
+        IntersectClipRect(self.dc, area.left, area.top, area.right, area.bottom);
+        draw(self, area);
+        RestoreDC(self.dc, saved);
+        GdiFlush();
+        BitBlt(
+            target,
+            area.left,
+            area.top,
+            area.right - area.left,
+            area.bottom - area.top,
+            self.dc,
+            0,
+            0,
+            SRCCOPY,
+        ) != 0
+    }
+
+    /// Lends the band's pixels while a `present` call has mapped `area` onto
+    /// them, so Rust text composites in place like the buffered-paint path.
+    #[cfg(feature = "windows-rust-text")]
+    fn text_surface(&mut self) -> Option<WindowsBufferedTextSurface<'_>> {
+        let mut origin = POINT { x: 0, y: 0 };
+        unsafe {
+            if GetMapMode(self.dc) != MM_TEXT
+                || GetGraphicsMode(self.dc) != GM_COMPATIBLE
+                || GetLayout(self.dc) & LAYOUT_RTL != 0
+                || DPtoLP(self.dc, &mut origin, 1) == 0
+            {
+                return None;
+            }
+        }
+        let stride = (self.width as usize).checked_mul(4)?;
+        let len = stride.checked_mul(self.rows as usize)?;
+        Some(WindowsBufferedTextSurface {
+            dc: self.dc,
+            bits: self.bits,
+            width: self.width,
+            height: self.rows,
+            stride,
+            len,
+            origin,
+            _paint: std::marker::PhantomData,
+        })
+    }
+}
+
+impl Drop for WindowsPaintBand {
+    fn drop(&mut self) {
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            DeleteObject(self.bitmap as HGDIOBJ);
+            DeleteDC(self.dc);
+        }
+    }
+}
+
+/// Runs `paint` with this UI thread's band, wide enough for `width` pixels.
+/// Returns `None` when the band is already in use by a nested paint or cannot
+/// be allocated; callers then fall back to whole-surface buffered paint.
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+pub(crate) fn with_windows_paint_band<R>(
+    reference: HDC,
+    width: u32,
+    paint: impl FnOnce(&mut WindowsPaintBand) -> R,
+) -> Option<R> {
+    WINDOWS_PAINT_BAND.with(|slot| {
+        let mut slot = slot.try_borrow_mut().ok()?;
+        if slot.as_ref().is_none_or(|band| band.width < width) {
+            // Release the narrower band before allocating its replacement.
+            *slot = None;
+            *slot = unsafe { WindowsPaintBand::new(reference, width) };
+        }
+        slot.as_mut().map(paint)
+    })
+}
+
+/// Drops this UI thread's paint band; the next paint allocates it again.
+/// A band that is presenting right now is kept.
+#[cfg(feature = "windows-win32")]
+pub(crate) fn release_windows_paint_band() {
+    WINDOWS_PAINT_BAND.with(|slot| {
+        if let Ok(mut slot) = slot.try_borrow_mut() {
+            *slot = None;
+        }
+    });
+}
+
+/// A scoped borrow of the final top-down paint buffer; it cannot outlive or
+/// overlap another borrow of the owner that calls EndBufferedPaint.
+#[cfg(feature = "windows-rust-text")]
+pub(crate) struct WindowsBufferedTextSurface<'paint> {
+    dc: HDC,
+    bits: *mut u8,
+    width: u32,
+    height: u32,
+    stride: usize,
+    len: usize,
+    origin: POINT,
+    _paint: std::marker::PhantomData<&'paint mut ()>,
+}
+
+#[cfg(feature = "windows-rust-text")]
+impl WindowsBufferedTextSurface<'_> {
+    fn clip(&self, bounds: Rect) -> Option<crate::ZsTextPixelRect> {
+        let mut clip = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        match unsafe { GetClipBox(self.dc, &mut clip) } {
+            NULLREGION => Some(crate::ZsTextPixelRect::full(0, 0)),
+            SIMPLEREGION => {
+                let left = clip.left.max(bounds.x);
+                let top = clip.top.max(bounds.y);
+                let right = clip.right.min(bounds.x.saturating_add(bounds.width));
+                let bottom = clip.bottom.min(bounds.y.saturating_add(bounds.height));
+                Some(crate::ZsTextPixelRect::new(
+                    left.saturating_sub(self.origin.x),
+                    top.saturating_sub(self.origin.y),
+                    right.saturating_sub(left).max(0) as u32,
+                    bottom.saturating_sub(top).max(0) as u32,
+                ))
+            }
+            // GDI retains nonrectangular clipping in the bounded fallback.
+            _ => None,
+        }
+    }
+
+    pub(crate) fn composite(
+        &mut self,
+        engine: &mut crate::ZsRustTextEngine,
+        layout: &crate::ZsRustTextLayout,
+        bounds: Rect,
+        clip: crate::ZsTextPixelRect,
+        color: Color,
+        profile: crate::ZsTextRasterProfile,
+    ) -> Result<(), String> {
+        unsafe {
+            GdiFlush();
+        }
+        // SAFETY: GetBufferedPaintBits returned this 32-bit top-down DIB.
+        // The owner borrow keeps the buffer alive and exclusive. GDI work is
+        // flushed before this short slice borrow, and the pure Rust compositor
+        // performs no GDI calls while the slice exists. Native drawing resumes
+        // only after it has returned.
+        let pixels = unsafe { std::slice::from_raw_parts_mut(self.bits, self.len) };
+        engine.composite_bgra_clipped(
+            layout,
+            pixels,
+            self.width,
+            self.height,
+            self.stride,
+            bounds.x.saturating_sub(self.origin.x),
+            bounds.y.saturating_sub(self.origin.y),
+            clip,
+            color,
+            profile,
+        )
     }
 }
 
@@ -339,10 +668,42 @@ impl Drop for WindowsBufferedPaint {
     }
 }
 
-unsafe fn ensure_buffered_paint() {
-    BUFFERED_PAINT_INIT.get_or_init(|| {
-        let _ = BufferedPaintInit();
-    });
+struct BufferedPaintContext;
+
+impl Drop for BufferedPaintContext {
+    fn drop(&mut self) {
+        // Rc owners cannot leave the creating thread. Every paint owns a lease,
+        // so its EndBufferedPaint runs before the final UnInit releases caches.
+        let _result = unsafe { BufferedPaintUnInit() };
+        #[cfg(test)]
+        LAST_BUFFERED_PAINT_UNINIT.with(|result| result.set(Some(_result)));
+    }
+}
+
+fn acquire_buffered_paint_context() -> Option<Rc<BufferedPaintContext>> {
+    BUFFERED_PAINT_CONTEXT.with(|slot| {
+        if let Some(context) = slot.borrow().upgrade() {
+            return Some(context);
+        }
+        if unsafe { BufferedPaintInit() } < 0 {
+            return None;
+        }
+        let context = Rc::new(BufferedPaintContext);
+        *slot.borrow_mut() = Rc::downgrade(&context);
+        Some(context)
+    })
+}
+
+/// Keeps the thread's native paint caches alive for one application run.
+/// Individual paints retain their own lease if they outlive this scope.
+pub(crate) struct WindowsBufferedPaintSession {
+    _context: Rc<BufferedPaintContext>,
+}
+
+impl WindowsBufferedPaintSession {
+    pub(crate) fn new() -> Option<Self> {
+        acquire_buffered_paint_context().map(|context| Self { _context: context })
+    }
 }
 
 fn ensure_gdiplus_startup() -> Option<usize> {
@@ -625,6 +986,35 @@ pub(crate) struct WindowsGdiResourceCache {
 }
 
 impl WindowsGdiResourceCache {
+    #[cfg(feature = "windows-win32")]
+    pub(crate) fn release_idle_memory(&self) {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.fonts = HashMap::new();
+            entries.brushes = HashMap::new();
+            entries.pens = HashMap::new();
+            #[cfg(feature = "windows-rust-text")]
+            entries.rust_text.release_idle_memory();
+            #[cfg(feature = "windows-directwrite")]
+            {
+                entries.directwrite = Default::default();
+            }
+        }
+    }
+
+    #[cfg(all(test, feature = "windows-rust-text", feature = "windows-win32"))]
+    pub(crate) fn has_rust_text_resources(&self) -> bool {
+        self.entries
+            .lock()
+            .unwrap()
+            .rust_text
+            .has_retained_resources()
+    }
+
+    #[cfg(all(test, feature = "windows-rust-text"))]
+    pub(crate) fn rust_text_snapshot(&self) -> crate::windows_rust_text::WindowsRustTextStats {
+        self.entries.lock().unwrap().rust_text.stats()
+    }
+
     /// Whether both handles refer to the same renderer resources.
     #[cfg(test)]
     pub(crate) fn shares_with(&self, other: &Self) -> bool {
@@ -687,6 +1077,23 @@ impl WindowsGdiResourceCache {
             .expect("Windows GDI resource cache should not be poisoned")
             .rust_text
             .draw_text(dc, run, style, dpi_scale)
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn draw_rust_text_buffered(
+        &self,
+        surface: &mut WindowsBufferedTextSurface<'_>,
+        clip: crate::ZsTextPixelRect,
+        text: &str,
+        bounds: Rect,
+        style: &TextStyle,
+        dpi_scale: f32,
+    ) -> bool {
+        self.entries
+            .lock()
+            .expect("Windows GDI resource cache should not be poisoned")
+            .rust_text
+            .draw_text_buffered(surface, clip, text, bounds, style, dpi_scale)
     }
 
     #[cfg(feature = "windows-rust-text")]
@@ -1646,17 +2053,53 @@ impl WindowsGdiDrawSink {
         self.draw_plan(plan);
     }
 
-    /// Replays only the commands that can touch `area`. Clip changes always
-    /// run so nested clips stay balanced.
-    pub(crate) fn draw_native_plan_within(&mut self, plan: &NativeDrawPlan, area: Rect) {
-        for command in &plan.commands {
-            if command
-                .paint_bounds()
-                .is_none_or(|bounds| crate::render_protocol::rects_intersect(bounds, area))
-            {
-                self.draw_command(command);
+    #[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+    /// Replays only the commands that can touch `area` into a paint band,
+    /// compositing Rust text straight into the band's pixels.
+    pub(crate) fn draw_native_plan_band(
+        &mut self,
+        plan: &NativeDrawPlan,
+        band: &mut WindowsPaintBand,
+        area: Rect,
+    ) {
+        #[cfg(feature = "windows-rust-text")]
+        if self.hdc() == band.hdc() {
+            if let Some(surface) = band.text_surface() {
+                draw_commands_within(
+                    &mut WindowsBufferedDrawSink {
+                        sink: self,
+                        surface,
+                    },
+                    plan,
+                    area,
+                );
+                return;
             }
         }
+        #[cfg(not(feature = "windows-rust-text"))]
+        let _ = band;
+        draw_commands_within(self, plan, area);
+    }
+
+    pub(crate) fn draw_native_plan_buffered(
+        &mut self,
+        plan: &NativeDrawPlan,
+        paint: &mut WindowsBufferedPaint,
+    ) {
+        #[cfg(feature = "windows-rust-text")]
+        if self.hdc() == paint.hdc() {
+            if let Some(surface) = paint.text_surface() {
+                WindowsBufferedDrawSink {
+                    sink: self,
+                    surface,
+                }
+                .draw_plan(plan);
+                return;
+            }
+        }
+        #[cfg(not(feature = "windows-rust-text"))]
+        let _ = paint;
+        self.draw_plan(plan);
     }
 
     fn draw_round_rect(
@@ -1727,6 +2170,43 @@ impl WindowsGdiDrawSink {
             bounds: command.bounds,
         };
         self.renderer.draw_text(&run, &style);
+    }
+
+    #[cfg(feature = "windows-rust-text")]
+    fn draw_text_command_buffered(
+        &mut self,
+        command: &NativeDrawTextCommand,
+        surface: &mut WindowsBufferedTextSurface<'_>,
+    ) {
+        let mut style = self.style_resolver.resolve_text_style(command.style);
+        if let Some(color) = command.color_override(self.high_contrast) {
+            style.color = color;
+        }
+        command.apply_size_override(&mut style);
+        if let Some(clip) = surface.clip(command.bounds) {
+            if clip.width == 0
+                || clip.height == 0
+                || self.renderer.resources.draw_rust_text_buffered(
+                    surface,
+                    clip,
+                    &command.text,
+                    command.bounds,
+                    &style,
+                    self.renderer.dpi_scale,
+                )
+            {
+                return;
+            }
+        }
+        // The native fallback still accepts the historical owned TextRun API.
+        // Normal buffered text borrows the retained command above.
+        self.renderer.draw_text(
+            &TextRun {
+                text: command.text.clone(),
+                bounds: command.bounds,
+            },
+            &style,
+        );
     }
 
     fn draw_icon_command(&mut self, command: &NativeDrawIconCommand) {
@@ -2106,6 +2586,48 @@ fn windows_gdi_font_family_available(dc: HDC, family: &str) -> bool {
     String::from_utf16_lossy(&selected_family[..end]).eq_ignore_ascii_case(family)
 }
 
+#[cfg(feature = "windows-rust-text")]
+struct WindowsBufferedDrawSink<'sink, 'paint> {
+    sink: &'sink mut WindowsGdiDrawSink,
+    surface: WindowsBufferedTextSurface<'paint>,
+}
+
+#[cfg(feature = "windows-rust-text")]
+impl NativeDrawCommandSink for WindowsBufferedDrawSink<'_, '_> {
+    fn draw_command(&mut self, command: &NativeDrawCommand) {
+        match command {
+            NativeDrawCommand::Text(text) => {
+                self.sink.operation_log.push(command.operation());
+                self.sink
+                    .draw_text_command_buffered(text, &mut self.surface);
+            }
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(text) => {
+                self.sink.operation_log.push(command.operation());
+                let rendered = text.rendered_text();
+                self.sink.draw_text_command_buffered(
+                    &NativeDrawTextCommand::new(rendered.as_str(), text.bounds, text.style),
+                    &mut self.surface,
+                );
+            }
+            _ => self.sink.draw_command(command),
+        }
+    }
+}
+
+/// Clip changes always run so nested clips stay balanced.
+#[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+fn draw_commands_within(sink: &mut impl NativeDrawCommandSink, plan: &NativeDrawPlan, area: Rect) {
+    for command in &plan.commands {
+        if command
+            .paint_bounds()
+            .is_none_or(|bounds| crate::render_protocol::rects_intersect(bounds, area))
+        {
+            sink.draw_command(command);
+        }
+    }
+}
+
 impl NativeDrawCommandSink for WindowsGdiDrawSink {
     fn draw_command(&mut self, command: &NativeDrawCommand) {
         self.operation_log.push(command.operation());
@@ -2472,6 +2994,72 @@ fn to_wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buffered_paint_lease_outlives_session_and_releases_native_thread_cache() {
+        struct TestDc(HDC);
+        impl Drop for TestDc {
+            fn drop(&mut self) {
+                unsafe {
+                    DeleteDC(self.0);
+                }
+            }
+        }
+        let first = WindowsBufferedPaintSession::new().expect("buffered paint initialization");
+        let second = WindowsBufferedPaintSession::new().unwrap();
+        assert!(Rc::ptr_eq(&first._context, &second._context));
+        let weak = Rc::downgrade(&first._context);
+        let dc = TestDc(unsafe { CreateCompatibleDC(std::ptr::null_mut()) });
+        assert!(!dc.0.is_null());
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 8,
+            bottom: 8,
+        };
+        let mut paint = unsafe { WindowsBufferedPaint::begin(dc.0, &rect) }.unwrap();
+        paint.set_update_target(false);
+        drop(first);
+        drop(second);
+        assert!(weak.upgrade().is_some());
+        drop(paint);
+        drop(dc);
+        assert!(weak.upgrade().is_none());
+        assert!(
+            LAST_BUFFERED_PAINT_UNINIT
+                .with(|result| result.get())
+                .unwrap()
+                >= 0
+        );
+        assert!(WindowsBufferedPaintSession::new().is_some());
+    }
+
+    #[test]
+    fn buffered_paint_initialization_is_owned_by_each_ui_thread() {
+        let session = WindowsBufferedPaintSession::new().unwrap();
+        std::thread::spawn(|| {
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_none());
+            let nested = WindowsBufferedPaintSession::new().unwrap();
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_some());
+            drop(nested);
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_none());
+            assert!(
+                LAST_BUFFERED_PAINT_UNINIT
+                    .with(|result| result.get())
+                    .unwrap()
+                    >= 0
+            );
+        })
+        .join()
+        .unwrap();
+        assert_eq!(Rc::strong_count(&session._context), 1);
+    }
     use crate::ZsIcon;
 
     fn style() -> TextStyle {

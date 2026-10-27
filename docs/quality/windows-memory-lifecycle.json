@@ -1,0 +1,205 @@
+{
+  "schema": "zsui.windows-memory-lifecycle/v1",
+  "platform": "Windows x86_64",
+  "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "profile": "release",
+  "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility",
+  "window_pixels": [
+    1080,
+    760
+  ],
+  "runs_per_scene": 3,
+  "samples_per_phase_per_run": 7,
+  "statistic": "median",
+  "working_set_trimming": false,
+  "baseline_revision": "2c29c2394877379b334810575293515bdf241455",
+  "candidate_source_sha256": {
+    "examples/ui_memory_lifecycle.rs": "F13EC62B2DA6B2F88B67CE7B550BCBA481B4C619437DEF6D4C6CDC00582451FC",
+    "src/platform/windows/input/runtime.rs": "1930ECCE76681E0E1B35E1677D6E5A590F77637216DD26B0960DBD147F88BA73",
+    "src/windows_gdi_renderer.rs": "7FDB6AD9E9E10EF18B469FF6BB1DA93F83F4944A1643DE5888815F0A19F11CF7",
+    "src/platform/windows/text/rust_renderer.rs": "EDDEE93CAE16698A59DB9A011901581B968014BA1AEC7C74AFFD751A1BF98271"
+  },
+  "candidate_binary_sha256": "4A633A7313D9ABD88938985EAD5337D5B8971CFD25886531BE84EB927EA89197",
+  "excluded_runs": {
+    "count": 1,
+    "reason": "Unscripted pointer activity and changed focus; repeated under the same fixed input contract."
+  },
+  "measurements": [
+    {
+      "scene": "panel",
+      "variant": "baseline",
+      "phase": "visible",
+      "samples": 21,
+      "resident_bytes": 29417472,
+      "private_bytes": 9900032
+    },
+    {
+      "scene": "panel",
+      "variant": "baseline",
+      "phase": "hidden",
+      "samples": 21,
+      "resident_bytes": 26181632,
+      "private_bytes": 6610944
+    },
+    {
+      "scene": "panel",
+      "variant": "baseline",
+      "phase": "restored",
+      "samples": 21,
+      "resident_bytes": 26243072,
+      "private_bytes": 6639616
+    },
+    {
+      "scene": "panel",
+      "variant": "optimized",
+      "phase": "visible",
+      "samples": 21,
+      "resident_bytes": 27521024,
+      "private_bytes": 9191424
+    },
+    {
+      "scene": "panel",
+      "variant": "optimized",
+      "phase": "hidden",
+      "samples": 21,
+      "resident_bytes": 21934080,
+      "private_bytes": 3514368
+    },
+    {
+      "scene": "panel",
+      "variant": "optimized",
+      "phase": "restored",
+      "samples": 21,
+      "resident_bytes": 24350720,
+      "private_bytes": 6041600
+    },
+    {
+      "scene": "large-text",
+      "variant": "baseline",
+      "phase": "visible",
+      "samples": 21,
+      "resident_bytes": 31723520,
+      "private_bytes": 12238848
+    },
+    {
+      "scene": "large-text",
+      "variant": "baseline",
+      "phase": "hidden",
+      "samples": 21,
+      "resident_bytes": 28487680,
+      "private_bytes": 8949760
+    },
+    {
+      "scene": "large-text",
+      "variant": "baseline",
+      "phase": "restored",
+      "samples": 21,
+      "resident_bytes": 28549120,
+      "private_bytes": 8986624
+    },
+    {
+      "scene": "large-text",
+      "variant": "optimized",
+      "phase": "visible",
+      "samples": 21,
+      "resident_bytes": 25317376,
+      "private_bytes": 9392128
+    },
+    {
+      "scene": "large-text",
+      "variant": "optimized",
+      "phase": "hidden",
+      "samples": 21,
+      "resident_bytes": 19496960,
+      "private_bytes": 3551232
+    },
+    {
+      "scene": "large-text",
+      "variant": "optimized",
+      "phase": "restored",
+      "samples": 21,
+      "resident_bytes": 24506368,
+      "private_bytes": 6258688
+    }
+  ],
+  "restored_surface_comparisons": [
+    {
+      "scene": "panel",
+      "trial": 1,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212",
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212"
+      ]
+    },
+    {
+      "scene": "panel",
+      "trial": 2,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212",
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212"
+      ]
+    },
+    {
+      "scene": "panel",
+      "trial": 3,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212",
+        "d492218380dd28bf461c22364f9da1cf7d1c2c13edf6b943c5e80f03cc956212"
+      ]
+    },
+    {
+      "scene": "large-text",
+      "trial": 1,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611",
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611"
+      ]
+    },
+    {
+      "scene": "large-text",
+      "trial": 2,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611",
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611"
+      ]
+    },
+    {
+      "scene": "large-text",
+      "trial": 3,
+      "size": [
+        1080,
+        760
+      ],
+      "different_bytes": 0,
+      "rgba_sha256": [
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611",
+        "63ad134819f0770c2bcf2e9d0be3279e7240cde9db3f0b53467b36490faea611"
+      ]
+    }
+  ]
+}

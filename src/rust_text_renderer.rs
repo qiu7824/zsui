@@ -5,7 +5,15 @@
 //! Platform hosts may composite the result into their native surface without
 //! exposing raw handles through this API.
 
-use std::{collections::HashMap, fmt, mem::size_of, ops::Range, sync::Arc};
+use std::{
+    borrow::Borrow,
+    collections::HashMap,
+    fmt,
+    hash::{Hash, Hasher},
+    mem::size_of,
+    ops::Range,
+    sync::Arc,
+};
 
 use cosmic_text::{
     fontdb, Align, Attrs, Buffer, CacheKey, CacheKeyFlags, Family, FontSystem, LayoutGlyph,
@@ -36,6 +44,10 @@ use swash::{
 };
 
 use crate::{Color, HorizontalAlign, Size, TextStyle, TextWeight, TextWrap, VerticalAlign};
+
+#[cfg(windows)]
+#[path = "rust_text_font_files.rs"]
+pub(crate) mod font_files;
 
 #[cfg(feature = "rust-text-proof")]
 const TEXT_PROOF_SCHEMA: &str = "zsui.text-proof/v1";
@@ -554,8 +566,8 @@ pub struct ZsRustTextLayout {
     overflow_y: bool,
     #[cfg(feature = "rust-text-proof")]
     proof: ZsTextProof,
-    lines: Vec<ZsTextLineLayout>,
-    glyphs: Vec<ZsTextGlyphLayout>,
+    lines: Box<[ZsTextLineLayout]>,
+    glyphs: Box<[ZsTextGlyphLayout]>,
 }
 
 impl ZsRustTextLayout {
@@ -609,10 +621,15 @@ pub struct ZsTextCacheStats {
     pub glyph_evictions: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ZsTextLayoutCacheKey {
-    text: String,
-    font_family: String,
+    text: Box<str>,
+    font_family: Box<str>,
+    shape: ZsTextLayoutShapeKey,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ZsTextLayoutShapeKey {
     size_bits: u32,
     line_height_bits: u32,
     weight: u8,
@@ -625,35 +642,102 @@ struct ZsTextLayoutCacheKey {
     line_metric_policy: u8,
 }
 
-impl ZsTextLayoutCacheKey {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ZsTextLayoutQuery<'a> {
+    text: &'a str,
+    font_family: &'a str,
+    shape: ZsTextLayoutShapeKey,
+}
+
+impl<'a> ZsTextLayoutQuery<'a> {
     fn new(
-        text: &str,
-        style: &TextStyle,
+        text: &'a str,
+        style: &'a TextStyle,
         width_px: i32,
         height_px: i32,
         dpi_scale: f32,
         line_metric_policy: ZsTextLineMetricPolicy,
     ) -> Self {
         Self {
-            text: text.to_owned(),
-            font_family: style.font_family.clone(),
-            size_bits: style.size.to_bits(),
-            line_height_bits: style.line_height.to_bits(),
-            weight: text_weight_key(style.weight),
-            horizontal_align: horizontal_align_key(style.horizontal_align),
-            vertical_align: vertical_align_key(style.vertical_align),
-            wrap: text_wrap_key(style.wrap),
-            width_px,
-            height_px,
-            dpi_scale_bits: normalized_scale(dpi_scale).to_bits(),
-            line_metric_policy: line_metric_policy_key(line_metric_policy),
+            text,
+            font_family: &style.font_family,
+            shape: ZsTextLayoutShapeKey {
+                size_bits: style.size.to_bits(),
+                line_height_bits: style.line_height.to_bits(),
+                weight: text_weight_key(style.weight),
+                horizontal_align: horizontal_align_key(style.horizontal_align),
+                vertical_align: vertical_align_key(style.vertical_align),
+                wrap: text_wrap_key(style.wrap),
+                width_px,
+                height_px,
+                dpi_scale_bits: normalized_scale(dpi_scale).to_bits(),
+                line_metric_policy: line_metric_policy_key(line_metric_policy),
+            },
         }
     }
 
+    fn into_owned(self) -> ZsTextLayoutCacheKey {
+        ZsTextLayoutCacheKey {
+            text: self.text.into(),
+            font_family: self.font_family.into(),
+            shape: self.shape,
+        }
+    }
+}
+
+// Heterogeneous lookup keeps cache hits allocation-free while comparing the
+// complete text and shaping attributes, including when hashes collide.
+trait ZsTextLayoutLookup {
+    fn query(&self) -> ZsTextLayoutQuery<'_>;
+}
+
+impl ZsTextLayoutLookup for ZsTextLayoutCacheKey {
+    fn query(&self) -> ZsTextLayoutQuery<'_> {
+        ZsTextLayoutQuery {
+            text: &self.text,
+            font_family: &self.font_family,
+            shape: self.shape,
+        }
+    }
+}
+
+impl ZsTextLayoutLookup for ZsTextLayoutQuery<'_> {
+    fn query(&self) -> ZsTextLayoutQuery<'_> {
+        *self
+    }
+}
+
+impl Hash for ZsTextLayoutCacheKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.query().hash(state);
+    }
+}
+
+impl Hash for dyn ZsTextLayoutLookup + '_ {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.query().hash(state);
+    }
+}
+
+impl PartialEq for dyn ZsTextLayoutLookup + '_ {
+    fn eq(&self, other: &Self) -> bool {
+        self.query() == other.query()
+    }
+}
+
+impl Eq for dyn ZsTextLayoutLookup + '_ {}
+
+impl<'a> Borrow<dyn ZsTextLayoutLookup + 'a> for ZsTextLayoutCacheKey {
+    fn borrow(&self) -> &(dyn ZsTextLayoutLookup + 'a) {
+        self
+    }
+}
+
+impl ZsTextLayoutCacheKey {
     fn estimated_bytes(&self) -> usize {
         size_of::<Self>()
-            .saturating_add(self.text.capacity())
-            .saturating_add(self.font_family.capacity())
+            .saturating_add(self.text.len())
+            .saturating_add(self.font_family.len())
     }
 }
 
@@ -675,6 +759,8 @@ struct CachedGlyphImage {
 /// clearing it never invalidates an already-owned [`ZsRustTextLayout`].
 pub struct ZsRustTextEngine {
     font_system: FontSystem,
+    #[cfg(windows)]
+    _font_files: Option<Arc<font_files::FontFilePool>>,
     /// Weight aliases registered for fallback matching, mapped to the real
     /// face that renders them.
     weight_aliases: HashMap<fontdb::ID, fontdb::ID>,
@@ -723,14 +809,15 @@ impl ZsRustTextEngine {
         #[cfg_attr(not(windows), allow(unused_mut))]
         let (locale, mut db) = FontSystem::new().into_locale_and_db();
         #[cfg(windows)]
-        let weight_aliases = {
-            share_face_data(&mut db);
-            add_nearest_weight_aliases(&mut db)
-        };
+        let font_files = font_files::share_files(&mut db);
+        #[cfg(windows)]
+        let weight_aliases = add_nearest_weight_aliases(&mut db);
         #[cfg(not(windows))]
         let weight_aliases = HashMap::new();
         Self {
             font_system: FontSystem::new_with_locale_and_db(locale, db),
+            #[cfg(windows)]
+            _font_files: font_files,
             weight_aliases,
             scale_context: ScaleContext::new(),
             hinting_instances: HintingInstanceCache::default(),
@@ -826,7 +913,7 @@ impl ZsRustTextEngine {
         height_px: i32,
         dpi_scale: f32,
     ) -> Arc<ZsRustTextLayout> {
-        let cache_key = ZsTextLayoutCacheKey::new(
+        let cache_key = ZsTextLayoutQuery::new(
             text,
             style,
             width_px,
@@ -839,7 +926,7 @@ impl ZsRustTextEngine {
         }
         if text.is_empty() {
             let layout = Arc::new(empty_layout(style, width_px, height_px, dpi_scale));
-            self.insert_layout(cache_key, Arc::clone(&layout));
+            self.insert_layout(cache_key.into_owned(), Arc::clone(&layout));
             return layout;
         }
 
@@ -1172,10 +1259,10 @@ impl ZsRustTextEngine {
                 lines: proof_lines,
                 errors: Vec::new(),
             },
-            lines,
-            glyphs,
+            lines: lines.into_boxed_slice(),
+            glyphs: glyphs.into_boxed_slice(),
         });
-        self.insert_layout(cache_key, Arc::clone(&layout));
+        self.insert_layout(cache_key.into_owned(), Arc::clone(&layout));
         layout
     }
 
@@ -1207,9 +1294,9 @@ impl ZsRustTextEngine {
         }
     }
 
-    fn cached_layout(&mut self, key: &ZsTextLayoutCacheKey) -> Option<Arc<ZsRustTextLayout>> {
+    fn cached_layout(&mut self, key: &ZsTextLayoutQuery<'_>) -> Option<Arc<ZsRustTextLayout>> {
         let clock = self.next_cache_clock();
-        if let Some(entry) = self.layout_cache.get_mut(key) {
+        if let Some(entry) = self.layout_cache.get_mut(key as &dyn ZsTextLayoutLookup) {
             entry.last_used = clock;
             self.cache_stats.layout_hits = self.cache_stats.layout_hits.saturating_add(1);
             return Some(Arc::clone(&entry.layout));
@@ -2172,24 +2259,6 @@ fn multiply_alpha(left: u8, right: u8) -> u8 {
     ((u16::from(left) * u16::from(right) + 127) / 255) as u8
 }
 
-/// Maps every font file once. cosmic-text inspects each non-matching
-/// candidate's variation axes whenever it ranks fonts for a new family and
-/// weight; with file-backed sources each check opened and mapped the file
-/// again. Weight aliases created afterwards clone the shared source and reuse
-/// the same mapping.
-#[cfg(windows)]
-fn share_face_data(db: &mut fontdb::Database) {
-    let ids = db.faces().map(|face| face.id).collect::<Vec<_>>();
-    for id in ids {
-        // SAFETY: this is the memory mapping cosmic-text already applies to
-        // every face it renders; installed system font files are not
-        // rewritten while they are mapped.
-        unsafe {
-            db.make_shared_face_data(id);
-        }
-    }
-}
-
 /// Weights requested through [`cosmic_weight`].
 #[cfg_attr(not(windows), allow(dead_code))]
 const REQUESTED_FACE_WEIGHTS: [u16; 4] = [400, 500, 600, 700];
@@ -2299,13 +2368,13 @@ fn estimate_layout_bytes(layout: &ZsRustTextLayout) -> usize {
         .saturating_add(
             layout
                 .lines
-                .capacity()
+                .len()
                 .saturating_mul(size_of::<ZsTextLineLayout>()),
         )
         .saturating_add(
             layout
                 .glyphs
-                .capacity()
+                .len()
                 .saturating_mul(size_of::<ZsTextGlyphLayout>()),
         );
     #[cfg(feature = "rust-text-proof")]
@@ -2500,8 +2569,8 @@ fn empty_layout(
             lines: Vec::new(),
             errors: Vec::new(),
         },
-        lines: Vec::new(),
-        glyphs: Vec::new(),
+        lines: Box::default(),
+        glyphs: Box::default(),
     }
 }
 
@@ -2529,6 +2598,65 @@ fn svg_path(commands: &[Command]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn borrowed_layout_lookup_checks_full_identity_even_with_hash_collisions() {
+        #[derive(Default)]
+        struct CollisionHasher;
+        impl Hasher for CollisionHasher {
+            fn finish(&self) -> u64 {
+                0
+            }
+            fn write(&mut self, _: &[u8]) {}
+        }
+        let mut cache = HashMap::<
+            ZsTextLayoutCacheKey,
+            u32,
+            std::hash::BuildHasherDefault<CollisionHasher>,
+        >::default();
+        let style = TextStyle::line("Segoe UI", 14.0, Color::rgb(0, 0, 0));
+        let first = ZsTextLayoutQuery::new(
+            "中文 first",
+            &style,
+            320,
+            48,
+            1.0,
+            ZsTextLineMetricPolicy::WindowsDirectWrite,
+        );
+        let second = ZsTextLayoutQuery::new(
+            "中文 second",
+            &style,
+            320,
+            48,
+            1.0,
+            ZsTextLineMetricPolicy::WindowsDirectWrite,
+        );
+        cache.insert(first.into_owned(), 1);
+        cache.insert(second.into_owned(), 2);
+        assert_eq!(cache.get(&first as &dyn ZsTextLayoutLookup), Some(&1));
+        assert_eq!(cache.get(&second as &dyn ZsTextLayoutLookup), Some(&2));
+        for query in [
+            ZsTextLayoutQuery {
+                shape: ZsTextLayoutShapeKey {
+                    width_px: 300,
+                    ..first.shape
+                },
+                ..first
+            },
+            ZsTextLayoutQuery {
+                font_family: "Consolas",
+                ..first
+            },
+            ZsTextLayoutQuery {
+                text: "absent",
+                ..first
+            },
+        ] {
+            assert!(cache.get(&query as &dyn ZsTextLayoutLookup).is_none());
+        }
+        *cache.get_mut(&first as &dyn ZsTextLayoutLookup).unwrap() = 3;
+        assert_eq!(cache.get(&first as &dyn ZsTextLayoutLookup), Some(&3));
+    }
 
     #[test]
     fn missing_requested_weights_alias_the_css_nearest_face() {
@@ -3168,3 +3296,7 @@ pub(crate) fn native_shaped_line_from_layout(
     }
     NativeShapedTextLine::new(line.width_px.ceil() as i32, clusters, carets)
 }
+
+#[cfg(test)]
+#[path = "rust_text_allocation_tests.rs"]
+mod allocation_tests;

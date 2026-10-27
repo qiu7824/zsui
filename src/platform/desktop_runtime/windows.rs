@@ -17,6 +17,10 @@ impl DesktopRuntimeBackend for Backend {
     }
 
     fn run_event_loop(self, request: DesktopRuntimeRequest) -> ZsuiResult<()> {
+        let _paint_session = crate::windows_gdi_renderer::WindowsBufferedPaintSession::new();
+        #[cfg(feature = "windows-font-sharing")]
+        let _font_sharing =
+            crate::rust_text_renderer::font_files::SharingScope::for_windows(request.windows.len());
         let input_routes = request
             .view_runtimes
             .iter()
@@ -40,6 +44,10 @@ impl DesktopRuntimeBackend for Backend {
         self,
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        let _paint_session = crate::windows_gdi_renderer::WindowsBufferedPaintSession::new();
+        #[cfg(feature = "windows-font-sharing")]
+        let _font_sharing =
+            crate::rust_text_renderer::font_files::SharingScope::for_windows(request.windows.len());
         smoke::run(request)
     }
 

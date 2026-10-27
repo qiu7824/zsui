@@ -45,26 +45,40 @@ as the connection is switched off, so an idle window does not poll.
 | `--ticks N` | Stop after N updates and use simulated time, so two builds render identical frames |
 | `--width`, `--height` | Initial client size |
 | `--always-on-top` | Keep the window above others for screen capture |
+| `--tear-probe` | Frame the window with full-height bars that change color together on every update |
 | `--measure FILE` | Run for `--duration-ms` (4000 by default), then write process memory as JSON |
 | `--screenshot FILE` | With `--measure`, also save the framework's final-surface capture |
 
 ## Windows comparison
 
-The `Proxy Demo Comparison` workflow builds this demo against `main` and the
-pushed branch on Windows Server 2025, then runs
-`scripts/measure-proxy-demo-comparison.ps1`:
+The `Proxy Demo Comparison` workflow builds this demo and `zsui_notepad`
+(with `accessibility`) from `main` and from the pushed branch on Windows Server
+2025, then runs `scripts/measure-proxy-demo-comparison.ps1`. It follows the
+method in [memory-stability-plan.md](memory-stability-plan.md):
 
-- working set, private bytes and peak working set at 680×560 and 1000×720
-  while the connection repaints every 100 ms, and how much each grows per
-  pixel of window area;
-- pixel identity of the first frame and of the frame left after 40 scripted
-  partial updates;
-- on-screen flicker while repainting every 30 ms, captured both from the
-  composed desktop and through `PrintWindow`, together with paint CPU time.
+- private bytes, working set, peak working set and paint CPU of this demo at
+  680×560 and 1000×720 while the connection repaints every 100 ms, in
+  visible, hidden and restored phases. Ten alternating process pairs take 20
+  samples per phase; each process median is one observation and intervals
+  come from 10,000 paired bootstrap resamples. Growth per pixel of window area
+  is reported for both memory measures;
+- input, scroll and restore p95 latency of the notepad through
+  `scripts/measure-windows-interaction-latency.ps1`, also as ten alternating
+  pairs, against the `max(5%, 1 ms)` regression limit. That probe forces a full
+  repaint per operation, the worst case for band presentation;
+- pixel identity after scripted partial updates in this demo, and after
+  editing, scrolling, a modal dialog with scrim and shadow, its dismissal,
+  sixteen rapid resizes and occlusion in the notepad. Captures only paint the
+  already invalid region, so missed damage stays visible;
+- tearing with `--tear-probe`: a frame in which either bar shows two colors
+  was presented while only part of an update had reached it;
+- erase flicker, measured as the share of each frame that shows only the page
+  background. The same probe runs against
+  `scripts/proxy-demo-flicker-control.ps1`, an unbuffered Windows Forms
+  window, so a clean result is shown to be a measurement and not a blind spot.
 
-Flicker is measured as the share of each captured frame that shows only the
-page background; erase-then-draw painting makes that share jump. The same probe
-runs against `scripts/proxy-demo-flicker-control.ps1`, an unbuffered Windows
-Forms window, so a clean ZSUI result is shown to be a measurement and not a
-blind spot. The summary and screenshots are uploaded as the
+Tearing and flicker are captured both from the composed desktop and through
+`PrintWindow`. DPI above 100%, physical multi-monitor setups, compositor
+first-frame time and long-running loops are not covered. The summary,
+per-process data and screenshots are uploaded as the
 `proxy-demo-comparison-windows-2025` artifact.

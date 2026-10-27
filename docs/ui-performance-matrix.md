@@ -11,6 +11,10 @@ ZSUI 的性能基线固定为四种独立构建，并只允许同一档位横向
 的 `smaps_rollup` 记录 RSS、PSS 和 Private RSS；macOS 记录递归 RSS 与 `vmmap`
 physical footprint，并将系统不提供的 PSS/Private RSS 明确保留为 `null`。
 
+macOS 测量程序通过 LaunchServices 启动应用 bundle，使用返回的应用 PID 和
+启动时间标识采样及收尾；启动器进程不计入被测程序。隐藏阶段必须确认程序
+仍存活且目标窗口已离开屏幕，不能将隐藏请求返回成功或进程退出视为隐藏成功。
+
 ## 固定工作负载
 
 | 配置 | 固定内容 | ZSUI 产物边界 |

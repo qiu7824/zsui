@@ -91,9 +91,7 @@ fn window_draw_plan(hwnd: HWND) -> Option<Arc<NativeDrawPlan>> {
     window_paint_state(hwnd).map(|(plan, _)| plan)
 }
 
-fn window_paint_state(
-    hwnd: HWND,
-) -> Option<(Arc<NativeDrawPlan>, WindowsGdiResourceCache)> {
+fn window_paint_state(hwnd: HWND) -> Option<(Arc<NativeDrawPlan>, WindowsGdiResourceCache)> {
     if hwnd.is_null() {
         return None;
     }
@@ -586,10 +584,11 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
             && dirty.bottom > dirty.top
             && !paint_window_bands(hwnd, target, dirty)
         {
-            if let Some(buffered) = WindowsBufferedPaint::begin(target, &rect) {
-                paint_window_client_rect_to_dc(hwnd, buffered.hdc(), rect);
+            let surface = window_paint_surface(hwnd);
+            if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &rect) {
+                surface.paint(buffered.hdc(), rect, Some(&mut buffered));
             } else {
-                paint_window_client_rect_to_dc(hwnd, target, rect);
+                surface.paint(target, rect, None);
             }
         }
     }
@@ -598,143 +597,30 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
     0
 }
 
-/// Pixel budget of the per-thread paint band: 128 Ki pixels, 512 KiB BGRA.
-const WINDOWS_PAINT_BAND_PIXELS: u32 = 128 * 1024;
-/// Very wide windows keep a usable band height instead of the pixel budget.
-const WINDOWS_PAINT_BAND_MIN_ROWS: u32 = 32;
-
-thread_local! {
-    /// Windows on one UI thread paint one at a time, so they share a single
-    /// band. Its size depends on the widest dirty area, never on window
-    /// height or on how many windows exist.
-    static WINDOWS_PAINT_BAND: RefCell<Option<WindowsPaintBand>> = const { RefCell::new(None) };
-}
-
-/// A top-down 32-bit DIB section that composes one horizontal band of the
-/// dirty area off-screen. Each band reaches the window in a single `BitBlt`,
-/// so no pixel ever shows an erased or partially drawn state.
-struct WindowsPaintBand {
-    dc: windows_sys::Win32::Graphics::Gdi::HDC,
-    bitmap: windows_sys::Win32::Graphics::Gdi::HBITMAP,
-    previous: windows_sys::Win32::Graphics::Gdi::HGDIOBJ,
-    width: u32,
-    rows: u32,
-}
-
-impl WindowsPaintBand {
-    fn rows_for_width(width: u32) -> u32 {
-        (WINDOWS_PAINT_BAND_PIXELS / width.max(1)).max(WINDOWS_PAINT_BAND_MIN_ROWS)
-    }
-
-    unsafe fn new(reference: windows_sys::Win32::Graphics::Gdi::HDC, width: u32) -> Option<Self> {
-        use windows_sys::Win32::Graphics::Gdi::{
-            CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject,
-            BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-        };
-
-        let rows = Self::rows_for_width(width);
-        let info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: i32::try_from(width).ok()?,
-                biHeight: -i32::try_from(rows).ok()?,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
-                ..zeroed()
-            },
-            ..zeroed()
-        };
-        let dc = CreateCompatibleDC(reference);
-        if dc.is_null() {
-            return None;
-        }
-        let mut bits = null_mut();
-        let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
-        if bitmap.is_null() || bits.is_null() {
-            DeleteDC(dc);
-            return None;
-        }
-        let previous = SelectObject(dc, bitmap as _);
-        if previous.is_null() {
-            DeleteObject(bitmap as _);
-            DeleteDC(dc);
-            return None;
-        }
-        Some(Self {
-            dc,
-            bitmap,
-            previous,
-            width,
-            rows,
-        })
-    }
-}
-
-impl Drop for WindowsPaintBand {
-    fn drop(&mut self) {
-        use windows_sys::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, SelectObject};
-
-        unsafe {
-            SelectObject(self.dc, self.previous);
-            DeleteObject(self.bitmap as _);
-            DeleteDC(self.dc);
-        }
-    }
-}
-
-/// Paints `dirty` band by band through the shared off-screen band. Returns
-/// `false` when no band could be prepared, so the caller falls back to a
+/// Paints `dirty` band by band through the UI thread's off-screen band.
+/// Returns `false` when no band is available, so the caller falls back to a
 /// whole-surface buffered paint.
-unsafe fn paint_window_bands(hwnd: HWND, target: windows_sys::Win32::Graphics::Gdi::HDC, dirty: RECT) -> bool {
-    use windows_sys::Win32::Graphics::Gdi::{
-        BitBlt, IntersectClipRect, RestoreDC, SaveDC, SetViewportOrgEx, SRCCOPY,
-    };
-
+unsafe fn paint_window_bands(
+    hwnd: HWND,
+    target: windows_sys::Win32::Graphics::Gdi::HDC,
+    dirty: RECT,
+) -> bool {
+    let surface = window_paint_surface(hwnd);
     let width = (dirty.right - dirty.left) as u32;
-    WINDOWS_PAINT_BAND.with(|slot| {
-        // A nested paint during this one keeps the whole-surface fallback.
-        let Ok(mut slot) = slot.try_borrow_mut() else {
-            return false;
-        };
-        if slot.as_ref().is_none_or(|band| band.width < width) {
-            // Release the narrower band before allocating its replacement.
-            *slot = None;
-            *slot = WindowsPaintBand::new(target, width);
-        }
-        let Some(band) = slot.as_ref() else {
-            return false;
-        };
-        let surface = window_paint_surface(hwnd);
+    crate::windows_gdi_renderer::with_windows_paint_band(target, width, |band| {
         let mut top = dirty.top;
         while top < dirty.bottom {
             let area = RECT {
                 left: dirty.left,
                 top,
                 right: dirty.right,
-                bottom: (top + band.rows as i32).min(dirty.bottom),
+                bottom: (top + band.rows() as i32).min(dirty.bottom),
             };
-            let saved = SaveDC(band.dc);
-            SetViewportOrgEx(band.dc, -area.left, -area.top, null_mut());
-            IntersectClipRect(band.dc, area.left, area.top, area.right, area.bottom);
-            surface.paint(band.dc, area, Some(rect_from_win(area)));
-            RestoreDC(band.dc, saved);
-            GdiFlush();
-            BitBlt(
-                target,
-                area.left,
-                area.top,
-                area.right - area.left,
-                area.bottom - area.top,
-                band.dc,
-                0,
-                0,
-                SRCCOPY,
-            );
+            band.present(target, area, |band, area| surface.paint_band(band, area));
             top = area.bottom;
         }
-        true
     })
+    .is_some()
 }
 
 unsafe fn paint_window_client_to_dc(
@@ -746,18 +632,10 @@ unsafe fn paint_window_client_to_dc(
     }
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
-        paint_window_client_rect_to_dc(hwnd, target, rect);
+        window_paint_surface(hwnd).paint(target, rect, None);
         GdiFlush();
     }
     0
-}
-
-unsafe fn paint_window_client_rect_to_dc(
-    hwnd: HWND,
-    target: windows_sys::Win32::Graphics::Gdi::HDC,
-    rect: RECT,
-) {
-    window_paint_surface(hwnd).paint(target, rect, None);
 }
 
 /// Everything one paint pass needs, resolved once and reused by every band.
@@ -792,30 +670,50 @@ unsafe fn window_paint_surface(hwnd: HWND) -> WindowsPaintSurface {
 }
 
 impl WindowsPaintSurface {
-    /// Fills `rect` and draws the plan; with `cull`, only commands that can
-    /// touch that area are replayed.
+    fn sink(&self, dc: windows_sys::Win32::Graphics::Gdi::HDC) -> WindowsGdiDrawSink {
+        WindowsGdiDrawSink::with_palette_contrast_dpi_and_resources(
+            dc,
+            self.palette,
+            self.high_contrast,
+            self.dpi,
+            self.resources.clone(),
+        )
+    }
+
+    /// Background erase is suppressed, so every painted area starts here.
+    unsafe fn fill(&self, dc: windows_sys::Win32::Graphics::Gdi::HDC, rect: RECT) {
+        let mut renderer =
+            WindowsGdiRenderer::with_dpi_and_resources(dc, self.dpi, self.resources.clone());
+        renderer.fill_rect(rect_from_win(rect), self.palette.surface);
+    }
+
     unsafe fn paint(
         &self,
         dc: windows_sys::Win32::Graphics::Gdi::HDC,
         rect: RECT,
-        cull: Option<crate::Rect>,
+        buffered: Option<&mut WindowsBufferedPaint>,
     ) {
-        let mut renderer =
-            WindowsGdiRenderer::with_dpi_and_resources(dc, self.dpi, self.resources.clone());
-        renderer.fill_rect(rect_from_win(rect), self.palette.surface);
-        drop(renderer);
+        self.fill(dc, rect);
         if let Some(plan) = &self.draw_plan {
-            let mut sink = WindowsGdiDrawSink::with_palette_contrast_dpi_and_resources(
-                dc,
-                self.palette,
-                self.high_contrast,
-                self.dpi,
-                self.resources.clone(),
-            );
-            match cull {
-                Some(area) => sink.draw_native_plan_within(plan, area),
-                None => sink.draw_native_plan(plan),
+            let mut sink = self.sink(dc);
+            if let Some(buffered) = buffered {
+                sink.draw_native_plan_buffered(plan, buffered);
+            } else {
+                sink.draw_native_plan(plan);
             }
+        }
+    }
+
+    /// Fills one band and replays only the commands that can touch it.
+    unsafe fn paint_band(
+        &self,
+        band: &mut crate::windows_gdi_renderer::WindowsPaintBand,
+        area: RECT,
+    ) {
+        self.fill(band.hdc(), area);
+        if let Some(plan) = &self.draw_plan {
+            self.sink(band.hdc())
+                .draw_native_plan_band(plan, band, rect_from_win(area));
         }
     }
 }

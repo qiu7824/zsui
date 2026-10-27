@@ -1234,7 +1234,7 @@ pub trait NativeDrawCommandSink {
 impl NativeDrawCommand {
     /// A conservative rectangle containing every pixel this command can
     /// touch, or `None` for clip changes, which affect all later commands.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
     pub(crate) fn paint_bounds(&self) -> Option<Rect> {
         let bounds = match self {
             Self::FillRect { rect, .. } => *rect,
@@ -1269,7 +1269,7 @@ impl NativeDrawCommand {
     /// Whether two commands produce the same pixels. Image frames compare by
     /// identity, never by decoded content, so equal-looking frames from
     /// different decodes count as a change.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
     fn paints_same_as(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Image(left), Self::Image(right)) => {
@@ -1284,7 +1284,7 @@ impl NativeDrawCommand {
 }
 
 impl ZsImageFrame {
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
     fn is_same_frame(&self, other: &Self) -> bool {
         self.id == other.id
             && self.width == other.width
@@ -1295,7 +1295,7 @@ impl ZsImageFrame {
 
 /// The surface area whose pixels can differ after replacing one plan with
 /// another.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeDrawPlanDamage {
     Unchanged,
@@ -1306,7 +1306,7 @@ pub(crate) enum NativeDrawPlanDamage {
 /// Compares two plans command by command. A changed command damages both its
 /// old and new bounds; any structural difference (theme, typography, command
 /// count or clip state) damages the whole surface.
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 pub(crate) fn native_draw_plan_damage(
     previous: &NativeDrawPlan,
     next: &NativeDrawPlan,
@@ -1334,7 +1334,7 @@ pub(crate) fn native_draw_plan_damage(
     area.map_or(NativeDrawPlanDamage::Unchanged, NativeDrawPlanDamage::Area)
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 pub(crate) const fn rects_intersect(left: Rect, right: Rect) -> bool {
     left.x < right.x.saturating_add(right.width)
         && right.x < left.x.saturating_add(left.width)
@@ -1342,7 +1342,7 @@ pub(crate) const fn rects_intersect(left: Rect, right: Rect) -> bool {
         && right.y < left.y.saturating_add(left.height)
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 fn inflate_rect(rect: Rect, amount: i32) -> Rect {
     Rect {
         x: rect.x.saturating_sub(amount),
@@ -1352,7 +1352,7 @@ fn inflate_rect(rect: Rect, amount: i32) -> Rect {
     }
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 fn union_rect(left: Rect, right: Rect) -> Rect {
     let x = left.x.min(right.x);
     let y = left.y.min(right.y);

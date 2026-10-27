@@ -20,9 +20,9 @@ use std::{
 };
 
 use zsui::{
-    button, column, list, native_window, row, section, styled_text, text, textbox, toggle, AppCx,
-    ColorRole, Dp, NativeWindowSmokeRunOptions, SemanticTextStyle, TextRole, UiInvalidationHandle,
-    ViewNode, ZsuiError, ZsuiResult,
+    button, column, list, native_window, row, section, spacer, styled_text, text, textbox, toggle,
+    AppCx, ColorRole, Dp, NativeWindowSmokeRunOptions, SemanticTextStyle, TextRole,
+    ThemeColorToken, UiInvalidationHandle, ViewAlign, ViewNode, ZsuiError, ZsuiResult,
 };
 
 const WINDOW_TITLE: &str = "ZSUI 代理演示";
@@ -302,6 +302,9 @@ struct ProxyState {
     tick: Duration,
     /// Scripted runs stop after this many ticks and use simulated time.
     tick_limit: Option<u64>,
+    /// Frames the window with full-height bars that change color together
+    /// on every tick, so a capture showing both colors reveals tearing.
+    tear_probe: bool,
     started: Instant,
     log: Vec<String>,
 }
@@ -319,6 +322,7 @@ impl ProxyState {
             invalidation,
             tick,
             tick_limit,
+            tear_probe: false,
             started: Instant::now(),
             log: Vec::new(),
         }
@@ -544,7 +548,7 @@ fn view(state: &ProxyState) -> ViewNode<Msg> {
         ),
     ];
 
-    column([
+    let content = column([
         styled_text(WINDOW_TITLE, SemanticTextStyle::for_role(TextRole::Title)),
         caption("演示模式：只解析 VLESS 分享链接并模拟流量，不建立真实代理连接。"),
         row([
@@ -573,7 +577,17 @@ fn view(state: &ProxyState) -> ViewNode<Msg> {
         .flex(1.0),
     ])
     .gap(Dp::new(10.0))
-    .padding(Dp::new(20.0))
+    .padding(Dp::new(20.0));
+    if !state.tear_probe {
+        return content;
+    }
+    let color = if traffic.ticks.load(Ordering::Relaxed) % 2 == 0 {
+        ThemeColorToken::Accent
+    } else {
+        ThemeColorToken::Danger
+    };
+    let bar = || spacer().width(Dp::new(8.0)).bg(color);
+    row([bar(), content.flex(1.0), bar()]).align(ViewAlign::Stretch)
 }
 
 fn arg_value<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
@@ -600,6 +614,7 @@ fn main() -> ZsuiResult<()> {
     let invalidation = UiInvalidationHandle::new();
     let tick_limit = arg_value(&args, "--ticks").and_then(|value| value.parse().ok());
     let mut state = ProxyState::new(invalidation.clone(), tick, tick_limit);
+    state.tear_probe = flag("--tear-probe");
     let link = arg_value(&args, "--import")
         .map(str::to_string)
         .or_else(|| std::env::var("ZSUI_PROXY_DEMO_LINK").ok())

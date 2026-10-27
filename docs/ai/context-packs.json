@@ -240,6 +240,10 @@
       ],
       "optional": [
         "comparisons/scripts/build_unix_performance_matrix.sh",
+        "comparisons/scripts/macos_window_probe.swift",
+        "comparisons/scripts/tests/test_performance_matrix.py",
+        "scripts/measure-windows-interaction-latency.ps1",
+        ".github/workflows/windows-interaction-latency.yml",
         ".github/workflows/ui-performance-matrix.yml",
         "examples/ui_performance_minimal.rs",
         "examples/ui-documents/performance-viewer.json",
@@ -254,6 +258,7 @@
       "verify": [
         "[void][scriptblock]::Create((Get-Content -Raw scripts/measure-ui-performance-matrix.ps1))",
         "python -c \"import ast,pathlib; ast.parse(pathlib.Path('comparisons/scripts/measure_unix_performance_matrix.py').read_text(encoding='utf-8'))\"",
+        "python -m unittest discover -s comparisons/scripts/tests -p test_performance_matrix.py",
         "cargo check --example ui_performance_minimal --no-default-features --features window,button,label",
         "cargo check --example invoice_tool --no-default-features --features window,shell,list,dialog",
         "cargo check --example component_gallery --no-default-features --features component-gallery-demo",
@@ -293,6 +298,8 @@
         "src/platform/windows/text/directwrite.rs",
         "src/platform/windows/text/rust_renderer.rs",
         "src/rust_text_renderer.rs",
+        "src/rust_text_font_files.rs",
+        "src/rust_text_allocation_tests.rs",
         "examples/text_geometry_proof.rs",
         "docs/text-rendering.md",
         "src/platform/windows/application.rs",

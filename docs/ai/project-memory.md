@@ -744,19 +744,18 @@ history remain authoritative for implementation status.
   must not keep a separate popup-open flag or bypass application messages.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
-- Win32 paint memory must not scale with window area. WM_PAINT composes the
-  dirty rectangle band by band in one UI-thread-owned top-down DIB (128 Ki
-  pixels, at least 32 rows) and presents each band with one `BitBlt`; uxtheme
-  buffered paint is only the fallback. A rebuilt plan invalidates only the old
-  and new bounds of changed commands (`native_draw_plan_damage`), and Rust text
-  composites directly into the destination DIB section. Proxy Demo Comparison
-  run `40285562543` (Windows Server 2025, five runs) measured private bytes
-  6.31 -> 5.35 MiB at 680x560 and 7.64 -> 5.36 MiB at 1000x720 (private growth
-  4.11 -> 0.04 bytes per window pixel), zero differing pixels for the first
-  frame and after 40 scripted partial updates, zero flicker frames while the
-  unbuffered Windows Forms control showed 41, and paint CPU 126.7 -> 50.1 ms/s.
-  The remaining 4.2 bytes-per-pixel working-set growth is shareable, not
-  private, memory.
+- Band presentation is a candidate replacement for whole-frame presentation:
+  on 2026-10-27 the user chose to relax the whole-frame rule only on paired
+  Windows evidence. The candidate WM_PAINT composes the dirty rectangle band
+  by band in one UI-thread-owned top-down DIB (128 Ki pixels, at least 32
+  rows), presents each band with one `BitBlt` and lends the band's pixels to
+  buffered Rust text; uxtheme buffered paint is the fallback. A rebuilt plan
+  invalidates only the old and new bounds of changed commands
+  (`native_draw_plan_damage`). Acceptance evidence comes from the paired
+  Proxy Demo Comparison workflow (memory, paint CPU, notepad latency, pixel
+  identity after scroll, modal scrim, dismissal, rapid resize and occlusion,
+  tearing and flicker). Run `40285562543` predates the borrowed text surface
+  on main, so its gains overlap that change and are not acceptance evidence.
 - Native desktop windows stay hidden until the initial draw plan, typed input
   route, appearance and icon are attached. Backends with native menu surfaces
   also attach them before showing the window. Win32, AppKit and Linux must
@@ -1604,6 +1603,22 @@ history remain authoritative for implementation status.
   LayerTree composition. Treat this as a migration contract, not a completed
   capability, until concrete types, dirty-subtree tests and target evidence
   exist.
+- Memory ownership follows `docs/memory-ownership.md`: ordinary Windows text
+  borrows the final buffered-paint surface, arbitrary DCs use a bounded scratch
+  tile, and opt-in hidden View release drops renderer resources lazily rebuilt
+  on restoration. Preserve whole-frame no-flicker presentation. Cache caps are
+  not a process memory cap; retain exact text geometry and safe UIA snapshots
+  or synchronization before adopting shared mutable text contexts or arenas.
+- `windows-font-sharing` is an experimental opt-in for engine-owned read-only
+  font-file mappings inside a native multiwindow run. Keep mutable shaping,
+  layout and raster caches window-local; a weak thread-local discovery index
+  must not extend a font mapping's lifetime. It is not selected by `window`
+  or `full`. Multiwindow savings alone do not establish the long-run private
+  memory gate or authorize enabling the feature by default.
+- Text cache hits borrow the complete text/style key and retained geometry uses
+  exact-length storage. Hashes never replace full equality. Windows buffered
+  paint initialization and teardown are paired on the owning UI thread, with
+  active paints holding a lifetime lease until their native buffer is ended.
 - Use the current repository and generated evidence for progress numbers; do
   not copy stale counts or completion claims into this memory.
 - Performance claims use four independent release workloads: Minimal, Common,

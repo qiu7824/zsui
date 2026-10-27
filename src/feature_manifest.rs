@@ -760,6 +760,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "ZSUI Rust text compositor inside the buffered Win32 GDI surface with GDI fallback",
         ),
         ZsuiCargoFeature::new(
+            "windows-font-sharing",
+            Backend,
+            false,
+            Vec::new(),
+            vec!["windows-rust-text"],
+            "experimental read-only font-file mapping sharing within a native multiwindow UI-thread scope",
+        ),
+        ZsuiCargoFeature::new(
             "windows-text-proof",
             Tooling,
             false,

@@ -890,42 +890,15 @@ struct Win32CompatibleBitmap {
 
 #[cfg(all(windows, feature = "windows-win32"))]
 impl Win32CompatibleBitmap {
-    /// A top-down 32-bit DIB section, the same surface kind the window's own
-    /// paint path draws into, so captures exercise production compositing.
     fn create(
         dc: windows_sys::Win32::Graphics::Gdi::HDC,
         width: i32,
         height: i32,
     ) -> Result<Self, String> {
-        use windows_sys::Win32::Graphics::Gdi::{
-            CreateDIBSection, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-        };
-
-        let info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width,
-                biHeight: -height,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB,
-                ..unsafe { std::mem::zeroed() }
-            },
-            ..unsafe { std::mem::zeroed() }
-        };
-        let mut bits = std::ptr::null_mut();
-        let bitmap = unsafe {
-            CreateDIBSection(
-                dc,
-                &info,
-                DIB_RGB_COLORS,
-                &mut bits,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        if bitmap.is_null() || bits.is_null() {
-            Err("CreateDIBSection failed".to_string())
+        let bitmap =
+            unsafe { windows_sys::Win32::Graphics::Gdi::CreateCompatibleBitmap(dc, width, height) };
+        if bitmap.is_null() {
+            Err("CreateCompatibleBitmap failed".to_string())
         } else {
             Ok(Self { bitmap })
         }

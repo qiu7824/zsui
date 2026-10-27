@@ -155,6 +155,7 @@ windows-directwrite = ["windows-gdi", "dep:windows", "dep:windows-core", "window
 rust-text = ["dep:cosmic-text", "dep:skrifa", "dep:swash", "dep:ttf-parser"]
 rust-text-proof = ["rust-text"]
 windows-rust-text = ["windows-gdi", "rust-text"]
+windows-font-sharing = ["windows-rust-text"]
 windows-text-proof = ["windows-directwrite", "rust-text-proof"]
 macos-appkit = ["dep:block2", "dep:dispatch2", "dep:libc", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:objc2-core-graphics", "objc2-app-kit/objc2-core-graphics"]
 linux-gtk = ["dep:gtk4", "gtk4/v4_10"]
@@ -231,6 +232,11 @@ required-features = ["windows-text-proof"]
 name = "ui_performance_minimal"
 path = "examples/ui_performance_minimal.rs"
 required-features = ["window", "button", "label"]
+
+[[example]]
+name = "ui_memory_lifecycle"
+path = "examples/ui_memory_lifecycle.rs"
+required-features = ["window", "button", "label", "textbox", "window-chrome", "native-smoke"]
 
 [[example]]
 name = "native_clipboard_smoke"
