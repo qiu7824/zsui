@@ -16,15 +16,21 @@ fn caption(text: impl Into<String>) -> RichText {
     RichText::new(text).size(12.0).color(MUTED)
 }
 fn panel(ui: &mut egui::Ui, width: f32, height: f32, draw: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::new()
-        .fill(Color32::WHITE)
-        .corner_radius(12.0)
-        .inner_margin(18.0)
-        .show(ui, |ui| {
-            ui.set_min_size(egui::vec2(width - 36.0, height - 36.0));
-            ui.set_max_size(egui::vec2(width - 36.0, height - 36.0));
-            draw(ui);
-        });
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, height),
+        egui::Layout::top_down(egui::Align::LEFT),
+        |ui| {
+            egui::Frame::new()
+                .fill(Color32::WHITE)
+                .corner_radius(12.0)
+                .inner_margin(18.0)
+                .show(ui, |ui| {
+                    ui.set_min_size(egui::vec2(width - 36.0, height - 36.0));
+                    ui.set_max_size(egui::vec2(width - 36.0, height - 36.0));
+                    draw(ui);
+                });
+        },
+    );
 }
 impl eframe::App for Demo {
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {

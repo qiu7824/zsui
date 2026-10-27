@@ -52,7 +52,7 @@ slint::slint! {
      }
     }
     Rectangle{background:white;border-radius:12px;width:260px;
-     VerticalLayout{padding:18px;spacing:10px;alignment:start;
+     VerticalLayout{padding:18px;spacing:10px;
       Caption{text:"DEVICE " + (root.selected-id+1);}
       Text{text:root.selected-name;font-size:20px;font-weight:600;height:28px;color:#1b1b1b;}
       Caption{text:root.selected-kind;}

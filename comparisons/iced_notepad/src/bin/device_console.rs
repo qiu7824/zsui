@@ -70,6 +70,7 @@ struct Demo {
     empty: bool,
     repaint: bool,
     started: std::time::Instant,
+    theme: Theme,
 }
 fn repaint_task() -> Task<Message> {
     Task::perform(
@@ -79,7 +80,7 @@ fn repaint_task() -> Task<Message> {
 }
 impl Demo {
     fn theme(&self) -> Theme {
-        Theme::Light
+        self.theme.clone()
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         let again = matches!(message, Message::Repaint) && self.repaint;
@@ -126,6 +127,7 @@ impl Demo {
                 marker,
                 column![
                     text(device.name.split(" / ").next().unwrap())
+                        .size(14)
                         .font(bold())
                         .color(if chosen { BLUE } else { Color::BLACK }),
                     caption(device.kind)
@@ -145,6 +147,7 @@ impl Demo {
                 })
                 .width(66),
                 button("›")
+                    .style(button::secondary)
                     .on_press(Message::Select(index))
                     .width(28)
                     .height(28)
@@ -169,6 +172,7 @@ impl Demo {
                 .height(24),
                 row![
                     text_input("搜索名称或类型", &self.state.query)
+                        .size(14)
                         .on_input(Message::Query)
                         .width(Fill),
                     checkbox(self.state.online_only)
@@ -234,7 +238,7 @@ impl Demo {
                 progress_bar(0.0..=100.0, self.state.load).girth(4),
                 caption("拖动滑块调整演示数据"),
                 space::vertical(),
-                button("恢复默认")
+                button(text("恢复默认").size(14).width(Fill).center())
                     .on_press(Message::Reset)
                     .width(Fill)
                     .height(34)
@@ -262,12 +266,15 @@ fn main() -> iced::Result {
     iced::application(
         || {
             let repaint = model::has_flag("--benchmark-repaint");
+            let mut palette = Theme::Light.palette();
+            palette.primary = BLUE;
             (
                 Demo {
                     state: State::default(),
                     empty: model::has_flag("--benchmark-empty"),
                     repaint,
                     started: std::time::Instant::now(),
+                    theme: Theme::custom("Device Console".into(), palette),
                 },
                 if repaint {
                     repaint_task()

@@ -8,12 +8,14 @@ param(
     [switch]$DeviceDemo,
     [switch]$BuildOnly,
     [ValidateRange(1, 10)][int]$RepeatRuns = 1,
-    [switch]$IncludeGpuMemory
+    [switch]$IncludeGpuMemory,
+    [ValidateSet('zsui','egui','iced','slint','tauri','gpui')][string[]]$Frameworks = @()
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $script:processIdentities = @{}
+$script:processChildren = @{}
 $script:measurementRound = 1
 $script:launchNumber = 0
 $script:deviceBuildFailures = [Collections.Generic.List[string]]::new()
@@ -203,6 +205,15 @@ $labels = [ordered]@{
     tauri = "Tauri 2 / WebView2"
 }
 if ($DeviceDemo) { $labels.gpui = "GPUI Kit" }
+if ($Frameworks.Count -gt 0) {
+    if (-not $SkipBuild) { throw 'Framework selection is for already built applications; use -SkipBuild' }
+    $selectedLabels = [ordered]@{}
+    foreach ($framework in $Frameworks) {
+        if (-not $labels.Contains($framework)) { throw "Unsupported framework for this workload: $framework" }
+        $selectedLabels[$framework] = $labels[$framework]
+    }
+    $labels = $selectedLabels
+}
 $profiles = [ordered]@{
     minimal = [ordered]@{
         name = "Minimal"
@@ -285,6 +296,9 @@ public static class ZsuiPerformanceMatrixWindow {
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd, ref POINT point);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
     [DllImport("user32.dll")] public static extern bool GetUpdateRect(IntPtr hwnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
@@ -314,6 +328,8 @@ function Start-BenchmarkProcess {
     if ($Arguments.Count -gt 0) { $start.ArgumentList = $Arguments }
     $process = Start-Process @start
     $script:processIdentities[$process.Id] = $process.StartTime.ToFileTimeUtc()
+    $script:processChildren[$process.Id] = @($process.Id)
+    @{pid=$process.Id;creation_ticks=$process.StartTime.ToFileTimeUtc();executable=$Executable;arguments=@($Arguments);round=$script:measurementRound} | ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $outputDir 'launches.jsonl') -Encoding utf8
     [pscustomobject]@{ process = $process; stopwatch = $stopwatch }
 }
 
@@ -394,7 +410,9 @@ function Get-ProcessGroup {
         )
         if ($children.Count -gt 0) { $ids += $children }
     } while ($children.Count -gt 0)
-    @($ids | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    $members = @($ids | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue })
+    $script:processChildren[$RootProcessId] = @($members.Id)
+    return $members
 }
 
 function Get-PrivateWorkingSet {
@@ -459,8 +477,46 @@ function Measure-Memory {
     }
 }
 
+function Show-MeasuredWindow {
+    param([IntPtr]$Window)
+    [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Window,5)
+    [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Window,[IntPtr](-1),30,30,0,0,0x0041)
+    [void][ZsuiPerformanceMatrixWindow]::BringWindowToTop($Window)
+    [void][ZsuiPerformanceMatrixWindow]::SetForegroundWindow($Window)
+    [void][ZsuiPerformanceMatrixWindow]::DwmFlush()
+}
+
+function Assert-WindowExposed {
+    param([IntPtr]$Window)
+    $point=New-Object ZsuiPerformanceMatrixWindow+POINT
+    $point.X=720; $point.Y=150
+    if(-not [ZsuiPerformanceMatrixWindow]::ClientToScreen($Window,[ref]$point)){throw 'Measured window has no client origin'}
+    $hit=[ZsuiPerformanceMatrixWindow]::WindowFromPoint($point)
+    $actualRoot=[ZsuiPerformanceMatrixWindow]::GetAncestor($hit,2)
+    if($actualRoot -ne $Window) {
+        [uint32]$ownerPid=0; [uint32]$hitPid=0
+        [void][ZsuiPerformanceMatrixWindow]::GetWindowThreadProcessId($Window,[ref]$ownerPid)
+        [void][ZsuiPerformanceMatrixWindow]::GetWindowThreadProcessId($hit,[ref]$hitPid)
+        if($hitPid -notin $script:processChildren[[int]$ownerPid]) {
+            throw "Measured window became occluded; sample rejected (window=$Window hit=$hit root=$actualRoot owner=$ownerPid hitOwner=$hitPid)"
+        }
+    }
+}
+
+function Wait-WindowExposed {
+    param([IntPtr]$Window)
+    $deadline=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        try { Assert-WindowExposed $Window; return } catch {
+            if($deadline.Elapsed.TotalSeconds -ge 10){throw}
+            Start-Sleep -Milliseconds 100
+        }
+    } while ($true)
+}
+
 function Measure-Cpu {
     param([int]$RootProcessId, [IntPtr]$Window, [bool]$ForceRepaint)
+    if($DeviceDemo){Show-MeasuredWindow $Window; Start-Sleep -Milliseconds 300; Wait-WindowExposed $Window}
     $before = Get-ProcessSnapshot -RootProcessId $RootProcessId
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
     if ($ForceRepaint) {
@@ -474,7 +530,10 @@ function Measure-Cpu {
             Start-Sleep -Milliseconds 16
         }
     } else {
-        Start-Sleep -Seconds $CpuSampleSeconds
+        while($stopwatch.Elapsed.TotalSeconds -lt $CpuSampleSeconds) {
+            if($DeviceDemo){Assert-WindowExposed $Window}
+            Start-Sleep -Milliseconds 100
+        }
     }
     $after = Get-ProcessSnapshot -RootProcessId $RootProcessId
     $elapsed = [Math]::Max(0.001, $stopwatch.Elapsed.TotalSeconds)
@@ -560,18 +619,22 @@ function Measure-EmptyWindow {
 }
 
 function Get-DeviceLoadSignature {
-    param([IntPtr]$Window)
+    param([IntPtr]$Window, [string]$Path)
     $previous=[ZsuiPerformanceMatrixWindow]::SetThreadDpiAwarenessContext([IntPtr](-4))
     $bitmap=$null; $graphics=$null; $stream=$null
     try {
+        Show-MeasuredWindow $Window
+        Wait-WindowExposed $Window
         $origin=New-Object ZsuiPerformanceMatrixWindow+POINT
         if(-not [ZsuiPerformanceMatrixWindow]::ClientToScreen($Window,[ref]$origin)){throw 'Missing live client origin'}
         $scale=[ZsuiPerformanceMatrixWindow]::GetDpiForWindow($Window)/96.0
+        if($Path){@{window=$Window.ToInt64();x=$origin.X;y=$origin.Y;scale=$scale} | ConvertTo-Json | Set-Content -LiteralPath ($Path+'.geometry.json') -Encoding utf8}
         $bitmap=New-Object System.Drawing.Bitmap ([int](260*$scale)),([int](48*$scale))
         $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
         $graphics.CopyFromScreen($origin.X+[int](650*$scale),$origin.Y+[int](132*$scale),0,0,$bitmap.Size)
         $stream=New-Object IO.MemoryStream
         $bitmap.Save($stream,[System.Drawing.Imaging.ImageFormat]::Png)
+        if ($Path) { [IO.File]::WriteAllBytes($Path, $stream.ToArray()) }
         return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream.ToArray()))
     } finally {
         if($graphics){$graphics.Dispose()}; if($bitmap){$bitmap.Dispose()}; if($stream){$stream.Dispose()}
@@ -594,9 +657,11 @@ function Measure-RepaintApplication {
         }
         Start-Sleep -Seconds $WarmupSeconds
         if ($DeviceDemo) {
+            $null = @(Get-ProcessGroup -RootProcessId $launch.process.Id)
+            $null = Save-WindowScreenshot -Process $launch.process -Path (Join-Path $outputDir "$($Application.framework)-dynamic-full-$script:measurementRound.png")
             $signatures=@()
             for($check=0;$check -lt 3;$check++) {
-                $signatures+=Get-DeviceLoadSignature -Window $launch.process.MainWindowHandle
+                $signatures+=Get-DeviceLoadSignature -Window $launch.process.MainWindowHandle -Path (Join-Path $outputDir "$($Application.framework)-dynamic-$script:measurementRound-$check.png")
                 Start-Sleep -Milliseconds 350
             }
             if(@($signatures | Sort-Object -Unique).Count -lt 2){throw "$($Application.framework_name) did not update the visible load metric"}

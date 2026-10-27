@@ -34,7 +34,7 @@ fn strong(value: impl Into<String>, color: ColorRole) -> ViewNode<Message> {
     )
 }
 fn card(content: ViewNode<Message>) -> ViewNode<Message> {
-    column([content])
+    column([content.flex(1.0)])
         .padding(Dp::new(18.0))
         .radius(Dp::new(12.0))
         .bg(Bg::SurfaceRaised)

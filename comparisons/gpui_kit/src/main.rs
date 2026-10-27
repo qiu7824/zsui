@@ -271,7 +271,12 @@ impl Render for Demo {
                     .child(strong("负载模拟"))
                     .child(strong(format!("{:.0}%", self.state.load)).text_color(rgb(0x0067c0))),
             )
-            .child(div().h(px(28.0)).w_full().child(Slider::new(&self.load)))
+            .child(
+                div()
+                    .h(px(28.0))
+                    .w_full()
+                    .child(Slider::new(&self.load).bg(rgb(0x0067c0))),
+            )
             .child(
                 div()
                     .h(px(4.0))
@@ -325,6 +330,13 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             Theme::change(ThemeMode::Light, None, cx);
+            Theme::update(cx, |theme| {
+                theme.colors.primary = rgb(0x0067c0).into();
+                theme.colors.primary_foreground = rgb(0xffffff).into();
+                theme.colors.primary_hover = rgb(0x005fae).into();
+                theme.colors.primary_active = rgb(0x00559f).into();
+                theme.colors.ring = rgb(0x0067c0).into();
+            });
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
