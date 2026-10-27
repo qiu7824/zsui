@@ -84,6 +84,7 @@ caret/selection geometry; it no longer constructs a second `FontSystem`,
 | `windows-gdi` | Bounded GDI fallback | Existing buffered Win32 DIB |
 | `windows-directwrite` | Opt-in system comparison/oracle | Existing buffered Win32 DIB |
 | `windows-rust-text` | Default ZSUI Rust pipeline using HarfRust, skrifa and Swash | Existing buffered Win32 DIB |
+| `windows-font-sharing` | Experimental read-only font mappings shared across windows on one UI thread | Opt-in addition to `windows-rust-text`; not part of defaults or `full` |
 | `linux-direct-lite` | The same retained ZSUI Rust pipeline | Final tiny-skia/Softbuffer surface |
 | `rust-text-proof` | Development-only proof data/functions on top of `rust-text` | No application presentation |
 | `windows-text-proof` | DirectWrite reference plus `rust-text-proof` | PNG, JSON and SVG evidence |

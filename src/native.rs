@@ -2938,7 +2938,9 @@ impl NativeViewInputRuntime {
             caret: current.chars().count(),
         };
         self.text_edit = Some(state);
-        let mut report = self.dispatch_text_input(value);
+        // An empty input event is intentionally a no-op, but an accessibility
+        // replacement with an empty value must delete the selected content.
+        let mut report = self.dispatch_text_input(if value.is_empty() { "\u{8}" } else { value });
         report.handled = true;
         report.focused_widget = Some(target.widget.0);
         report

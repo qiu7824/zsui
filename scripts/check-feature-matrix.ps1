@@ -93,6 +93,7 @@ $singleFeatures = @(
     "rust-text",
     "rust-text-proof",
     "windows-rust-text",
+    "windows-font-sharing",
     "windows-text-proof",
     "macos-appkit",
     "linux-direct",

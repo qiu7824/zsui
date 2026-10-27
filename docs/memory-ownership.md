@@ -15,6 +15,11 @@ The Rust pixel slice exists only during composition, after `GdiFlush`;
 native drawing resumes after the slice is released. `EndBufferedPaint`
 presents the completed frame and background erase remains suppressed.
 
+Buffered painting is initialized per UI thread. The native application run and
+each active paint retain a thread-bound lease; the final lease pairs
+`BufferedPaintInit` with `BufferedPaintUnInit`. A process-global initialization
+flag cannot establish the required lifetime for other UI threads.
+
 The borrowed pixels belong to the paint buffer, not DWM's private compositor
 storage. The full-window paint buffer still exists. At 1080 x 760, one
 32-bit surface alone occupies approximately 3.13 MiB before stride padding.
@@ -31,6 +36,20 @@ the renderer's text engine, layout/glyph caches, scratch bitmap and cached
 GDI objects. The application state and command delivery remain alive;
 restoration lazily reconstructs rendering resources. Each window continues
 to own its text context, so hiding one cannot clear another window's cache.
+
+Layout-cache hits borrow their complete text and typography key without an
+owned string allocation. Immutable retained geometry uses exact-length boxed
+slices, and ordinary buffered text commands borrow their retained text.
+
+The optional `windows-font-sharing` feature shares read-only font-file mappings
+inside native application runs with multiple windows. A weak thread-local
+discovery slot owns no mapped bytes; text engines own the pool and databases
+own the mappings. Mutable shaping, layout, glyph and hinting caches remain
+window-local. Single-window runs keep the local mapping path without a sharing
+index. The feature is experimental and is not selected by `window` or `full`:
+multiwindow measurements showed a benefit, but the complete long-run private
+memory gate has not been established. Applications must validate their own
+workload before opting in.
 
 Win32 aggregate dispatch reports retain counters for all events but bound
 diagnostic histories: 256 ordinary entries, 64 errors, 512 bytes per trace and

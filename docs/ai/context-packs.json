@@ -296,6 +296,8 @@
         "src/platform/windows/text/directwrite.rs",
         "src/platform/windows/text/rust_renderer.rs",
         "src/rust_text_renderer.rs",
+        "src/rust_text_font_files.rs",
+        "src/rust_text_allocation_tests.rs",
         "examples/text_geometry_proof.rs",
         "docs/text-rendering.md",
         "src/platform/windows/application.rs",

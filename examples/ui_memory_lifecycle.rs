@@ -1,5 +1,10 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+#[path = "support/memory_allocation_probe.rs"]
+mod allocation_probe;
+#[global_allocator]
+static ALLOCATION_PROBE: allocation_probe::AllocationProbe = allocation_probe::AllocationProbe;
+
 use serde::Serialize;
 use std::{
     env, fs,
@@ -10,8 +15,8 @@ use std::{
 };
 use zsui::{
     button, column, native_window, row, text, textbox, AppCx, Command, Dp,
-    NativeProofProcessMemoryEvidence, NativeWindowSmokeRunOptions, UiInvalidationHandle, ViewNode,
-    ZsWindowCommand,
+    NativeProofProcessMemoryEvidence, NativeWindowHost, NativeWindowSmokeRunOptions,
+    UiInvalidationHandle, ViewNode, ZsWindowCommand, ZsuiHost,
 };
 
 #[derive(Default)]
@@ -28,6 +33,7 @@ enum Msg {
 #[derive(Serialize)]
 struct Sample {
     phase: &'static str,
+    timestamp_millis: u128,
     memory: NativeProofProcessMemoryEvidence,
 }
 
@@ -65,14 +71,41 @@ fn view(state: &State, large_text: bool) -> ViewNode<Msg> {
     column(children).gap(Dp::new(16.0)).padding(Dp::new(20.0))
 }
 
-fn sample(phase: &'static str, samples: &mut Vec<Sample>) {
-    for _ in 0..7 {
+fn sample(phase: &'static str, samples: &mut Vec<Sample>, count: usize) {
+    for _ in 0..count {
         samples.push(Sample {
             phase,
+            timestamp_millis: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
             memory: zsui::native_smoke::capture_native_process_memory(phase)
                 .expect("the selected native host must expose process memory"),
         });
         thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[cfg(windows)]
+mod windows_probe_backend {
+    pub(super) fn pump_teardown_messages() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, WM_QUIT,
+        };
+        // This proof re-enters the host after closing every window. Keep the UI
+        // thread servicing native teardown timers during its controlled idle phase.
+        unsafe {
+            let mut message: MSG = std::mem::zeroed();
+            for _ in 0..128 {
+                if PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_REMOVE) == 0 {
+                    break;
+                }
+                if message.message != WM_QUIT {
+                    TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+            }
+        }
     }
 }
 
@@ -89,6 +122,82 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let large_text = args.iter().any(|arg| arg == "--large-text");
     fs::create_dir_all(&output)?;
+    if let Some(index) = args.iter().position(|arg| arg == "--external-windows") {
+        let count: usize = args
+            .get(index + 1)
+            .ok_or("--external-windows needs a count")?
+            .parse()?;
+        if !(1..=3).contains(&count) {
+            return Err("external window count must be in 1..=3".into());
+        }
+        let rounds = args
+            .windows(2)
+            .find(|pair| pair[0] == "--external-rounds")
+            .map(|pair| pair[1].parse::<usize>())
+            .transpose()?
+            .unwrap_or(1);
+        if !(1..=200).contains(&rounds) {
+            return Err("external rounds must be in 1..=200".into());
+        }
+        let before = zsui::native_smoke::capture_native_process_memory("before_windows");
+        for round in 1..=rounds {
+            let mut host = NativeWindowHost::new();
+            for index in 0..count {
+                let builder = native_window(format!(
+                    "ZSUI memory lifecycle {} / round {round}",
+                    index + 1
+                ))
+                .size(1080, 760)
+                .view(view(&State::default(), large_text));
+                host.set_next_window_draw_plan(builder.native_draw_plan().cloned());
+                host.create_main_window(builder.window_spec())?;
+            }
+            host.run_event_loop()?;
+            drop(host);
+            if rounds > 1 {
+                fs::write(
+                    output.join("completed-round.json"),
+                    serde_json::to_vec(&serde_json::json!({
+                        "round": round, "after": zsui::native_smoke::capture_native_process_memory("after_round"),
+                        "rust_heap": allocation_probe::snapshot(),
+                    }))?,
+                )?;
+                let deadline = std::time::Instant::now() + Duration::from_secs(20);
+                let expected = round.to_string();
+                while fs::read_to_string(output.join("continue-round.txt"))
+                    .ok()
+                    .as_deref()
+                    != Some(expected.as_str())
+                {
+                    #[cfg(windows)]
+                    windows_probe_backend::pump_teardown_messages();
+                    if std::time::Instant::now() >= deadline {
+                        return Err("external round controller did not acknowledge teardown".into());
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+        fs::write(
+            output.join("external-exit.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": "zsui.external-memory-lifecycle/v1", "windows": count, "rounds": rounds,
+                "before": before,
+                "after": zsui::native_smoke::capture_native_process_memory("after_windows"),
+                "rust_heap": allocation_probe::snapshot(),
+            }))?,
+        )?;
+        return Ok(());
+    }
+    let sample_count = args
+        .windows(2)
+        .find(|pair| pair[0] == "--sample-count")
+        .map(|pair| pair[1].parse::<usize>())
+        .transpose()?
+        .unwrap_or(7);
+    if !(1..=100).contains(&sample_count) {
+        return Err("sample count must be in 1..=100".into());
+    }
     let before_window = zsui::native_smoke::capture_native_process_memory("before_window");
     let state = Arc::new(Mutex::new(State::default()));
     let view_state = state.clone();
@@ -96,23 +205,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wake = UiInvalidationHandle::new();
     let worker_wake = wake.clone();
     let worker = thread::spawn(move || {
-        let mut samples = Vec::with_capacity(21);
+        let mut samples = Vec::with_capacity(sample_count * 3);
         thread::sleep(Duration::from_secs(3));
         worker_wake
             .request_app_command(Command::custom("increment"))
             .unwrap();
         thread::sleep(Duration::from_millis(400));
-        sample("visible", &mut samples);
+        sample("visible", &mut samples, sample_count);
         worker_wake
             .request_app_command(Command::custom("hide"))
             .unwrap();
         thread::sleep(Duration::from_secs(2));
-        sample("hidden", &mut samples);
+        sample("hidden", &mut samples, sample_count);
         worker_wake
             .request_app_command(Command::custom("show"))
             .unwrap();
         thread::sleep(Duration::from_secs(2));
-        sample("restored", &mut samples);
+        sample("restored", &mut samples, sample_count);
         samples
     });
     let report = native_window("ZSUI memory lifecycle")
@@ -150,7 +259,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         )
         .run_smoke(
-            NativeWindowSmokeRunOptions::new(12500)
+            NativeWindowSmokeRunOptions::new(10400 + sample_count as u64 * 300)
                 .screenshot_file(output.join("window.png").to_string_lossy())
                 .require_screenshot(true),
         )?;

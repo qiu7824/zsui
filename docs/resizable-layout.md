@@ -1,4 +1,39 @@
-# Resizable layout
+# Adaptive and resizable layout
+
+ZSUI supports constraint-driven resizing and component-specific adaptive
+composition. Applications retain explicit state and stable widget identities
+when the native host updates the viewport and DPI.
+
+## Automatic adaptation
+
+| Surface | Available behavior | Implementation |
+| --- | --- | --- |
+| Row / Column | Flex distribution, intrinsic/minimum sizes, padding, gaps and alignment | `src/view/layout.rs` |
+| Text and nested content | Word wrapping at the allocated width; recursive intrinsic height keeps following content below wrapped lines | `src/view/layout.rs`, `src/view/tests.rs` |
+| Vertical overflow | Natural content can scroll without fixed parent heights; compatible rebuilds preserve the adaptive scroll offset | `src/view/layout.rs`, `src/view/tests.rs` |
+| Grid | Fixed DP and weighted fraction tracks, spans and independent row/column gaps | `ZsGridTrack`, `src/view/layout.rs` |
+| GridView | Calculates equal-width tile columns from available width and platform tile metrics | `zs_grid_view_render_plan` in `src/widget_render.rs` |
+| NavigationView | Platform-owned expanded, compact and collapsed composition | `src/platform/component_profile/mod.rs` |
+| SplitView | Adaptive inline/overlay choice based on pane and content constraints | `PanelSpec::adaptive`, `ZsSplitViewDisplayMode::Adaptive` |
+
+Windows NavigationView uses expanded presentation at 1008 DP and above,
+compact presentation above 640 DP, and collapsed presentation at 640 DP and
+below. AppKit collapses when the declared pane and minimum content widths no
+longer fit. GTK uses its own 400-DP/constraint threshold. These rules remain
+platform policies rather than application-side platform branches.
+
+There is no general public breakpoint-rule system that automatically replaces
+an arbitrary Row tree with a Column tree. Ordinary Row does not provide generic
+multi-line flow wrapping, and Grid tracks currently expose `Fixed` and
+`Fraction`, not an `Auto` content track. Such compositions require explicit
+application decisions or a component with its own adaptive contract.
+
+The layout regressions include allocated-width text measurement, nested
+intrinsic height, fractional track minimums, adaptive navigation, vertical
+overflow and preserved scroll state. Dragging a divider and automatically
+changing composition are separate behaviors.
+
+## Interactive resizing
 
 `NavigationView`, `SplitView` and `DataGrid` share captured pointer routing,
 logical DP constraints and typed resize messages. Applications own the resulting

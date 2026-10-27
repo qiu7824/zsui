@@ -1,9 +1,11 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     ffi::c_void,
     io::Cursor,
     mem::size_of,
     ptr::null,
+    rc::{Rc, Weak},
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -56,7 +58,11 @@ struct BpPaintParams {
 }
 
 const BPBF_TOPDOWNDIB: u32 = 2;
-static BUFFERED_PAINT_INIT: OnceLock<()> = OnceLock::new();
+thread_local! {
+    static BUFFERED_PAINT_CONTEXT: RefCell<Weak<BufferedPaintContext>> = const { RefCell::new(Weak::new()) };
+    #[cfg(test)]
+    static LAST_BUFFERED_PAINT_UNINIT: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
 static GDIP_TOKEN: OnceLock<Option<usize>> = OnceLock::new();
 static WINDOWS_SYSTEM_ICON_FONT: OnceLock<WindowsSystemIconFont> = OnceLock::new();
 static WINDOWS_UI_FONT_FAMILIES: OnceLock<WindowsUiFontFamilies> = OnceLock::new();
@@ -109,6 +115,7 @@ pub const fn select_windows_system_icon_font(
 #[link(name = "uxtheme")]
 unsafe extern "system" {
     fn BufferedPaintInit() -> i32;
+    fn BufferedPaintUnInit() -> i32;
     fn BeginBufferedPaint(
         hdcTarget: HDC,
         prcTarget: *const RECT,
@@ -314,22 +321,27 @@ pub struct WindowsBufferedPaint {
     buffer: HPAINTBUFFER,
     dc: HDC,
     update_target: bool,
+    _context: Rc<BufferedPaintContext>,
     #[cfg(feature = "windows-rust-text")]
     rect: RECT,
 }
 
 impl WindowsBufferedPaint {
     pub unsafe fn begin(target: HDC, rect: &RECT) -> Option<Self> {
-        ensure_buffered_paint();
+        let context = acquire_buffered_paint_context()?;
         let mut paint_dc: HDC = std::ptr::null_mut();
         let buffer = BeginBufferedPaint(target, rect, BPBF_TOPDOWNDIB, null(), &mut paint_dc);
         if buffer.is_null() || paint_dc.is_null() {
+            if !buffer.is_null() {
+                EndBufferedPaint(buffer, 0);
+            }
             None
         } else {
             Some(Self {
                 buffer,
                 dc: paint_dc,
                 update_target: true,
+                _context: context,
                 #[cfg(feature = "windows-rust-text")]
                 rect: *rect,
             })
@@ -471,10 +483,42 @@ impl Drop for WindowsBufferedPaint {
     }
 }
 
-unsafe fn ensure_buffered_paint() {
-    BUFFERED_PAINT_INIT.get_or_init(|| {
-        let _ = BufferedPaintInit();
-    });
+struct BufferedPaintContext;
+
+impl Drop for BufferedPaintContext {
+    fn drop(&mut self) {
+        // Rc owners cannot leave the creating thread. Every paint owns a lease,
+        // so its EndBufferedPaint runs before the final UnInit releases caches.
+        let _result = unsafe { BufferedPaintUnInit() };
+        #[cfg(test)]
+        LAST_BUFFERED_PAINT_UNINIT.with(|result| result.set(Some(_result)));
+    }
+}
+
+fn acquire_buffered_paint_context() -> Option<Rc<BufferedPaintContext>> {
+    BUFFERED_PAINT_CONTEXT.with(|slot| {
+        if let Some(context) = slot.borrow().upgrade() {
+            return Some(context);
+        }
+        if unsafe { BufferedPaintInit() } < 0 {
+            return None;
+        }
+        let context = Rc::new(BufferedPaintContext);
+        *slot.borrow_mut() = Rc::downgrade(&context);
+        Some(context)
+    })
+}
+
+/// Keeps the thread's native paint caches alive for one application run.
+/// Individual paints retain their own lease if they outlive this scope.
+pub(crate) struct WindowsBufferedPaintSession {
+    _context: Rc<BufferedPaintContext>,
+}
+
+impl WindowsBufferedPaintSession {
+    pub(crate) fn new() -> Option<Self> {
+        acquire_buffered_paint_context().map(|context| Self { _context: context })
+    }
 }
 
 fn ensure_gdiplus_startup() -> Option<usize> {
@@ -855,7 +899,8 @@ impl WindowsGdiResourceCache {
         &self,
         surface: &mut WindowsBufferedTextSurface<'_>,
         clip: crate::ZsTextPixelRect,
-        run: &TextRun,
+        text: &str,
+        bounds: Rect,
         style: &TextStyle,
         dpi_scale: f32,
     ) -> bool {
@@ -863,7 +908,7 @@ impl WindowsGdiResourceCache {
             .lock()
             .expect("Windows GDI resource cache should not be poisoned")
             .rust_text
-            .draw_text_buffered(surface, clip, run, style, dpi_scale)
+            .draw_text_buffered(surface, clip, text, bounds, style, dpi_scale)
     }
 
     #[cfg(feature = "windows-rust-text")]
@@ -1925,17 +1970,14 @@ impl WindowsGdiDrawSink {
             style.color = color;
         }
         command.apply_size_override(&mut style);
-        let run = TextRun {
-            text: command.text.clone(),
-            bounds: command.bounds,
-        };
-        if let Some(clip) = surface.clip(run.bounds) {
+        if let Some(clip) = surface.clip(command.bounds) {
             if clip.width == 0
                 || clip.height == 0
                 || self.renderer.resources.draw_rust_text_buffered(
                     surface,
                     clip,
-                    &run,
+                    &command.text,
+                    command.bounds,
                     &style,
                     self.renderer.dpi_scale,
                 )
@@ -1943,7 +1985,15 @@ impl WindowsGdiDrawSink {
                 return;
             }
         }
-        self.renderer.draw_text(&run, &style);
+        // The native fallback still accepts the historical owned TextRun API.
+        // Normal buffered text borrows the retained command above.
+        self.renderer.draw_text(
+            &TextRun {
+                text: command.text.clone(),
+                bounds: command.bounds,
+            },
+            &style,
+        );
     }
 
     fn draw_icon_command(&mut self, command: &NativeDrawIconCommand) {
@@ -2718,6 +2768,72 @@ fn to_wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn buffered_paint_lease_outlives_session_and_releases_native_thread_cache() {
+        struct TestDc(HDC);
+        impl Drop for TestDc {
+            fn drop(&mut self) {
+                unsafe {
+                    DeleteDC(self.0);
+                }
+            }
+        }
+        let first = WindowsBufferedPaintSession::new().expect("buffered paint initialization");
+        let second = WindowsBufferedPaintSession::new().unwrap();
+        assert!(Rc::ptr_eq(&first._context, &second._context));
+        let weak = Rc::downgrade(&first._context);
+        let dc = TestDc(unsafe { CreateCompatibleDC(std::ptr::null_mut()) });
+        assert!(!dc.0.is_null());
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 8,
+            bottom: 8,
+        };
+        let mut paint = unsafe { WindowsBufferedPaint::begin(dc.0, &rect) }.unwrap();
+        paint.set_update_target(false);
+        drop(first);
+        drop(second);
+        assert!(weak.upgrade().is_some());
+        drop(paint);
+        drop(dc);
+        assert!(weak.upgrade().is_none());
+        assert!(
+            LAST_BUFFERED_PAINT_UNINIT
+                .with(|result| result.get())
+                .unwrap()
+                >= 0
+        );
+        assert!(WindowsBufferedPaintSession::new().is_some());
+    }
+
+    #[test]
+    fn buffered_paint_initialization_is_owned_by_each_ui_thread() {
+        let session = WindowsBufferedPaintSession::new().unwrap();
+        std::thread::spawn(|| {
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_none());
+            let nested = WindowsBufferedPaintSession::new().unwrap();
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_some());
+            drop(nested);
+            assert!(BUFFERED_PAINT_CONTEXT
+                .with(|slot| slot.borrow().upgrade())
+                .is_none());
+            assert!(
+                LAST_BUFFERED_PAINT_UNINIT
+                    .with(|result| result.get())
+                    .unwrap()
+                    >= 0
+            );
+        })
+        .join()
+        .unwrap();
+        assert_eq!(Rc::strong_count(&session._context), 1);
+    }
     use crate::ZsIcon;
 
     fn style() -> TextStyle {

@@ -87,11 +87,12 @@ impl WindowsRustTextState {
         &mut self,
         surface: &mut crate::windows_gdi_renderer::WindowsBufferedTextSurface<'_>,
         clip: ZsTextPixelRect,
-        run: &TextRun,
+        text: &str,
+        bounds: Rect,
         style: &TextStyle,
         dpi_scale: f32,
     ) -> bool {
-        if run.text.is_empty() || run.bounds.width <= 0 || run.bounds.height <= 0 {
+        if text.is_empty() || bounds.width <= 0 || bounds.height <= 0 {
             return false;
         }
         self.stats.draw_attempts = self.stats.draw_attempts.saturating_add(1);
@@ -103,20 +104,14 @@ impl WindowsRustTextState {
         if was_uninitialized {
             self.stats.engine_initializations = self.stats.engine_initializations.saturating_add(1);
         }
-        let layout = engine.layout(
-            &run.text,
-            style,
-            run.bounds.width,
-            run.bounds.height,
-            dpi_scale,
-        );
+        let layout = engine.layout(text, style, bounds.width, bounds.height, dpi_scale);
         if style.ellipsis && layout.overflows_horizontally() {
             self.stats.fallback_count = self.stats.fallback_count.saturating_add(1);
             return false;
         }
         let profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
         if surface
-            .composite(engine, &layout, run.bounds, clip, style.color, profile)
+            .composite(engine, &layout, bounds, clip, style.color, profile)
             .is_ok()
         {
             self.stats.draw_successes = self.stats.draw_successes.saturating_add(1);
