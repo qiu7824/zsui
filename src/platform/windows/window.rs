@@ -639,10 +639,12 @@ struct WindowsPaintSurface {
 }
 
 unsafe fn window_paint_surface(hwnd: HWND) -> WindowsPaintSurface {
-    let (draw_plan, resources) = window_paint_state(hwnd)
-        .map_or((None, WindowsGdiResourceCache::default()), |(plan, resources)| {
-            (Some(plan), resources)
-        });
+    // Default cache creation reads system text settings; an existing painter
+    // must reuse its resources without repeating those native queries.
+    let (draw_plan, resources) = window_paint_state(hwnd).map_or_else(
+        || (None, WindowsGdiResourceCache::default()),
+        |(plan, resources)| (Some(plan), resources),
+    );
     let palette = windows_palette_for_draw_plan(draw_plan.as_deref());
     let high_contrast = resolved_windows_theme_mode(
         draw_plan

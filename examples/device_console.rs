@@ -4,7 +4,7 @@
 mod model;
 
 use model::{Message, State};
-use zsui::{button, native_window, text, textbox, AppCx};
+use zsui::{button, native_window, spacer, text, textbox, AppCx};
 use zsui::{
     checkbox, column, progress_bar, row, slider, styled_text, Dp, ProgressRange, SemanticTextStyle,
     SliderRange, TextRole, ViewNode,
@@ -27,9 +27,15 @@ fn view(state: &State) -> ViewNode<Message> {
         .gap(Dp::new(14.0))
         .height(Dp::new(36.0))
         .flex(0.0),
-        text(
-            "设备 / Device                                      类型 / Type             状态 / Status",
-        ),
+        row([
+            text("设备 / Device").flex(1.0),
+            text("类型 / Type").width(Dp::new(90.0)),
+            text("状态 / Status").width(Dp::new(180.0)),
+            spacer().width(Dp::new(120.0)),
+        ])
+        .gap(Dp::new(12.0))
+        .height(Dp::new(24.0))
+        .flex(0.0),
     ];
     for (index, device) in state.visible() {
         children.push(
@@ -51,10 +57,11 @@ fn view(state: &State) -> ViewNode<Message> {
         state.load
     )));
     children.push(
-        slider(state.load, SliderRange::new(0.0, 100.0))
+        row([slider(state.load, SliderRange::new(0.0, 100.0))
             .on_slide(Message::Load)
-            .height(Dp::new(30.0))
-            .flex(0.0),
+            .flex(1.0)])
+        .height(Dp::new(30.0))
+        .flex(0.0),
     );
     children.push(
         progress_bar(state.load, ProgressRange::new(0.0, 100.0))

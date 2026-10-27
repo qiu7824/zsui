@@ -38,7 +38,13 @@ slint::slint! {
                 CheckBox { text: "仅在线 / Online only"; checked <=> root.online-only; toggled => { root.online-changed(self.checked); } }
                 Button { text: "重置 / Reset"; width: 120px; clicked => { root.reset(); } }
             }
-            Text { text: "设备 / Device                                      类型 / Type             状态 / Status"; height: 24px; }
+            HorizontalLayout {
+                height: 24px; spacing: 12px;
+                Text { text: "设备 / Device"; horizontal-stretch: 1; }
+                Text { text: "类型 / Type"; width: 90px; }
+                Text { text: "状态 / Status"; width: 180px; }
+                Rectangle { width: 120px; }
+            }
             for device in root.devices: HorizontalLayout {
                 height: 42px;
                 spacing: 12px;

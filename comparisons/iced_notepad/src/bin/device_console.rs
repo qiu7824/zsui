@@ -40,12 +40,26 @@ impl Demo {
             text(model::TITLE).size(26),
             text("6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms"),
             row![
-                text_input("筛选设备 / Filter devices", &self.state.query).on_input(Message::Query).width(Fill),
-                checkbox(self.state.online_only).label("仅在线 / Online only").on_toggle(Message::OnlineOnly),
+                text_input("筛选设备 / Filter devices", &self.state.query)
+                    .on_input(Message::Query)
+                    .width(Fill),
+                checkbox(self.state.online_only)
+                    .label("仅在线 / Online only")
+                    .on_toggle(Message::OnlineOnly),
                 button("重置 / Reset").on_press(Message::Reset),
-            ].spacing(14).align_y(iced::Center),
-            text("设备 / Device                                      类型 / Type             状态 / Status"),
-        ].spacing(12);
+            ]
+            .spacing(14)
+            .align_y(iced::Center),
+            row![
+                text("设备 / Device").width(Fill),
+                text("类型 / Type").width(90),
+                text("状态 / Status").width(180),
+                text("").width(120)
+            ]
+            .spacing(12)
+            .height(24),
+        ]
+        .spacing(12);
         for (index, device) in self.state.visible() {
             content = content.push(
                 row![

@@ -6,6 +6,7 @@ on:
     paths:
       - "examples/zsui_proxy_client.rs"
       - "scripts/measure-proxy-demo-comparison.ps1"
+      - "scripts/check-proxy-demo-results.ps1"
       - "scripts/proxy-demo-flicker-control.ps1"
       - "scripts/set-windows-display-scale.ps1"
       - "src/render_protocol.rs"
@@ -136,6 +137,10 @@ jobs:
           Get-Content target/proxy-demo-comparison/summary.md | Add-Content $env:GITHUB_STEP_SUMMARY
           Get-Content target/proxy-demo-comparison/summary.md
           Get-Content target/proxy-demo-comparison/summary.json
+
+      - name: Enforce measured regression gates
+        shell: pwsh
+        run: ./new/scripts/check-proxy-demo-results.ps1 -Summary target/proxy-demo-comparison/summary.json
 
       - name: Upload measurements and screenshots
         if: always()

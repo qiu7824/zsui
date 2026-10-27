@@ -314,6 +314,7 @@
         "src/platform/windows/text",
         "examples/zsui_proxy_client.rs",
         "scripts/measure-proxy-demo-comparison.ps1",
+        "scripts/check-proxy-demo-results.ps1",
         ".github/workflows/proxy-demo-comparison.yml"
       ],
       "verify": [

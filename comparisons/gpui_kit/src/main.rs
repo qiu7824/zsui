@@ -90,11 +90,26 @@ impl Render for Demo {
                         cx.notify();
                     })),
             );
-        let mut content = base.flex().flex_col().p(px(24.0)).gap(px(12.0))
+        let mut content = base
+            .flex()
+            .flex_col()
+            .p(px(24.0))
+            .gap(px(12.0))
             .child(div().h(px(36.0)).text_size(px(26.0)).child(model::TITLE))
-            .child(div().h(px(24.0)).child("6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms"))
+            .child(div().h(px(24.0)).child(
+                "6 台设备 / 6 devices     在线 4 / Online 4     平均延迟 / Average latency 20 ms",
+            ))
             .child(filters)
-            .child(div().h(px(24.0)).child("设备 / Device                                      类型 / Type             状态 / Status"));
+            .child(
+                div()
+                    .flex()
+                    .gap(px(12.0))
+                    .h(px(24.0))
+                    .child(div().flex_1().child("设备 / Device"))
+                    .child(div().w(px(90.0)).child("类型 / Type"))
+                    .child(div().w(px(180.0)).child("状态 / Status"))
+                    .child(div().w(px(120.0))),
+            );
         for (index, device) in self.state.visible() {
             content = content.child(
                 div()
