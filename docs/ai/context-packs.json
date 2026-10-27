@@ -241,6 +241,7 @@
       "optional": [
         "comparisons/scripts/build_unix_performance_matrix.sh",
         "comparisons/device_demo/README.md",
+        "scripts/check-device-demo-results.ps1",
         "examples/device_console.rs",
         "examples/support/device_demo.rs",
         "comparisons/gpui_kit",

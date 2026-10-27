@@ -221,7 +221,7 @@ required-features = ["window", "button", "label", "toggle"]
 [[example]]
 name = "device_console"
 path = "examples/device_console.rs"
-required-features = ["window", "button", "label", "textbox", "checkbox", "slider", "progress"]
+required-features = ["window", "button", "label", "textbox", "checkbox", "slider", "progress", "grid"]
 
 [[example]]
 name = "zsui_proxy_client"

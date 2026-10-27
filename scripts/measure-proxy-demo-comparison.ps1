@@ -219,6 +219,14 @@ public static class ZsuiPaintProbe
     /// "print" asks DWM for the window's own surface.
     public static Frame Capture(IntPtr window, string mode)
     {
+        var previousDpi = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        if (previousDpi == IntPtr.Zero) throw new InvalidOperationException("Cannot establish physical-pixel capture context");
+        try { return CaptureClient(window, mode); }
+        finally { SetThreadDpiAwarenessContext(previousDpi); }
+    }
+
+    static Frame CaptureClient(IntPtr window, string mode)
+    {
         RECT client;
         GetClientRect(window, out client);
         int width = client.Right - client.Left;
@@ -226,15 +234,8 @@ public static class ZsuiPaintProbe
         var origin = new POINT();
         ClientToScreen(window, ref origin);
         int captureWidth = width, captureHeight = height, offsetX = 0, offsetY = 0;
-        if (mode == "print")
-        {
-            RECT bounds;
-            GetWindowRect(window, out bounds);
-            captureWidth = bounds.Right - bounds.Left;
-            captureHeight = bounds.Bottom - bounds.Top;
-            offsetX = origin.X - bounds.Left;
-            offsetY = origin.Y - bounds.Top;
-        }
+        // PW_CLIENTONLY avoids DPI-dependent nonclient cropping and invisible
+        // resize borders in a full-window PrintWindow image.
         if (width <= 0 || height <= 0 || offsetX < 0 || offsetY < 0
             || offsetX + width > captureWidth || offsetY + height > captureHeight)
         {
@@ -250,7 +251,7 @@ public static class ZsuiPaintProbe
         IntPtr bitmap = CreateDIBSection(memory, ref header, 0, out bits, IntPtr.Zero, 0);
         IntPtr previous = SelectObject(memory, bitmap);
         bool captured = mode == "print"
-            ? PrintWindow(window, memory, 2)
+            ? PrintWindow(window, memory, 3)
             : BitBlt(memory, 0, 0, width, height, screen, origin.X, origin.Y, 0x00CC0020 | 0x40000000);
         GdiFlush();
         var frame = new Frame { Width = width, Height = height, Bgra = new byte[width * height * 4] };

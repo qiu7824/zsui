@@ -124,6 +124,11 @@ pub fn has_flag(flag: &str) -> bool {
     std::env::args().any(|arg| arg == flag)
 }
 
+/// Deterministic counter/progress workload, enabled only by the benchmark flag.
+pub fn benchmark_load(started: std::time::Instant) -> f32 {
+    ((started.elapsed().as_millis() / 16) % 101) as f32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,9 +5,11 @@ ZSUI, eframe/egui, Iced, Slint, Tauri/WebView2 and GPUI Kit. They share the devi
 records and Rust interaction model in `examples/support/device_demo.rs`. Tauri
 receives those same records through its initialization script.
 
-The 960 × 680 logical client area contains a bilingual heading and summary,
-one text filter, one online-only checkbox, a reset button, six selectable
-device rows, a 0–100 load slider, a progress indicator and a selection label.
+The 960 × 680 logical client area uses a light desktop theme, three white summary
+cards, a compact searchable device list and a selected-device detail panel.
+Blue marks selection and the primary reset action. One text filter, one
+online-only checkbox, six selectable device rows, a 0–100 load slider and a
+progress indicator retain the same interactions across all six frameworks.
 The initial load is 42%, device zero is selected, and all six rows are visible.
 Filtering is case-insensitive and preserves selection. Reset restores the
 initial state. These are synthetic records; the applications perform no network
@@ -16,7 +18,7 @@ requests or device management. There is no idle polling.
 ## Run
 
 ```sh
-cargo run --release --example device_console --no-default-features --features window,button,label,textbox,checkbox,slider,progress
+cargo run --release --example device_console --no-default-features --features window,button,label,textbox,checkbox,slider,progress,grid
 cargo run --release --manifest-path comparisons/egui_notepad/Cargo.toml --bin egui-device-console
 cargo run --release --manifest-path comparisons/iced_notepad/Cargo.toml --bin iced-device-console
 cargo run --release --manifest-path comparisons/slint_notepad/Cargo.toml --bin slint-device-console
@@ -31,12 +33,24 @@ syntax highlighting and JavaScript extension host are not enabled. See the
 
 ## Measurement
 
-`Device Demo Comparison` builds release applications on one Windows Server 2025
-runner. `scripts/measure-ui-performance-matrix.ps1 -DeviceDemo` measures binary
+`Device Demo Builds` compiles the six release applications and validates the
+shared model on Windows Server 2025. The hosted adapter rejected egui/glow's
+OpenGL requirement, so that job publishes binaries and build identities rather
+than claiming native graphics measurements. Run all binaries on one supported
+graphics desktop with:
+
+```powershell
+./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -SkipBuild -RepeatRuns 5 -MemorySamples 10 -StartupRuns 5 -IncludeGpuMemory -SupportRoot <outside-workspace-directory>
+./scripts/check-device-demo-results.ps1 -Report <report.json>
+```
+
+The measurement records binary
 size and hash, cold-like launch and warm first-frame proxies, empty/page/hidden
 working set, private working set, private bytes, peak working set and idle/repaint
 CPU. Tauri includes the WebView2 process tree. Windows PSS is unavailable and
-must remain null; GPU memory is not inferred from process RAM.
+must remain null. Optional GPU memory comes from Windows process counters;
+shared allocations can appear in more than one process and are not a physical
+memory accounting equivalent to PSS.
 
 All builds use `opt-level=z`, thin LTO, one codegen unit, stripped symbols and
 panic abort. Five independent rounds rotate framework order. Each round starts
@@ -47,8 +61,10 @@ artifact. The first-frame counter is a visible-client/redraw/DwmFlush proxy,
 not an optical presentation measurement. The file cache is never purged.
 
 `--benchmark-empty` hides the demo content while retaining the same application
-and renderer setup. `--benchmark-repaint` requests repeated redraws; ZSUI's
-native host receives Win32 redraw requests from the measurement program. These
+and renderer setup. `--benchmark-repaint` requests load, slider, numeric and
+progress updates every 16 ms using each toolkit's application scheduler. ZSUI
+uses its invalidation handle, with no polling in ordinary interactive mode.
+Actual presentation rate is not implied by this requested frequency. These
 flags do not affect the ordinary interactive demo.
 
 These new demo measurements form their own comparison table. They must not be

@@ -7,7 +7,8 @@ param(
     [switch]$SkipBuild,
     [switch]$DeviceDemo,
     [switch]$BuildOnly,
-    [ValidateRange(1, 10)][int]$RepeatRuns = 1
+    [ValidateRange(1, 10)][int]$RepeatRuns = 1,
+    [switch]$IncludeGpuMemory
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,7 +49,8 @@ if (
 $targetDir = Join-Path $support "target"
 $binaryDir = Join-Path $support "bin-performance-matrix"
 $outputDir = Join-Path $support "results\ui-performance-matrix\latest"
-New-Item -ItemType Directory -Force -Path $targetDir, $binaryDir, $outputDir | Out-Null
+New-Item -ItemType Directory -Force -Path $binaryDir, $outputDir | Out-Null
+if (-not $SkipBuild) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
 
 $manifests = [ordered]@{
     zsui = Join-Path $workspace "Cargo.toml"
@@ -101,7 +103,7 @@ function Build-PerformanceMatrix {
     if ($DeviceDemo) {
         Invoke-CargoBuildAndCopy "ZSUI Device Console" @(
             "build", "--release", "--locked", "--manifest-path", $manifests.zsui,
-            "--example", "device_console", "--no-default-features", "--features", "window,button,label,textbox,checkbox,slider,progress"
+            "--example", "device_console", "--no-default-features", "--features", "window,button,label,textbox,checkbox,slider,progress,grid"
         ) (Join-Path $examples "device_console.exe") (Join-Path $binaryDir "zsui-device.exe")
         foreach ($framework in @("egui", "iced", "slint")) {
             Invoke-CargoBuildAndCopy "$framework Device Console" @(
@@ -188,7 +190,7 @@ try {
     }
 }
 finally {
-    Remove-TauriGeneratedSchemas
+    if (-not $SkipBuild) { Remove-TauriGeneratedSchemas }
     $env:CARGO_TARGET_DIR = $previousTarget
 }
 if ($BuildOnly) { return }
@@ -259,6 +261,14 @@ foreach ($application in $applications) {
         throw "missing matrix executable: $($application.executable)"
     }
 }
+$buildManifest = $null
+$manifestPath = Join-Path $binaryDir 'build-manifest.json'
+if ($DeviceDemo -and (Test-Path -LiteralPath $manifestPath)) {
+    $buildManifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    foreach ($artifact in $buildManifest.artifacts) {
+        if ((Get-FileHash -LiteralPath (Join-Path $binaryDir $artifact.file)).Hash -ne $artifact.sha256) { throw 'Demo binary differs from the build manifest' }
+    }
+}
 
 Add-Type -AssemblyName System.Drawing
 if (-not ("ZsuiPerformanceMatrixWindow" -as [type])) {
@@ -311,6 +321,7 @@ function Wait-MainWindow {
         if ($Process.HasExited) { return [long]0 }
         if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
             [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Process.MainWindowHandle, 4)
+            [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr](-1), 30, 30, 0, 0, 0x0051)
             if ($DeviceDemo) {
                 $outer = New-Object ZsuiPerformanceMatrixWindow+RECT
                 $client = New-Object ZsuiPerformanceMatrixWindow+RECT
@@ -407,6 +418,23 @@ function Get-ProcessSnapshot {
     }
 }
 
+function Get-GpuMemory {
+    param([int]$RootProcessId)
+    try {
+        $ids = @((Get-ProcessGroup -RootProcessId $RootProcessId).Id)
+        $records = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory -ErrorAction Stop |
+            Where-Object { $_.Name -match '^pid_(\d+)_' -and [int]$Matches[1] -in $ids })
+        [ordered]@{
+            available = $true
+            dedicated_bytes = [long](($records | Measure-Object DedicatedUsage -Sum).Sum)
+            shared_bytes = [long](($records | Measure-Object SharedUsage -Sum).Sum)
+            counter_instances = $records.Count
+        }
+    } catch {
+        [ordered]@{ available = $false; dedicated_bytes = $null; shared_bytes = $null; counter_instances = 0; reason = $_.Exception.Message }
+    }
+}
+
 function Measure-Memory {
     param([int]$RootProcessId)
     $samples = @()
@@ -496,8 +524,9 @@ function Save-WindowScreenshot {
 
 function Stop-BenchmarkProcess {
     param([System.Diagnostics.Process]$Process)
-    $group = @(Get-ProcessGroup -RootProcessId $Process.Id)
     try { $Process.Refresh() } catch {}
+    if ($Process.HasExited) { return }
+    $group = @(Get-ProcessGroup -RootProcessId $Process.Id)
     if (-not $Process.HasExited) {
         $Process.CloseMainWindow() | Out-Null
         [void]$Process.WaitForExit(1200)
@@ -529,7 +558,7 @@ function Measure-EmptyWindow {
 function Measure-RepaintApplication {
     param([pscustomobject]$Application)
     $repaintArguments = @($Application.arguments)
-    if ($Application.framework -ne "zsui") {
+    if ($Application.framework -ne "zsui" -or $DeviceDemo) {
         $repaintArguments += "--benchmark-repaint"
     }
     $launch = Start-BenchmarkProcess -Executable $Application.executable -Arguments $repaintArguments
@@ -540,7 +569,7 @@ function Measure-RepaintApplication {
             throw "$($Application.framework_name) $($Application.profile_name) repaint process did not present"
         }
         Start-Sleep -Seconds $WarmupSeconds
-        $externalRedraw = $Application.framework -eq "zsui"
+        $externalRedraw = $Application.framework -eq "zsui" -and -not $DeviceDemo
         $cpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $launch.process.MainWindowHandle -ForceRepaint $externalRedraw
         $cpu.requested_hz = 60
         $cpu | Add-Member -NotePropertyName driver -NotePropertyValue $(if ($externalRedraw) { "win32_redraw_window" } else { "application_render_loop" })
@@ -567,6 +596,7 @@ function Measure-Application {
     $screenshot = Join-Path $outputDir "$($Application.framework)-$($Application.profile)-$script:measurementRound.png"
     $captured = $false
     $clientSize = $null
+    $gpuMemory = $null
 
     for ($run = 0; $run -lt $StartupRuns; $run++) {
         $launch = Start-BenchmarkProcess -Executable $Application.executable -Arguments $Application.arguments
@@ -583,6 +613,7 @@ function Measure-Application {
                 $coldLikeFrame = $frameMs
                 Start-Sleep -Seconds $WarmupSeconds
                 $pageMemory = Measure-Memory -RootProcessId $launch.process.Id
+                if ($IncludeGpuMemory) { $gpuMemory = Get-GpuMemory -RootProcessId $launch.process.Id }
                 $client = New-Object ZsuiPerformanceMatrixWindow+RECT
                 if (-not [ZsuiPerformanceMatrixWindow]::GetClientRect($launch.process.MainWindowHandle, [ref]$client)) { throw "Missing measured client rectangle" }
                 $clientSize = @{ width_pixels = $client.Right; height_pixels = $client.Bottom; dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($launch.process.MainWindowHandle) }
@@ -621,6 +652,7 @@ function Measure-Application {
         executable_bytes = (Get-Item -LiteralPath $Application.executable).Length
         executable_sha256 = (Get-FileHash -LiteralPath $Application.executable -Algorithm SHA256).Hash
         client = $clientSize
+        gpu_memory = $gpuMemory
         cold_start = [ordered]@{
             method = "best_effort_first_launch_after_release_build"
             file_cache_purged = $false
@@ -682,6 +714,11 @@ foreach ($framework in $labels.Keys) {
   foreach ($profile in $profiles.Keys) {
     $observations = @($rounds | ForEach-Object { $_[$framework][$profile] })
     $item = $results[$framework][$profile]
+    if ($IncludeGpuMemory -and @($observations | Where-Object { -not $_.gpu_memory.available }).Count -eq 0) {
+        foreach ($metric in @('dedicated_bytes','shared_bytes')) {
+            $item.gpu_memory[$metric] = Get-Median @($observations | ForEach-Object { $_.gpu_memory[$metric] })
+        }
+    }
     foreach ($phase in @('full_page_memory','hidden_memory')) {
       foreach ($metric in @('rss_bytes','private_rss_bytes','private_bytes','peak_rss_bytes')) {
         $item[$phase][$metric] = Get-Median @($observations | ForEach-Object { $_[$phase].$metric })
@@ -725,6 +762,7 @@ $report = [ordered]@{
     }
     profiles = $profiles
     implementations = $results
+    build = $buildManifest
     rounds = $rounds
     methodology = [ordered]@{
         fairness = "compare frameworks only within the same profile; never compare ZSUI Minimal against another framework's Common, Full or Viewer surface"
@@ -734,8 +772,9 @@ $report = [ordered]@{
         memory = "per-process sample medians, then median across independent runs in rotated framework order; RSS is working set, Private RSS is Windows private working set, PSS is unavailable on Windows"
         hidden = "same full-page process after SW_HIDE and a second warmup interval"
         idle_cpu = "recursive process-tree CPU delta while the page is stationary"
-        repaint_cpu = "recursive process-tree CPU delta in a separate process at approximately 60 Hz; ZSUI uses Win32 redraw requests and the comparison apps use their own continuous render loop"
+        repaint_cpu = $(if ($DeviceDemo) { "recursive process-tree CPU delta in a separate process with timer-driven load values, slider and progress updates requested every 16 ms; actual presentation rate is not implied" } else { "recursive process-tree CPU delta in a separate process at approximately 60 Hz; ZSUI uses Win32 redraw requests and the comparison apps use their own continuous render loop" })
         tauri = "memory includes WebView2 descendants; executable size excludes the system-installed WebView2 runtime"
+        gpu_memory = "optional Windows GPU Process Memory counter totals for the application process tree; shared allocations may be counted in more than one process; compositor-owned resources are not attributed to the application"
     }
 }
 

@@ -1,4 +1,4 @@
-name: Device Demo Comparison
+name: Device Demo Builds
 
 on:
   push:
@@ -59,36 +59,35 @@ jobs:
           & "$env:RUNNER_TEMP/device-model-tests.exe"
           if ($LASTEXITCODE -ne 0) { throw 'Shared interaction contract failed' }
       - name: Build six release demos
+        id: build
         run: |
           ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -BuildOnly -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
-      - name: Measure six matching native windows
+      - name: Record reproducible demo artifacts
+        id: manifest
         run: |
-          ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -SkipBuild -RepeatRuns 5 -MemorySamples 10 -StartupRuns 5 -WarmupSeconds 3 -CpuSampleSeconds 3 -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
-      - name: Validate complete measurement evidence
-        run: |
-          $root=Join-Path $env:RUNNER_TEMP 'zsui-device-comparison/results/ui-performance-matrix/latest'
-          $report=Get-Content (Join-Path $root 'report.json') -Raw | ConvertFrom-Json
-          if($report.rounds.Count -ne 5){throw 'Missing independent measurement rounds'}
+          $bin=Join-Path $env:RUNNER_TEMP 'zsui-device-comparison/bin-performance-matrix'
+          $artifacts=@()
           foreach($framework in @('zsui','egui','iced','slint','tauri','gpui')) {
-            foreach($round in $report.rounds) {
-              $entry=$round.$framework.device
-              if(-not $entry.screenshot_captured -or -not (Test-Path -LiteralPath $entry.screenshot)){throw "Missing $framework surface"}
-              if($entry.full_page_memory.private_bytes -le 0 -or $entry.full_page_memory.rss_bytes -le 0 -or $entry.warm_start.first_presented_frame_median_ms -le 0){throw "Invalid $framework measurement"}
-              if([Math]::Abs($entry.client.width_pixels*96/$entry.client.dpi-960) -gt 1 -or [Math]::Abs($entry.client.height_pixels*96/$entry.client.dpi-680) -gt 1){throw "Mismatched $framework client geometry"}
-            }
+            $path=Join-Path $bin "$framework-device.exe"
+            if(-not (Test-Path -LiteralPath $path)){throw "Missing $framework executable"}
+            $artifacts+=@{framework=$framework;file="$framework-device.exe";bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-FileHash -LiteralPath $path).Hash}
           }
+          @{schema='zsui.device-demo-build/v1';source=(& git rev-parse HEAD);rustc=(& rustc -V);profile='release: opt-level=z, thin LTO, codegen-units=1, strip=symbols, panic=abort';shared_model_sha256=(Get-FileHash examples/support/device_demo.rs).Hash;artifacts=$artifacts} | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $bin 'build-manifest.json') -Encoding utf8
+          Copy-Item LICENSE (Join-Path $bin 'LICENSE-ZSUI.txt')
+          Copy-Item comparisons/device_demo/README.md (Join-Path $bin 'README.md')
+          "Native measurements require a desktop with the renderers' graphics APIs. This job verifies builds and the shared model; it does not certify GPU timing or native screenshots." >> $env:GITHUB_STEP_SUMMARY
       - name: Upload measurements and lockfile
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: device-demo-measurements-windows-2025
+          name: device-demo-build-records-windows-2025
           path: |
             ${{ runner.temp }}/zsui-device-comparison/results
             comparisons/gpui_kit/Cargo.lock
           if-no-files-found: error
           retention-days: 14
       - name: Upload demo applications
-        if: success()
+        if: always() && steps.manifest.outcome == 'success'
         uses: actions/upload-artifact@v6
         with:
           name: device-demo-applications-windows-2025
