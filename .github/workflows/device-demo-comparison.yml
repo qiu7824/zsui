@@ -1,0 +1,83 @@
+name: Device Demo Comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/device_console.rs"
+      - "examples/support/device_demo.rs"
+      - "comparisons/**/device_console.rs"
+      - "comparisons/gpui_kit/**"
+      - "comparisons/tauri_notepad/frontend-device/**"
+      - "comparisons/tauri_notepad/tauri.device-demo.conf.json"
+      - "scripts/measure-ui-performance-matrix.ps1"
+      - ".github/workflows/device-demo-comparison.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: device-demo-comparison-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve GPUI Kit lockfile
+        run: |
+          if (-not (Test-Path comparisons/gpui_kit/Cargo.lock)) {
+            cargo generate-lockfile --manifest-path comparisons/gpui_kit/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'GPUI Kit dependency resolution failed' }
+          }
+      - name: Inspect build capacity
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free
+          "CARGO_TARGET_DIR=$env:RUNNER_TEMP\zsui-device-comparison\target" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: device-demo-windows-v1
+          workspaces: . -> ${{ runner.temp }}/zsui-device-comparison/target
+          cache-on-failure: true
+      - name: Validate shared interaction model
+        run: |
+          rustc --edition 2024 --test examples/support/device_demo.rs -o "$env:RUNNER_TEMP/device-model-tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Model test compilation failed' }
+          & "$env:RUNNER_TEMP/device-model-tests.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Shared interaction contract failed' }
+      - name: Build six release demos
+        run: |
+          ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -BuildOnly -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
+      - name: Measure six matching native windows
+        run: |
+          ./scripts/measure-ui-performance-matrix.ps1 -DeviceDemo -SkipBuild -RepeatRuns 5 -MemorySamples 10 -StartupRuns 5 -WarmupSeconds 3 -CpuSampleSeconds 3 -SupportRoot "$env:RUNNER_TEMP/zsui-device-comparison"
+      - name: Upload measurements and lockfile
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: device-demo-measurements-windows-2025
+          path: |
+            ${{ runner.temp }}/zsui-device-comparison/results
+            comparisons/gpui_kit/Cargo.lock
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload demo applications
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: device-demo-applications-windows-2025
+          path: ${{ runner.temp }}/zsui-device-comparison/bin-performance-matrix
+          retention-days: 14

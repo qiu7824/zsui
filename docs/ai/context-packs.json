@@ -240,6 +240,11 @@
       ],
       "optional": [
         "comparisons/scripts/build_unix_performance_matrix.sh",
+        "comparisons/device_demo/README.md",
+        "examples/device_console.rs",
+        "examples/support/device_demo.rs",
+        "comparisons/gpui_kit",
+        ".github/workflows/device-demo-comparison.yml",
         "comparisons/scripts/macos_window_probe.swift",
         "comparisons/scripts/tests/test_performance_matrix.py",
         "scripts/measure-windows-interaction-latency.ps1",

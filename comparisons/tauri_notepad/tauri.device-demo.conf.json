@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Device Console comparison",
+  "version": "0.1.0",
+  "identifier": "dev.zsui.comparison.device-console",
+  "build": { "frontendDist": "frontend-device" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "label": "bootstrap", "visible": false }],
+    "security": { "csp": null }
+  },
+  "bundle": { "active": false, "icon": ["icons/icon.ico", "icons/icon.png"] }
+}

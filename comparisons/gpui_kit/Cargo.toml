@@ -1,0 +1,19 @@
+[package]
+name = "gpui-kit-comparison"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "gpui-device-console"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit = "=0.8.1"
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"

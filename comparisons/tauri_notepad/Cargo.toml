@@ -5,6 +5,11 @@ edition = "2024"
 publish = false
 
 [[bin]]
+name = "tauri-device-console"
+path = "src/bin/device_console.rs"
+required-features = ["device-demo"]
+
+[[bin]]
 name = "tauri-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 
@@ -28,6 +33,7 @@ tauri = { version = "=2.11.5", default-features = false, features = [
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+device-demo = ["custom-protocol"]
 perf-matrix = ["custom-protocol"]
 perf-minimal = ["perf-matrix"]
 perf-common = ["perf-matrix"]

@@ -1,5 +1,7 @@
 fn main() {
-    let config = if std::env::var_os("CARGO_FEATURE_PERF_MINIMAL").is_some() {
+    let config = if std::env::var_os("CARGO_FEATURE_DEVICE_DEMO").is_some() {
+        "tauri.device-demo.conf.json"
+    } else if std::env::var_os("CARGO_FEATURE_PERF_MINIMAL").is_some() {
         "tauri.perf-minimal.conf.json"
     } else if std::env::var_os("CARGO_FEATURE_PERF_COMMON").is_some() {
         "tauri.perf-common.conf.json"

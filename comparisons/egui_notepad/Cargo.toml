@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 
 [[bin]]
+name = "egui-device-console"
+path = "src/bin/device_console.rs"
+
+[[bin]]
 name = "egui-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 

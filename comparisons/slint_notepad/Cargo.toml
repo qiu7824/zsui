@@ -5,6 +5,10 @@ edition = "2024"
 publish = false
 
 [[bin]]
+name = "slint-device-console"
+path = "src/bin/device_console.rs"
+
+[[bin]]
 name = "slint-invoice-tool"
 path = "src/bin/invoice_tool.rs"
 

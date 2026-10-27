@@ -4,11 +4,25 @@ param(
     [int]$WarmupSeconds = 3,
     [int]$CpuSampleSeconds = 3,
     [string]$SupportRoot = "",
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$DeviceDemo,
+    [switch]$BuildOnly,
+    [ValidateRange(1, 10)][int]$RepeatRuns = 1
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$script:processIdentities = @{}
+$script:measurementRound = 1
+
+function Get-Median {
+    param([object[]]$Values)
+    $sorted = @($Values | Sort-Object)
+    if ($sorted.Count -eq 0) { throw "Cannot summarize an empty sample" }
+    $middle = [int][Math]::Floor($sorted.Count / 2)
+    if ($sorted.Count % 2) { return [double]$sorted[$middle] }
+    return ([double]$sorted[$middle - 1] + [double]$sorted[$middle]) / 2.0
+}
 
 if (-not $IsWindows) {
     throw "The first performance-matrix runner uses Windows process and DWM counters"
@@ -40,6 +54,7 @@ $manifests = [ordered]@{
     iced = Join-Path $workspace "comparisons\iced_notepad\Cargo.toml"
     slint = Join-Path $workspace "comparisons\slint_notepad\Cargo.toml"
     tauri = Join-Path $workspace "comparisons\tauri_notepad\Cargo.toml"
+    gpui = Join-Path $workspace "comparisons\gpui_kit\Cargo.toml"
 }
 $viewerDocument = Join-Path $workspace "examples\ui-documents\performance-viewer.json"
 
@@ -73,6 +88,28 @@ function Invoke-CargoBuildAndCopy {
 function Build-PerformanceMatrix {
     $release = Join-Path $targetDir "release"
     $examples = Join-Path $release "examples"
+
+    if ($DeviceDemo) {
+        Invoke-CargoBuildAndCopy "ZSUI Device Console" @(
+            "build", "--release", "--locked", "--manifest-path", $manifests.zsui,
+            "--example", "device_console", "--no-default-features", "--features", "window,button,label,textbox,checkbox,slider,progress"
+        ) (Join-Path $examples "device_console.exe") (Join-Path $binaryDir "zsui-device.exe")
+        foreach ($framework in @("egui", "iced", "slint")) {
+            Invoke-CargoBuildAndCopy "$framework Device Console" @(
+                "build", "--release", "--locked", "--manifest-path", $manifests[$framework],
+                "--bin", "$framework-device-console"
+            ) (Join-Path $release "$framework-device-console.exe") (Join-Path $binaryDir "$framework-device.exe")
+        }
+        Invoke-CargoBuildAndCopy "Tauri Device Console" @(
+            "build", "--release", "--locked", "--manifest-path", $manifests.tauri,
+            "--bin", "tauri-device-console", "--no-default-features", "--features", "device-demo"
+        ) (Join-Path $release "tauri-device-console.exe") (Join-Path $binaryDir "tauri-device.exe")
+        Invoke-CargoBuildAndCopy "GPUI Kit Device Console" @(
+            "build", "--release", "--locked", "--manifest-path", $manifests.gpui,
+            "--bin", "gpui-device-console"
+        ) (Join-Path $release "gpui-device-console.exe") (Join-Path $binaryDir "gpui-device.exe")
+        return
+    }
 
     Invoke-CargoBuildAndCopy "ZSUI Minimal" @(
         "build", "--release", "--locked", "--manifest-path", $manifests.zsui,
@@ -142,6 +179,7 @@ finally {
     Remove-TauriGeneratedSchemas
     $env:CARGO_TARGET_DIR = $previousTarget
 }
+if ($BuildOnly) { return }
 
 $labels = [ordered]@{
     zsui = "ZSUI"
@@ -150,6 +188,7 @@ $labels = [ordered]@{
     slint = "Slint"
     tauri = "Tauri 2 / WebView2"
 }
+if ($DeviceDemo) { $labels.gpui = "GPUI Kit" }
 $profiles = [ordered]@{
     minimal = [ordered]@{
         name = "Minimal"
@@ -174,6 +213,13 @@ $profiles = [ordered]@{
 }
 
 $applications = @()
+if ($DeviceDemo) {
+    $profiles = [ordered]@{ device = [ordered]@{
+        name = "Device Console"
+        workload = "Shared device data, filter, online checkbox, six selectable rows, load slider, progress and reset"
+        comparison_contract = "960x680 logical client; six identical bilingual devices from one shared Rust module; initial load 42 and selection 0; no idle polling"
+    } }
+}
 foreach ($framework in $labels.Keys) {
     foreach ($profile in $profiles.Keys) {
         $arguments = @()
@@ -212,6 +258,7 @@ public static class ZsuiPerformanceMatrixWindow {
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out RECT rect);
+    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool GetUpdateRect(IntPtr hwnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
@@ -232,9 +279,11 @@ function Start-BenchmarkProcess {
         FilePath = $Executable
         WorkingDirectory = $workspace
         PassThru = $true
+        WindowStyle = "Normal"
     }
     if ($Arguments.Count -gt 0) { $start.ArgumentList = $Arguments }
     $process = Start-Process @start
+    $script:processIdentities[$process.Id] = $process.StartTime.ToFileTimeUtc()
     [pscustomobject]@{ process = $process; stopwatch = $stopwatch }
 }
 
@@ -244,7 +293,23 @@ function Wait-MainWindow {
         Start-Sleep -Milliseconds 10
         $Process.Refresh()
         if ($Process.HasExited) { return [long]0 }
-        if ($Process.MainWindowHandle -ne [IntPtr]::Zero) { return [long]$Stopwatch.ElapsedMilliseconds }
+        if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
+            [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Process.MainWindowHandle, 4)
+            if ($DeviceDemo) {
+                $outer = New-Object ZsuiPerformanceMatrixWindow+RECT
+                $client = New-Object ZsuiPerformanceMatrixWindow+RECT
+                $dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($Process.MainWindowHandle)
+                if ($dpi -eq 0) { throw "Window DPI unavailable" }
+                [void][ZsuiPerformanceMatrixWindow]::GetWindowRect($Process.MainWindowHandle, [ref]$outer)
+                [void][ZsuiPerformanceMatrixWindow]::GetClientRect($Process.MainWindowHandle, [ref]$client)
+                $width = [int][Math]::Round(960 * $dpi / 96) + $outer.Right - $outer.Left - $client.Right
+                $height = [int][Math]::Round(680 * $dpi / 96) + $outer.Bottom - $outer.Top - $client.Bottom
+                if (-not [ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr]::Zero, 0, 0, $width, $height, 0x0016)) {
+                    throw "Cannot establish the fixed device-demo client size"
+                }
+            }
+            return [long]$Stopwatch.ElapsedMilliseconds
+        }
     } while ($Stopwatch.ElapsedMilliseconds -lt $TimeoutMs)
     return [long]0
 }
@@ -279,6 +344,10 @@ function Wait-FirstPresentedFrame {
 function Get-ProcessGroup {
     param([int]$RootProcessId)
     $root = Get-Process -Id $RootProcessId -ErrorAction Stop
+    if (-not $script:processIdentities.ContainsKey($RootProcessId) -or
+        $root.StartTime.ToFileTimeUtc() -ne $script:processIdentities[$RootProcessId]) {
+        throw "Benchmark root process identity changed"
+    }
     $earliestCreation = $root.StartTime.AddSeconds(-1)
     $records = @(
         Get-CimInstance Win32_Process |
@@ -333,11 +402,12 @@ function Measure-Memory {
         sample_count = $samples.Count
         process_count = [int](($samples.process_count | Measure-Object -Maximum).Maximum)
         process_names = @($samples.process_names | Sort-Object -Unique)
-        rss_bytes = [long](($samples.working_set_bytes | Measure-Object -Average).Average)
-        private_rss_bytes = [long](($samples.private_working_set_bytes | Measure-Object -Average).Average)
-        private_bytes = [long](($samples.private_bytes | Measure-Object -Average).Average)
+        rss_bytes = [long](Get-Median $samples.working_set_bytes)
+        private_rss_bytes = [long](Get-Median $samples.private_working_set_bytes)
+        private_bytes = [long](Get-Median $samples.private_bytes)
         peak_rss_bytes = [long](($samples.peak_working_set_bytes | Measure-Object -Maximum).Maximum)
         pss_bytes = $null
+        samples = $samples
     }
 }
 
@@ -375,11 +445,6 @@ function Save-WindowScreenshot {
     param([System.Diagnostics.Process]$Process, [string]$Path)
     $Process.Refresh()
     if ($Process.MainWindowHandle -eq [IntPtr]::Zero) { return $false }
-    for ($index = 0; $index -lt 2; $index++) {
-        [ZsuiPerformanceMatrixWindow]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
-        [ZsuiPerformanceMatrixWindow]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
-        Start-Sleep -Milliseconds 60
-    }
     [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Process.MainWindowHandle, 5)
     [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr](-1), 30, 30, 0, 0, 0x0041)
     [void][ZsuiPerformanceMatrixWindow]::BringWindowToTop($Process.MainWindowHandle)
@@ -424,7 +489,7 @@ function Stop-BenchmarkProcess {
     foreach ($item in $group) {
         try {
             $item.Refresh()
-            if (-not $item.HasExited) { Stop-Process -Id $item.Id -Force -ErrorAction SilentlyContinue }
+            if (-not $item.HasExited) { $item.Kill(); [void]$item.WaitForExit(2000) }
         } catch {}
     }
 }
@@ -483,8 +548,9 @@ function Measure-Application {
     $hiddenMemory = $null
     $idleCpu = $null
     $repaintCpu = $null
-    $screenshot = Join-Path $outputDir "$($Application.framework)-$($Application.profile).png"
+    $screenshot = Join-Path $outputDir "$($Application.framework)-$($Application.profile)-$script:measurementRound.png"
     $captured = $false
+    $clientSize = $null
 
     for ($run = 0; $run -lt $StartupRuns; $run++) {
         $launch = Start-BenchmarkProcess -Executable $Application.executable -Arguments $Application.arguments
@@ -501,10 +567,16 @@ function Measure-Application {
                 $coldLikeFrame = $frameMs
                 Start-Sleep -Seconds $WarmupSeconds
                 $pageMemory = Measure-Memory -RootProcessId $launch.process.Id
+                $client = New-Object ZsuiPerformanceMatrixWindow+RECT
+                if (-not [ZsuiPerformanceMatrixWindow]::GetClientRect($launch.process.MainWindowHandle, [ref]$client)) { throw "Missing measured client rectangle" }
+                $clientSize = @{ width_pixels = $client.Right; height_pixels = $client.Bottom; dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($launch.process.MainWindowHandle) }
                 $captured = Save-WindowScreenshot -Process $launch.process -Path $screenshot
                 $idleCpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $launch.process.MainWindowHandle -ForceRepaint $false
                 [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($launch.process.MainWindowHandle, 0)
                 Start-Sleep -Seconds $WarmupSeconds
+                if ($launch.process.HasExited -or [ZsuiPerformanceMatrixWindow]::IsWindowVisible($launch.process.MainWindowHandle)) {
+                    throw "Hide phase did not reach a live hidden window"
+                }
                 $hiddenMemory = Measure-Memory -RootProcessId $launch.process.Id
             }
         }
@@ -523,14 +595,16 @@ function Measure-Application {
     ) | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
     $warmWindow = @($startupSamples | Select-Object -Skip 1 | Sort-Object)
     $warmFrame = @($frameSamples | Select-Object -Skip 1 | Sort-Object)
-    $windowMedian = $warmWindow[[Math]::Floor($warmWindow.Count / 2)]
-    $frameMedian = $warmFrame[[Math]::Floor($warmFrame.Count / 2)]
+    $windowMedian = Get-Median $warmWindow
+    $frameMedian = Get-Median $warmFrame
     [ordered]@{
         framework = $Application.framework_name
         profile = $Application.profile_name
         executable = $Application.executable
         arguments = $Application.arguments
         executable_bytes = (Get-Item -LiteralPath $Application.executable).Length
+        executable_sha256 = (Get-FileHash -LiteralPath $Application.executable -Algorithm SHA256).Hash
+        client = $clientSize
         cold_start = [ordered]@{
             method = "best_effort_first_launch_after_release_build"
             file_cache_purged = $false
@@ -558,10 +632,15 @@ function Measure-Application {
     }
 }
 
-$results = [ordered]@{}
-foreach ($framework in $labels.Keys) {
-    $results[$framework] = [ordered]@{}
-    foreach ($profile in $profiles.Keys) {
+$rounds = @()
+for ($roundIndex = 0; $roundIndex -lt $RepeatRuns; $roundIndex++) {
+    $script:measurementRound = $roundIndex + 1
+    $results = [ordered]@{}
+    $frameworkOrder = @($labels.Keys)
+    $frameworkOrder = @(0..($frameworkOrder.Count - 1) | ForEach-Object { $frameworkOrder[($_ + $roundIndex) % $frameworkOrder.Count] })
+    foreach ($framework in $frameworkOrder) {
+      $results[$framework] = [ordered]@{}
+      foreach ($profile in $profiles.Keys) {
         $application = $applications | Where-Object { $_.framework -eq $framework -and $_.profile -eq $profile } | Select-Object -First 1
         $results[$framework][$profile] = Measure-Application -Application $application
         $memoryPhases = @(
@@ -575,13 +654,45 @@ foreach ($framework in $labels.Keys) {
         if ($framework -ne "tauri" -and ($memoryPhases.process_count | Measure-Object -Maximum).Maximum -ne 1) {
             throw "$($application.framework_name) $($application.profile_name) unexpectedly used more than one process"
         }
+      }
     }
+    $rounds += ,$results
+    $results | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path $outputDir "round-$script:measurementRound.json") -Encoding utf8
+}
+
+# Keep every process observation; summarize numeric phase metrics across runs.
+$results = $rounds[0] | ConvertTo-Json -Depth 16 | ConvertFrom-Json -AsHashtable
+foreach ($framework in $labels.Keys) {
+  foreach ($profile in $profiles.Keys) {
+    $observations = @($rounds | ForEach-Object { $_[$framework][$profile] })
+    $item = $results[$framework][$profile]
+    foreach ($phase in @('full_page_memory','hidden_memory')) {
+      foreach ($metric in @('rss_bytes','private_rss_bytes','private_bytes','peak_rss_bytes')) {
+        $item[$phase][$metric] = Get-Median @($observations | ForEach-Object { $_[$phase].$metric })
+      }
+    }
+    foreach ($metric in @('rss_bytes','private_rss_bytes','private_bytes','peak_rss_bytes')) {
+      $item.empty_window.memory[$metric] = Get-Median @($observations | ForEach-Object { $_.empty_window.memory.$metric })
+    }
+    foreach ($phase in @('idle_cpu','repaint_cpu')) {
+      foreach ($metric in @('machine_percent','one_core_percent')) {
+        $item[$phase][$metric] = Get-Median @($observations | ForEach-Object { $_[$phase].$metric })
+      }
+    }
+    $item.warm_start.first_frame_samples_ms = @($observations | ForEach-Object { $_.warm_start.first_frame_samples_ms })
+    $item.warm_start.startup_samples_ms = @($observations | ForEach-Object { $_.warm_start.startup_samples_ms })
+    $item.warm_start.runs = $item.warm_start.first_frame_samples_ms.Count
+    $item.warm_start.first_presented_frame_median_ms = Get-Median $item.warm_start.first_frame_samples_ms
+    $item.warm_start.startup_to_window_median_ms = Get-Median $item.warm_start.startup_samples_ms
+    $sortedFrames = @($item.warm_start.first_frame_samples_ms | Sort-Object)
+    $item.warm_start.first_presented_frame_p95_ms = $sortedFrames[[Math]::Ceiling($sortedFrames.Count * 0.95) - 1]
+  }
 }
 
 $gitHead = (& git -C $workspace rev-parse HEAD).Trim()
 $gitDirty = -not [string]::IsNullOrWhiteSpace((& git -C $workspace status --porcelain) -join "`n")
 $report = [ordered]@{
-    schema = "zsui.ui-performance-matrix/v1"
+    schema = "zsui.ui-performance-matrix/v2"
     measured_at = [DateTime]::UtcNow.ToString("o")
     git = [ordered]@{ head = $gitHead; dirty = $gitDirty }
     machine = [ordered]@{
@@ -592,15 +703,17 @@ $report = [ordered]@{
         startup_runs = $StartupRuns
         warmup_seconds = $WarmupSeconds
         cpu_sample_seconds = $CpuSampleSeconds
+        repeat_runs = $RepeatRuns
     }
     profiles = $profiles
     implementations = $results
+    rounds = $rounds
     methodology = [ordered]@{
         fairness = "compare frameworks only within the same profile; never compare ZSUI Minimal against another framework's Common, Full or Viewer surface"
         viewer_boundary = "ZSUI formal applications and zsui-viewer are separate build artifacts and report rows; Viewer-only polling, validation and document-component coverage do not enter formal application builds"
         cold_start = "best-effort first launch after release build; Windows file cache is not purged, so this is not a reboot-grade cold start"
         first_frame = "elapsed process-start time until a visible nonzero client area completes a top-level and descendant redraw followed by DwmFlush"
-        memory = "average of recursive process-tree samples; RSS is working set, Private RSS is Windows private working set, PSS is unavailable on Windows"
+        memory = "per-process sample medians, then median across independent runs in rotated framework order; RSS is working set, Private RSS is Windows private working set, PSS is unavailable on Windows"
         hidden = "same full-page process after SW_HIDE and a second warmup interval"
         idle_cpu = "recursive process-tree CPU delta while the page is stationary"
         repaint_cpu = "recursive process-tree CPU delta in a separate process at approximately 60 Hz; ZSUI uses Win32 redraw requests and the comparison apps use their own continuous render loop"

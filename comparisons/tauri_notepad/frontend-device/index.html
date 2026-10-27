@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设备控制台 / Device Console</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f7f8fa;color:#20242b;font:14px "Segoe UI","Microsoft YaHei UI",sans-serif}main{padding:24px;display:flex;flex-direction:column;gap:12px}h1{font-size:26px;margin:0;height:36px}.metrics{height:24px}.filters{display:flex;align-items:center;gap:14px;height:36px}.filters input[type=text]{flex:1;min-width:0}input,button{font:inherit}input[type=text],button{height:34px;border:1px solid #bdc4ce;background:#fff;border-radius:5px;padding:4px 12px}button{width:120px;cursor:pointer}button:hover{background:#edf3fc}.row{display:grid;grid-template-columns:1fr 90px 180px 120px;gap:12px;align-items:center;height:42px}.list{display:flex;flex-direction:column;gap:12px}.header{height:24px;font-weight:600}input[type=range]{width:100%;height:30px;margin:0}progress{width:100%;height:12px}.selection{height:24px}.empty main{display:none}
+</style></head><body><main>
+<h1>设备控制台 / Device Console</h1>
+<div class="metrics">6 台设备 / 6 devices　 在线 4 / Online 4　 平均延迟 / Average latency 20 ms</div>
+<div class="filters"><input id="query" type="text" aria-label="筛选设备"><label><input id="online" type="checkbox"> 仅在线 / Online only</label><button id="reset">重置 / Reset</button></div>
+<div class="row header"><span>设备 / Device</span><span>类型 / Type</span><span>状态 / Status</span><span></span></div>
+<div id="devices" class="list"></div>
+<label id="load-label" for="load"></label><input id="load" type="range" min="0" max="100" value="42"><progress id="progress" max="100" value="42"></progress><div id="selection" class="selection"></div>
+</main><script>
+const config=window.DEVICE_DEMO; let selected=0;
+function render(){const q=document.querySelector('#query').value.toLowerCase(),online=document.querySelector('#online').checked,container=document.querySelector('#devices');container.replaceChildren();for(const d of config.devices){if((online&&!d.online)||(!d.name.toLowerCase().includes(q)&&!d.kind.toLowerCase().includes(q)))continue;const row=document.createElement('div');row.className='row';for(const label of [d.name,d.kind,d.online?`在线 / Online · ${d.latency} ms`:'离线 / Offline']){const span=document.createElement('span');span.textContent=label;row.appendChild(span)}const button=document.createElement('button');button.textContent='选择 / Select';button.onclick=()=>{selected=d.id;selection()};row.appendChild(button);container.appendChild(row)}selection()}
+function selection(){document.querySelector('#selection').textContent=`已选择 / Selected: ${config.devices[selected].name}`}
+function load(){const v=document.querySelector('#load').value;document.querySelector('#load-label').textContent=`模拟负载 / Simulated load: ${v}%`;document.querySelector('#progress').value=v}
+document.querySelector('#query').oninput=render;document.querySelector('#online').onchange=render;document.querySelector('#load').oninput=load;document.querySelector('#reset').onclick=()=>{selected=0;document.querySelector('#query').value='';document.querySelector('#online').checked=false;document.querySelector('#load').value=42;render();load()};
+render();load();if(config.empty)document.body.classList.add('empty');
+if(config.repaint){const marker=document.createElement('i');marker.style.cssText='position:fixed;width:1px;height:1px;opacity:.01;pointer-events:none';document.body.appendChild(marker);let frame=0;function paint(){marker.style.transform=`translateX(${frame++&1}px)`;requestAnimationFrame(paint)}requestAnimationFrame(paint)}
+</script></body></html>
