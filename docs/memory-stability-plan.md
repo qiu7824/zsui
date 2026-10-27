@@ -101,18 +101,21 @@ Miri 或其他内存检查仅用于适用的纯 Rust 核心，不能替代 Win32
 “问题更少”仅在已复现问题被消除、回归集合扩大且没有新增阻断问题时成立。
 未发现错误与已消除错误分别报告。
 
-## 当前前置问题
+## 验证状态
 
-截至 2026-10-26，基线普通 CI、UI Memory Comparison、DataViewer、ARM64、
-Stable API/Rustdoc 已通过。以下两项进入 G0：
+`8b494d4` 实现 G1 的借用查询和精确长度存储，以及 G2 的可选只读字体映射
+共享。`windows-font-sharing` 不由 `window` 或 `full` 启用；长期私有内存及
+延迟条件未全部建立时保持实验状态。
 
-- [macOS 性能矩阵](https://github.com/qiu7824/zsui/actions/runs/40291510456)
-  在 Minimal 场景隐藏进程时出现 `NSRunningApplication rejected hide`。
-  Ubuntu 矩阵通过。应定位隐藏状态、宿主响应和测量脚本的行为，不把失败
-  直接归因为内存改动，也不跳过隐藏阶段制造完整结果。
-- [Native UI Proof](https://github.com/qiu7824/zsui/actions/runs/40291510524)
-  的 Win32、AppKit、Wayland 作业通过；Linux 作业在 GTK4 Notepad 文件对话框
-  步骤被取消，上传步骤失败。取消原因和该路径的最终结果尚需确认。
+`cc40b72` 的[完整 CI](https://github.com/qiu7824/zsui/actions/runs/40435872665)、
+[性能矩阵](https://github.com/qiu7824/zsui/actions/runs/40435872293)和
+[Native UI Proof](https://github.com/qiu7824/zsui/actions/runs/40435872398)均通过。
+G0 已修复 macOS 启动身份及原生隐藏确认、GTK 对话框 Escape 输入和消失
+确认；没有省略隐藏或文件对话框阶段。Windows 交互延迟另在独立 CI 桌面
+进行配对测量，并拒绝未建立前台焦点的样本。
+
+同条件数据、未达到的内存目标、已知文字差异及实验特性的采用边界见
+[Windows 文字内存与稳定性评估](memory-stability-results.md)。
 
 ## 决策与交付
 

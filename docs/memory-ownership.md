@@ -51,6 +51,10 @@ multiwindow measurements showed a benefit, but the complete long-run private
 memory gate has not been established. Applications must validate their own
 workload before opting in.
 
+The [Windows text-memory evaluation](memory-stability-results.md) records the
+controlled release comparisons, unchanged text oracle and remaining acceptance
+gaps for this feature.
+
 Win32 aggregate dispatch reports retain counters for all events but bound
 diagnostic histories: 256 ordinary entries, 64 errors, 512 bytes per trace and
 4096 bytes per error. First/recent evidence and an explicit truncation marker

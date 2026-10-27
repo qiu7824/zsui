@@ -1,0 +1,2242 @@
+{
+  "schema": "zsui.windows-text-memory-evaluation/v1",
+  "baseline_revision": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991",
+  "implementation_revision": "8b494d4",
+  "verified_merge_revision": "cc40b72dd813a7f0c98a4f7bf192c510aad9da3d",
+  "environment": {
+    "os": "Windows 11 10.0.26300 x86_64",
+    "cpu": "Intel Core i7-10700KF",
+    "logical_processors": 16,
+    "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "profile": {
+      "name": "release",
+      "opt_level": "z",
+      "lto": "thin",
+      "codegen_units": 1,
+      "strip": "symbols",
+      "panic": "abort"
+    },
+    "working_set_trimming": false
+  },
+  "baseline_construction": "The five changed Windows runtime/renderer/native files are restored to 91cda3b; both variants use identical current benchmark instrumentation and Cargo features. Exact source and binary hashes are recorded.",
+  "builds": {
+    "baseline-next": {
+      "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "58a7f84b8202322232a4ea152d5d89167206f8d56b6d6fb32241f98ced48ef5b",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+        "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7"
+      }
+    },
+    "candidate-next": {
+      "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "65af5564815a6b8632a208e0e68bf9e7c3ce88cf761032b4f4c3471b9b1e9640",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+        "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-sharing": {
+      "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility,windows-font-sharing",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "dea0af999ac3d357777ad27f2b0548a479c49fd6273dd3918244b2b8ad0d02de",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+        "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7"
+      }
+    },
+    "candidate-sharing": {
+      "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility,windows-font-sharing",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "1e02b4aaf0f1c080d6bf26b037e9366d64e25a5fd50b6f8e1faabd8c95c47de7",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+        "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-minimal": {
+      "features": "window,button,label",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "bdced4e671c532a0ce2530bdc3c7c08a6e475cc684619f3b4334378483db8d91",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_performance_minimal.rs": "0f5885902fb4099f7ef489b8e2358bea72b816ef13856247b74a2282948739b8"
+      }
+    },
+    "candidate-minimal": {
+      "features": "window,button,label",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "666c63686d20e0d1bf1440a897ada9e220d4932e4a84729a0008932fab683b4f",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/ui_performance_minimal.rs": "0f5885902fb4099f7ef489b8e2358bea72b816ef13856247b74a2282948739b8",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-common": {
+      "features": "window,shell,list,dialog",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "6f3c5454e5af437e1dbe32db21e33922a1f45216a61fb8ff2c43a436afdfc952",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/invoice_tool.rs": "89ab648009bd6553f87f7cef6991d44f235a189f270fda55ee8d9d29b1939fa5"
+      }
+    },
+    "candidate-common": {
+      "features": "window,shell,list,dialog",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "ce9e5a4ff0281a806d95eea709fc18e98a6feaee7aacd9537db15510892e1a73",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/invoice_tool.rs": "89ab648009bd6553f87f7cef6991d44f235a189f270fda55ee8d9d29b1939fa5",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-full": {
+      "features": "component-gallery-demo",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "4afae187e5a5029bbb14ae62bff5df752453e9cbcda718420e89718e09608d72",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/component_gallery.rs": "5ec23e0b915a8f050e5bbf9afe2704bddf4333cf75e106cd68c19889927e66c2"
+      }
+    },
+    "candidate-full": {
+      "features": "component-gallery-demo",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "e7b3f12d1844cb65e0be40db2c31df1dbe49a05a582524c29a6607e840cec127",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/component_gallery.rs": "5ec23e0b915a8f050e5bbf9afe2704bddf4333cf75e106cd68c19889927e66c2",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-viewer": {
+      "features": "ui-viewer",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "66ffbcfa0090f2fcb0453f7e9b04eccc8a0b255dac4f63b5b8094846759a01a1",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "src/bin/zsui-viewer.rs": "8082586ede66fad0a49923014dee9fde0ee4de4b53e54b46aa0f290f787a3154"
+      }
+    },
+    "candidate-viewer": {
+      "features": "ui-viewer",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "d1250eba8a8d22ebc7b39a3fc277a15c20095734d031d9645bdfb00e448f2839",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "src/bin/zsui-viewer.rs": "8082586ede66fad0a49923014dee9fde0ee4de4b53e54b46aa0f290f787a3154",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-notepad": {
+      "features": "notepad-demo,accessibility",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "3f321696b14b51ec97f7051060d032f1fdfe0179977e9d3d18fa8cbb3c152559",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/zsui_notepad.rs": "b9c44654975817540bb9550b044f161ad68ec0d04c7b72b57444e9dd2b947495"
+      }
+    },
+    "candidate-notepad": {
+      "features": "notepad-demo,accessibility",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "fdf7ad2cebcf554578aa4f1d999712f144c7de32a29d0b7c9ffbfeb1d3b4a487",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/zsui_notepad.rs": "b9c44654975817540bb9550b044f161ad68ec0d04c7b72b57444e9dd2b947495",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    },
+    "baseline-oracle": {
+      "features": "windows-text-proof",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "2463e94d4f33f038e03e71f83209e4c28e0e39e011e8d918622a2ccefee62db9",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+        "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+        "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+        "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+        "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/text_geometry_proof.rs": "ffe2d8a870f5851e3eb1de39fa620b1509aba44b2be2845d51a4c16529ce090d"
+      }
+    },
+    "candidate-oracle": {
+      "features": "windows-text-proof",
+      "profile": "release",
+      "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+      "sha256": "2b2505aea053e407001441eadceaf6e526a3d607e644344f34897aef3b810d12",
+      "source_hashes": {
+        "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+        "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+        "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+        "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+        "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+        "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+        "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+        "examples/text_geometry_proof.rs": "ffe2d8a870f5851e3eb1de39fa620b1509aba44b2be2845d51a4c16529ce090d",
+        "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+      }
+    }
+  },
+  "default_application_matrix": {
+    "schema": "zsui.formal-workload-comparison/v1",
+    "rows": [
+      {
+        "profile": "minimal",
+        "pairs": 10,
+        "identical_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 5552128.0,
+              "candidate": 5367808.0,
+              "difference": -184320.0,
+              "paired_difference_95ci": [
+                -200704.0,
+                4096.0
+              ],
+              "reduction_percent": 3.3198081888601996,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24801280.0,
+              "candidate": 22079488.0,
+              "difference": -2721792.0,
+              "paired_difference_95ci": [
+                -2760704.0,
+                20480.0
+              ],
+              "reduction_percent": 10.974401321222132,
+              "regression_limit": 744038.4,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8361984.0,
+              "candidate": 8169472.0,
+              "difference": -192512.0,
+              "paired_difference_95ci": [
+                -200704.0,
+                0.0
+              ],
+              "reduction_percent": 2.302228753367622,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 5552128.0,
+              "candidate": 5367808.0,
+              "difference": -184320.0,
+              "paired_difference_95ci": [
+                -200704.0,
+                8192.0
+              ],
+              "reduction_percent": 3.3198081888601996,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24813568.0,
+              "candidate": 22095872.0,
+              "difference": -2717696.0,
+              "paired_difference_95ci": [
+                -2756608.0,
+                24576.0
+              ],
+              "reduction_percent": 10.952459557609773,
+              "regression_limit": 744407.0399999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8361984.0,
+              "candidate": 8169472.0,
+              "difference": -192512.0,
+              "paired_difference_95ci": [
+                -200704.0,
+                0.0
+              ],
+              "reduction_percent": 2.302228753367622,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 5552128.0,
+              "candidate": 5367808.0,
+              "difference": -184320.0,
+              "paired_difference_95ci": [
+                -192512.0,
+                13312.0
+              ],
+              "reduction_percent": 3.3198081888601996,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24833024.0,
+              "candidate": 22116352.0,
+              "difference": -2716672.0,
+              "paired_difference_95ci": [
+                -2752512.0,
+                40960.0
+              ],
+              "reduction_percent": 10.939755061646943,
+              "regression_limit": 744990.72,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8364032.0,
+              "candidate": 8169472.0,
+              "difference": -194560.0,
+              "paired_difference_95ci": [
+                -196608.0,
+                12288.0
+              ],
+              "reduction_percent": 2.32615083251714,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "window_ready_proxy_ms": {
+          "baseline_median": 43.55025291442871,
+          "candidate_median": 40.6724214553833,
+          "baseline_p95": 66.59817695617676,
+          "candidate_p95": 86.78984642028809
+        }
+      },
+      {
+        "profile": "common",
+        "pairs": 10,
+        "identical_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 5861376.0,
+              "candidate": 5832704.0,
+              "difference": -28672.0,
+              "paired_difference_95ci": [
+                -49152.0,
+                4096.0
+              ],
+              "reduction_percent": 0.4891684136967156,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 23105536.0,
+              "candidate": 23087104.0,
+              "difference": -18432.0,
+              "paired_difference_95ci": [
+                -36864.0,
+                22528.0
+              ],
+              "reduction_percent": 0.07977308987768127,
+              "regression_limit": 693166.08,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8669184.0,
+              "candidate": 8642560.0,
+              "difference": -26624.0,
+              "paired_difference_95ci": [
+                -47104.0,
+                0.0
+              ],
+              "reduction_percent": 0.3071107961256792,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 5861376.0,
+              "candidate": 5834752.0,
+              "difference": -26624.0,
+              "paired_difference_95ci": [
+                -45056.0,
+                -4096.0
+              ],
+              "reduction_percent": 0.4542278127183787,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 23121920.0,
+              "candidate": 23105536.0,
+              "difference": -16384.0,
+              "paired_difference_95ci": [
+                -38912.0,
+                24576.0
+              ],
+              "reduction_percent": 0.070859167404783,
+              "regression_limit": 693657.6,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8669184.0,
+              "candidate": 8642560.0,
+              "difference": -26624.0,
+              "paired_difference_95ci": [
+                -47104.0,
+                0.0
+              ],
+              "reduction_percent": 0.3071107961256792,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 5869568.0,
+              "candidate": 5847040.0,
+              "difference": -22528.0,
+              "paired_difference_95ci": [
+                -43008.0,
+                -4096.0
+              ],
+              "reduction_percent": 0.38381018841591064,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 23144448.0,
+              "candidate": 23128064.0,
+              "difference": -16384.0,
+              "paired_difference_95ci": [
+                -36864.0,
+                22528.0
+              ],
+              "reduction_percent": 0.07079019555791523,
+              "regression_limit": 694333.44,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8675328.0,
+              "candidate": 8650752.0,
+              "difference": -24576.0,
+              "paired_difference_95ci": [
+                -45056.0,
+                0.0
+              ],
+              "reduction_percent": 0.28328611898017,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "window_ready_proxy_ms": {
+          "baseline_median": 44.05570030212402,
+          "candidate_median": 40.295958518981934,
+          "baseline_p95": 49.430131912231445,
+          "candidate_p95": 76.02834701538086
+        }
+      },
+      {
+        "profile": "full",
+        "pairs": 10,
+        "identical_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 6508544.0,
+              "candidate": 6524928.0,
+              "difference": 16384.0,
+              "paired_difference_95ci": [
+                -110592.0,
+                79872.0
+              ],
+              "reduction_percent": -0.25173064820641916,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24762368.0,
+              "candidate": 24821760.0,
+              "difference": 59392.0,
+              "paired_difference_95ci": [
+                -12288.0,
+                92160.0
+              ],
+              "reduction_percent": -0.2398478206930775,
+              "regression_limit": 742871.0399999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9316352.0,
+              "candidate": 9336832.0,
+              "difference": 20480.0,
+              "paired_difference_95ci": [
+                -108544.0,
+                86016.0
+              ],
+              "reduction_percent": -0.21982853374367994,
+              "regression_limit": 279490.56,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 3952640.0,
+              "candidate": 3995648.0,
+              "difference": 43008.0,
+              "paired_difference_95ci": [
+                -45056.0,
+                77824.0
+              ],
+              "reduction_percent": -1.0880829015544042,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 21524480.0,
+              "candidate": 21594112.0,
+              "difference": 69632.0,
+              "paired_difference_95ci": [
+                36864.0,
+                94208.0
+              ],
+              "reduction_percent": -0.3235014272121789,
+              "regression_limit": 645734.4,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9316352.0,
+              "candidate": 9336832.0,
+              "difference": 20480.0,
+              "paired_difference_95ci": [
+                -108544.0,
+                86016.0
+              ],
+              "reduction_percent": -0.21982853374367994,
+              "regression_limit": 279490.56,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 6576128.0,
+              "candidate": 6610944.0,
+              "difference": 34816.0,
+              "paired_difference_95ci": [
+                -137216.0,
+                83968.0
+              ],
+              "reduction_percent": -0.5294300840859545,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24827904.0,
+              "candidate": 24893440.0,
+              "difference": 65536.0,
+              "paired_difference_95ci": [
+                -16384.0,
+                110592.0
+              ],
+              "reduction_percent": -0.2639610657428029,
+              "regression_limit": 744837.12,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9379840.0,
+              "candidate": 9416704.0,
+              "difference": 36864.0,
+              "paired_difference_95ci": [
+                -131072.0,
+                86016.0
+              ],
+              "reduction_percent": -0.39301310043668125,
+              "regression_limit": 281395.2,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "window_ready_proxy_ms": {
+          "baseline_median": 104.9729585647583,
+          "candidate_median": 105.25357723236084,
+          "baseline_p95": 164.3226146697998,
+          "candidate_p95": 135.72287559509277
+        }
+      },
+      {
+        "profile": "viewer",
+        "pairs": 10,
+        "identical_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 9836544.0,
+              "candidate": 9799680.0,
+              "difference": -36864.0,
+              "paired_difference_95ci": [
+                -114688.0,
+                143360.0
+              ],
+              "reduction_percent": 0.3747657713928795,
+              "regression_limit": 295096.32,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 29100032.0,
+              "candidate": 28485632.0,
+              "difference": -614400.0,
+              "paired_difference_95ci": [
+                -1355776.0,
+                77824.0
+              ],
+              "reduction_percent": 2.1113378844394397,
+              "regression_limit": 873000.96,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9836544.0,
+              "candidate": 9799680.0,
+              "difference": -36864.0,
+              "paired_difference_95ci": [
+                -114688.0,
+                143360.0
+              ],
+              "reduction_percent": 0.3747657713928795,
+              "regression_limit": 295096.32,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 4562944.0,
+              "candidate": 4386816.0,
+              "difference": -176128.0,
+              "paired_difference_95ci": [
+                -2691072.0,
+                131072.0
+              ],
+              "reduction_percent": 3.859964093357271,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24207360.0,
+              "candidate": 22398976.0,
+              "difference": -1808384.0,
+              "paired_difference_95ci": [
+                -2668544.0,
+                116736.0
+              ],
+              "reduction_percent": 7.470389170896786,
+              "regression_limit": 726220.7999999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9836544.0,
+              "candidate": 9799680.0,
+              "difference": -36864.0,
+              "paired_difference_95ci": [
+                -114688.0,
+                92160.0
+              ],
+              "reduction_percent": 0.3747657713928795,
+              "regression_limit": 295096.32,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 9848832.0,
+              "candidate": 9799680.0,
+              "difference": -49152.0,
+              "paired_difference_95ci": [
+                -69632.0,
+                73728.0
+              ],
+              "reduction_percent": 0.4990642545227698,
+              "regression_limit": 295464.95999999996,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 29034496.0,
+              "candidate": 28463104.0,
+              "difference": -571392.0,
+              "paired_difference_95ci": [
+                -1277952.0,
+                65536.0
+              ],
+              "reduction_percent": 1.9679762996402623,
+              "regression_limit": 871034.88,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9848832.0,
+              "candidate": 9824256.0,
+              "difference": -24576.0,
+              "paired_difference_95ci": [
+                -69632.0,
+                53248.0
+              ],
+              "reduction_percent": 0.2495321272613849,
+              "regression_limit": 295464.95999999996,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "window_ready_proxy_ms": {
+          "baseline_median": 120.6212043762207,
+          "candidate_median": 131.55126571655273,
+          "baseline_p95": 175.0040054321289,
+          "candidate_p95": 138.51499557495117
+        }
+      }
+    ]
+  },
+  "single_window": {
+    "schema": "zsui.final-memory-comparison/v1",
+    "family": "default",
+    "trials": [
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59
+    ],
+    "rows": [
+      {
+        "scene": "panel",
+        "windows": 1,
+        "pairs": 10,
+        "identical_window_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 5349376.0,
+              "candidate": 5371904.0,
+              "difference": 22528.0,
+              "paired_difference_95ci": [
+                0.0,
+                26624.0
+              ],
+              "reduction_percent": -0.4211332312404288,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 21706752.0,
+              "candidate": 21749760.0,
+              "difference": 43008.0,
+              "paired_difference_95ci": [
+                -8192.0,
+                57344.0
+              ],
+              "reduction_percent": -0.19813189923577695,
+              "regression_limit": 651202.5599999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8646656.0,
+              "candidate": 8669184.0,
+              "difference": 22528.0,
+              "paired_difference_95ci": [
+                -4096.0,
+                28672.0
+              ],
+              "reduction_percent": -0.26054002842254853,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 34.0,
+              "candidate": 34.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 5363712.0,
+              "candidate": 5384192.0,
+              "difference": 20480.0,
+              "paired_difference_95ci": [
+                0.0,
+                22528.0
+              ],
+              "reduction_percent": -0.3818251240931653,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 21735424.0,
+              "candidate": 21770240.0,
+              "difference": 34816.0,
+              "paired_difference_95ci": [
+                -8192.0,
+                57344.0
+              ],
+              "reduction_percent": -0.16018091020446623,
+              "regression_limit": 652062.72,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8646656.0,
+              "candidate": 8669184.0,
+              "difference": 22528.0,
+              "paired_difference_95ci": [
+                -4096.0,
+                28672.0
+              ],
+              "reduction_percent": -0.26054002842254853,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 35.0,
+              "candidate": 35.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 5363712.0,
+              "candidate": 5390336.0,
+              "difference": 26624.0,
+              "paired_difference_95ci": [
+                8192.0,
+                32768.0
+              ],
+              "reduction_percent": -0.4963726613211149,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 21745664.0,
+              "candidate": 21786624.0,
+              "difference": 40960.0,
+              "paired_difference_95ci": [
+                -4096.0,
+                61440.0
+              ],
+              "reduction_percent": -0.1883593897155773,
+              "regression_limit": 652369.9199999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 8654848.0,
+              "candidate": 8677376.0,
+              "difference": 22528.0,
+              "paired_difference_95ci": [
+                10240.0,
+                32768.0
+              ],
+              "reduction_percent": -0.26029342167534314,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 35.0,
+              "candidate": 35.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "memory_target_pass": false,
+        "process_metrics": {
+          "peak_private_bytes": {
+            "baseline": 8716288.0,
+            "candidate": 8738816.0,
+            "difference": 22528.0,
+            "paired_difference_95ci": [
+              -16384.0,
+              45056.0
+            ],
+            "reduction_percent": -0.25845864661654133,
+            "regression_limit": 262144,
+            "regression_gate_pass": true
+          },
+          "after_close_private_bytes": {
+            "baseline": 6438912.0,
+            "candidate": 3317760.0,
+            "difference": -3121152.0,
+            "paired_difference_95ci": [
+              -3287040.0,
+              -3100672.0
+            ],
+            "reduction_percent": 48.47328244274809,
+            "regression_limit": 262144,
+            "regression_gate_pass": true
+          },
+          "idle_machine_cpu_percent": {
+            "baseline": 0.0,
+            "candidate": 0.0,
+            "difference": 0.0,
+            "paired_difference_95ci": [
+              0.0,
+              0.0
+            ],
+            "reduction_percent": null,
+            "regression_limit": 0.1,
+            "regression_gate_pass": true
+          }
+        }
+      },
+      {
+        "scene": "large-text",
+        "windows": 1,
+        "pairs": 10,
+        "identical_window_captures": 10,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 5840896.0,
+              "candidate": 5808128.0,
+              "difference": -32768.0,
+              "paired_difference_95ci": [
+                -182272.0,
+                79872.0
+              ],
+              "reduction_percent": 0.5610098176718092,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24809472.0,
+              "candidate": 24803328.0,
+              "difference": -6144.0,
+              "paired_difference_95ci": [
+                -688128.0,
+                1417216.0
+              ],
+              "reduction_percent": 0.024764735017335313,
+              "regression_limit": 744284.1599999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9142272.0,
+              "candidate": 9103360.0,
+              "difference": -38912.0,
+              "paired_difference_95ci": [
+                -184320.0,
+                73728.0
+              ],
+              "reduction_percent": 0.42562724014336917,
+              "regression_limit": 274268.16,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 36.0,
+              "candidate": 36.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                -1.0,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 5840896.0,
+              "candidate": 5808128.0,
+              "difference": -32768.0,
+              "paired_difference_95ci": [
+                -182272.0,
+                79872.0
+              ],
+              "reduction_percent": 0.5610098176718092,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24821760.0,
+              "candidate": 24815616.0,
+              "difference": -6144.0,
+              "paired_difference_95ci": [
+                -681984.0,
+                1404928.0
+              ],
+              "reduction_percent": 0.024752475247524754,
+              "regression_limit": 744652.7999999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9142272.0,
+              "candidate": 9103360.0,
+              "difference": -38912.0,
+              "paired_difference_95ci": [
+                -184320.0,
+                73728.0
+              ],
+              "reduction_percent": 0.42562724014336917,
+              "regression_limit": 274268.16,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 37.0,
+              "candidate": 37.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                -0.5,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 5840896.0,
+              "candidate": 5808128.0,
+              "difference": -32768.0,
+              "paired_difference_95ci": [
+                -182272.0,
+                79872.0
+              ],
+              "reduction_percent": 0.5610098176718092,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 24834048.0,
+              "candidate": 24821760.0,
+              "difference": -12288.0,
+              "paired_difference_95ci": [
+                -681984.0,
+                1409024.0
+              ],
+              "reduction_percent": 0.04948045522018803,
+              "regression_limit": 745021.44,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 9142272.0,
+              "candidate": 9103360.0,
+              "difference": -38912.0,
+              "paired_difference_95ci": [
+                -184320.0,
+                73728.0
+              ],
+              "reduction_percent": 0.42562724014336917,
+              "regression_limit": 274268.16,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 17.0,
+              "candidate": 17.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 37.0,
+              "candidate": 37.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                -0.5,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "memory_target_pass": false,
+        "process_metrics": {
+          "peak_private_bytes": {
+            "baseline": 9228288.0,
+            "candidate": 9156608.0,
+            "difference": -71680.0,
+            "paired_difference_95ci": [
+              -159744.0,
+              86016.0
+            ],
+            "reduction_percent": 0.7767421216156236,
+            "regression_limit": 276848.64,
+            "regression_gate_pass": true
+          },
+          "after_close_private_bytes": {
+            "baseline": 7057408.0,
+            "candidate": 3694592.0,
+            "difference": -3362816.0,
+            "paired_difference_95ci": [
+              -3661824.0,
+              -2994176.0
+            ],
+            "reduction_percent": 47.64944863609983,
+            "regression_limit": 262144,
+            "regression_gate_pass": true
+          },
+          "idle_machine_cpu_percent": {
+            "baseline": 0.0,
+            "candidate": 0.0,
+            "difference": 0.0,
+            "paired_difference_95ci": [
+              0.0,
+              0.0
+            ],
+            "reduction_percent": null,
+            "regression_limit": 0.1,
+            "regression_gate_pass": true
+          }
+        }
+      }
+    ],
+    "builds": [
+      {
+        "variant": "baseline-next",
+        "source_hashes": {
+          "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+          "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+          "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+          "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+          "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+          "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+          "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+          "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+          "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7"
+        },
+        "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility",
+        "profile": "release",
+        "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "sha256": "58a7f84b8202322232a4ea152d5d89167206f8d56b6d6fb32241f98ced48ef5b",
+        "checkout_revision_at_build": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991",
+        "effective_runtime_revision": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991"
+      },
+      {
+        "variant": "candidate-next",
+        "source_hashes": {
+          "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+          "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+          "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+          "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+          "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+          "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+          "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+          "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+          "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7",
+          "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+        },
+        "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility",
+        "profile": "release",
+        "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "sha256": "65af5564815a6b8632a208e0e68bf9e7c3ce88cf761032b4f4c3471b9b1e9640",
+        "checkout_revision_at_build": "5a33177f061fc3f3a3f159d3d5f59cecab7978cf",
+        "effective_runtime_revision": "8b494d4"
+      }
+    ],
+    "method": "Ten alternating process pairs; 20 samples per phase; per-process medians and 10000 paired bootstrap resamples; exact native captures; no working-set trimming."
+  },
+  "experimental_three_window": {
+    "schema": "zsui.final-memory-comparison/v1",
+    "family": "sharing",
+    "trials": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "rows": [
+      {
+        "scene": "panel",
+        "windows": 3,
+        "pairs": 10,
+        "identical_window_captures": 30,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 10969088.0,
+              "candidate": 7262208.0,
+              "difference": -3706880.0,
+              "paired_difference_95ci": [
+                -3760128.0,
+                -3588096.0
+              ],
+              "reduction_percent": 33.793876026885734,
+              "regression_limit": 329072.64,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 29724672.0,
+              "candidate": 26032128.0,
+              "difference": -3692544.0,
+              "paired_difference_95ci": [
+                -3743744.0,
+                -3551232.0
+              ],
+              "reduction_percent": 12.422488631665978,
+              "regression_limit": 891740.1599999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 14264320.0,
+              "candidate": 10561536.0,
+              "difference": -3702784.0,
+              "paired_difference_95ci": [
+                -3766272.0,
+                -3592192.0
+              ],
+              "reduction_percent": 25.958363244795407,
+              "regression_limit": 427929.6,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 40.0,
+              "candidate": 40.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 10973184.0,
+              "candidate": 7262208.0,
+              "difference": -3710976.0,
+              "paired_difference_95ci": [
+                -3764224.0,
+                -3584000.0
+              ],
+              "reduction_percent": 33.81858902575588,
+              "regression_limit": 329195.51999999996,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 29741056.0,
+              "candidate": 26042368.0,
+              "difference": -3698688.0,
+              "paired_difference_95ci": [
+                -3743744.0,
+                -3559424.0
+              ],
+              "reduction_percent": 12.436303539457375,
+              "regression_limit": 892231.6799999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 14264320.0,
+              "candidate": 10561536.0,
+              "difference": -3702784.0,
+              "paired_difference_95ci": [
+                -3766272.0,
+                -3592192.0
+              ],
+              "reduction_percent": 25.958363244795407,
+              "regression_limit": 427929.6,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 41.0,
+              "candidate": 41.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 10985472.0,
+              "candidate": 7278592.0,
+              "difference": -3706880.0,
+              "paired_difference_95ci": [
+                -3796992.0,
+                -3584000.0
+              ],
+              "reduction_percent": 33.743475018642805,
+              "regression_limit": 329564.16,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 29767680.0,
+              "candidate": 26062848.0,
+              "difference": -3704832.0,
+              "paired_difference_95ci": [
+                -3780608.0,
+                -3555328.0
+              ],
+              "reduction_percent": 12.445820433436532,
+              "regression_limit": 893030.4,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 14276608.0,
+              "candidate": 10571776.0,
+              "difference": -3704832.0,
+              "paired_difference_95ci": [
+                -3792896.0,
+                -3579904.0
+              ],
+              "reduction_percent": 25.9503658011763,
+              "regression_limit": 428298.24,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 41.0,
+              "candidate": 41.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "memory_target_pass": true,
+        "process_metrics": {
+          "peak_private_bytes": {
+            "baseline": 14360576.0,
+            "candidate": 10655744.0,
+            "difference": -3704832.0,
+            "paired_difference_95ci": [
+              -3770368.0,
+              -3588096.0
+            ],
+            "reduction_percent": 25.798630918425555,
+            "regression_limit": 430817.27999999997,
+            "regression_gate_pass": true
+          },
+          "after_close_private_bytes": {
+            "baseline": 7458816.0,
+            "candidate": 3928064.0,
+            "difference": -3530752.0,
+            "paired_difference_95ci": [
+              -3764224.0,
+              -3457024.0
+            ],
+            "reduction_percent": 47.33662822624931,
+            "regression_limit": 262144,
+            "regression_gate_pass": true
+          },
+          "idle_machine_cpu_percent": {
+            "baseline": 0.0,
+            "candidate": 0.0,
+            "difference": 0.0,
+            "paired_difference_95ci": [
+              -0.08246190042210234,
+              0.0
+            ],
+            "reduction_percent": null,
+            "regression_limit": 0.1,
+            "regression_gate_pass": true
+          }
+        }
+      },
+      {
+        "scene": "large-text",
+        "windows": 3,
+        "pairs": 10,
+        "identical_window_captures": 30,
+        "phases": {
+          "visible": {
+            "private_bytes": {
+              "baseline": 11749376.0,
+              "candidate": 7989248.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3827712.0,
+                -3678208.0
+              ],
+              "reduction_percent": 32.002788914066585,
+              "regression_limit": 352481.27999999997,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 30695424.0,
+              "candidate": 26933248.0,
+              "difference": -3762176.0,
+              "paired_difference_95ci": [
+                -3975168.0,
+                -2490368.0
+              ],
+              "reduction_percent": 12.25647184414198,
+              "regression_limit": 920862.72,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 15048704.0,
+              "candidate": 11288576.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3825664.0,
+                -3670016.0
+              ],
+              "reduction_percent": 24.986390854654328,
+              "regression_limit": 451461.12,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 40.0,
+              "candidate": 40.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "hidden": {
+            "private_bytes": {
+              "baseline": 11749376.0,
+              "candidate": 7989248.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3827712.0,
+                -3678208.0
+              ],
+              "reduction_percent": 32.002788914066585,
+              "regression_limit": 352481.27999999997,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 30709760.0,
+              "candidate": 26945536.0,
+              "difference": -3764224.0,
+              "paired_difference_95ci": [
+                -3966976.0,
+                -2494464.0
+              ],
+              "reduction_percent": 12.257419139713237,
+              "regression_limit": 921292.7999999999,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 15048704.0,
+              "candidate": 11288576.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3825664.0,
+                -3670016.0
+              ],
+              "reduction_percent": 24.986390854654328,
+              "regression_limit": 451461.12,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 41.0,
+              "candidate": 41.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          },
+          "restored": {
+            "private_bytes": {
+              "baseline": 11749376.0,
+              "candidate": 7989248.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3827712.0,
+                -3684352.0
+              ],
+              "reduction_percent": 32.002788914066585,
+              "regression_limit": 352481.27999999997,
+              "regression_gate_pass": true
+            },
+            "resident_bytes": {
+              "baseline": 30720000.0,
+              "candidate": 26955776.0,
+              "difference": -3764224.0,
+              "paired_difference_95ci": [
+                -3969024.0,
+                -2508800.0
+              ],
+              "reduction_percent": 12.253333333333334,
+              "regression_limit": 921600.0,
+              "regression_gate_pass": true
+            },
+            "peak_private_bytes": {
+              "baseline": 15048704.0,
+              "candidate": 11288576.0,
+              "difference": -3760128.0,
+              "paired_difference_95ci": [
+                -3825664.0,
+                -3674112.0
+              ],
+              "reduction_percent": 24.986390854654328,
+              "regression_limit": 451461.12,
+              "regression_gate_pass": true
+            },
+            "gdi_objects": {
+              "baseline": 19.0,
+              "candidate": 19.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                0.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            },
+            "user_objects": {
+              "baseline": 41.0,
+              "candidate": 41.0,
+              "difference": 0.0,
+              "paired_difference_95ci": [
+                0.0,
+                1.0
+              ],
+              "reduction_percent": 0.0,
+              "regression_limit": 262144,
+              "regression_gate_pass": true
+            }
+          }
+        },
+        "memory_target_pass": true,
+        "process_metrics": {
+          "peak_private_bytes": {
+            "baseline": 15097856.0,
+            "candidate": 11323392.0,
+            "difference": -3774464.0,
+            "paired_difference_95ci": [
+              -3825664.0,
+              -3682304.0
+            ],
+            "reduction_percent": 25.0,
+            "regression_limit": 452935.68,
+            "regression_gate_pass": true
+          },
+          "after_close_private_bytes": {
+            "baseline": 7671808.0,
+            "candidate": 4155392.0,
+            "difference": -3516416.0,
+            "paired_difference_95ci": [
+              -3780608.0,
+              -3190784.0
+            ],
+            "reduction_percent": 45.83555792845702,
+            "regression_limit": 262144,
+            "regression_gate_pass": true
+          },
+          "idle_machine_cpu_percent": {
+            "baseline": 0.0,
+            "candidate": 0.0,
+            "difference": 0.0,
+            "paired_difference_95ci": [
+              -0.08267642313050562,
+              0.0
+            ],
+            "reduction_percent": null,
+            "regression_limit": 0.1,
+            "regression_gate_pass": true
+          }
+        }
+      }
+    ],
+    "builds": [
+      {
+        "variant": "baseline-sharing",
+        "source_hashes": {
+          "src/rust_text_renderer.rs": "0149169b4bcac19fb1221ec98a03aeefeb19d0872919152f2cc375ea88d8870f",
+          "src/windows_gdi_renderer.rs": "7fdb6ad9e9e10ef18b469ff6bb1da93f83f4944a1643de5888815f0a19f11cf7",
+          "src/platform/windows/text/rust_renderer.rs": "eddee93cae16698a59db9a011901581b968014ba1aec7c74affd751a1bf98271",
+          "src/platform/desktop_runtime/windows.rs": "417ec03ee501839f735b0c68816c7de9d0c37ce2123afc68480840410ec9edf4",
+          "src/native.rs": "764dd473dfff10f49da14990c084f4380b1cdd797f309cc8023dac5a23d30985",
+          "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+          "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+          "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+          "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7"
+        },
+        "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility,windows-font-sharing",
+        "profile": "release",
+        "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "sha256": "dea0af999ac3d357777ad27f2b0548a479c49fd6273dd3918244b2b8ad0d02de",
+        "checkout_revision_at_build": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991",
+        "effective_runtime_revision": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991"
+      },
+      {
+        "variant": "candidate-sharing",
+        "source_hashes": {
+          "src/rust_text_renderer.rs": "c2381b62605a9af656d2c45eacd6d8dabd7e51f06bcfdfc336c87e818f7ac72c",
+          "src/windows_gdi_renderer.rs": "6fa84b654a43ce9c25cefcc811f67ece13faaf40255cf1438754896eecf38569",
+          "src/platform/windows/text/rust_renderer.rs": "c8c5ec86586fba382fd1de23f81826a83778824528cd2619a7ec0b42f0bea3a9",
+          "src/platform/desktop_runtime/windows.rs": "1cd303a3f4007e7199b2ee6c7b9869e555dafffc12097197e864750d6bec9986",
+          "src/native.rs": "62d544260b641828556767b8357b698a7bddf96a9197929ae4e60583d1496bbb",
+          "Cargo.toml": "68df58b9cfcd12a8b35d0bdce68bad8e51392761c3093c65c16f013874ad5ee8",
+          "Cargo.lock": "76a1cd90aea3d586c8abbaa464d2675b340200d6c2ccb9dac117d40b9271c7c3",
+          "examples/ui_memory_lifecycle.rs": "d5ba1276d2b847e68b63d9fd26d0e6545bcd92b65dfeef89617e3f2b24443077",
+          "examples/support/memory_allocation_probe.rs": "b431fb64138e28d89809abc06bad0e142ef42b2c8d5714dcca8d0cd91cda9db7",
+          "src/rust_text_font_files.rs": "2bd7e803576eb0e5cb336fd7a51b1df6bb8b50e618327d4bf66ef2efdc058992"
+        },
+        "features": "window,button,label,textbox,window-chrome,native-smoke,accessibility,windows-font-sharing",
+        "profile": "release",
+        "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+        "sha256": "1e02b4aaf0f1c080d6bf26b037e9366d64e25a5fd50b6f8e1faabd8c95c47de7",
+        "checkout_revision_at_build": "5a33177f061fc3f3a3f159d3d5f59cecab7978cf",
+        "effective_runtime_revision": "8b494d4"
+      }
+    ],
+    "method": "Ten alternating process pairs; 20 samples per phase; per-process medians and 10000 paired bootstrap resamples; exact native captures; no working-set trimming."
+  },
+  "local_checks": {
+    "format": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:17:23.4558678Z"
+    },
+    "full": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:20:41.6980407Z"
+    },
+    "no-default": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:21:12.1934748Z"
+    },
+    "windows-rust": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:21:50.5354415Z"
+    },
+    "rust-proof": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:22:24.4091877Z"
+    },
+    "sharing": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:23:49.9077934Z"
+    },
+    "proof-check": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:23:59.4178054Z"
+    },
+    "performance": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:24:41.7235601Z"
+    },
+    "native": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:24:59.0390619Z"
+    },
+    "accessibility": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:25:18.1796835Z"
+    },
+    "view": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:25:20.6579619Z"
+    },
+    "boundary": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:25:23.6213707Z"
+    },
+    "matrix": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:38:21.1603113Z"
+    },
+    "oracle": {
+      "status": "passed",
+      "finished_at": "2026-10-27T01:38:45.4722607Z"
+    }
+  },
+  "text_oracle": {
+    "schema": "zsui.text-proof-suite/v1",
+    "reference": "windows-directwrite",
+    "candidate": "zsui-rust-harfrust-swash",
+    "case_count": 66,
+    "geometry_pass_count": 61,
+    "exact_font_face_case_count": 62,
+    "exact_glyph_id_case_count": 62,
+    "maximum_origin_delta_px": 5.341797,
+    "maximum_advance_delta_px": 0.0010948181,
+    "maximum_different_pixel_ratio": 0.08465725806451613,
+    "maximum_mean_absolute_channel_delta": 10.60425067204301,
+    "unchanged_geometry_failures": [
+      "segoe-emoji--body-125-semibold",
+      "segoe-emoji--title-100-semibold",
+      "segoe-emoji--display-200-bold",
+      "mixed-fallback-wrap--body-125-semibold",
+      "mixed-fallback-wrap--title-100-semibold"
+    ],
+    "baseline_equals_candidate": true
+  },
+  "earlier_long_run": {
+    "schema": "zsui.native-lifecycle-stability/v1",
+    "variants": {
+      "baseline-next": {
+        "binary_sha256": "05c55d146d62348d5fcec96a5c86225989d92a6cbbbdb8ebf24b6ff92a86e1f8",
+        "measured_seconds": 1800.630969285965,
+        "warmup_rounds": 20,
+        "measured_rounds": 100,
+        "created_windows": 300,
+        "hide_restore_cycles": 200,
+        "phases": {
+          "visible": {
+            "first_warmed_bytes": 17055744.0,
+            "last_bytes": 19288064.0,
+            "first_ten_median_bytes": 17065984.0,
+            "last_ten_median_bytes": 19236864.0,
+            "minimum_bytes": 16916480.0,
+            "maximum_bytes": 19288064.0,
+            "tolerance_bytes": 524288,
+            "final_growth_bytes": 2232320.0,
+            "trend": {
+              "bytes_per_round": 21717.574509450944,
+              "projected_growth_bytes": 2150039.8764356435,
+              "projected_growth_95ci_bytes": [
+                2033570.0351710052,
+                2266509.7177002816
+              ]
+            },
+            "final_growth_pass": false,
+            "trend_pass": false,
+            "gdi_objects": {
+              "first": 21.0,
+              "last": 21.0,
+              "min": 21.0,
+              "max": 21.0
+            },
+            "user_objects": {
+              "first": 42.0,
+              "last": 42.0,
+              "min": 42.0,
+              "max": 43.0
+            },
+            "kernel_handles": {
+              "first": 1433.0,
+              "last": 1429.0,
+              "min": 1429.0,
+              "max": 1433.0
+            }
+          },
+          "closed": {
+            "first_warmed_bytes": 6176768.0,
+            "last_bytes": 10588160.0,
+            "first_ten_median_bytes": 6035456.0,
+            "last_ten_median_bytes": 10555392.0,
+            "minimum_bytes": 5558272.0,
+            "maximum_bytes": 10588160.0,
+            "tolerance_bytes": 524288,
+            "final_growth_bytes": 4411392.0,
+            "trend": {
+              "bytes_per_round": 47505.63657965796,
+              "projected_growth_bytes": 4703058.021386138,
+              "projected_growth_95ci_bytes": [
+                3946197.39073174,
+                5459918.6520405365
+              ]
+            },
+            "final_growth_pass": false,
+            "trend_pass": false,
+            "gdi_objects": {
+              "first": 19.0,
+              "last": 19.0,
+              "min": 19.0,
+              "max": 19.0
+            },
+            "user_objects": {
+              "first": 25.0,
+              "last": 25.0,
+              "min": 25.0,
+              "max": 26.0
+            },
+            "kernel_handles": {
+              "first": 236.0,
+              "last": 232.0,
+              "min": 232.0,
+              "max": 236.0
+            }
+          }
+        },
+        "closed_window_classes": [
+          {
+            "class": "GDI+ Hook Window Class",
+            "kind": "top-level",
+            "visible": false
+          },
+          {
+            "class": "IME",
+            "kind": "top-level",
+            "visible": false
+          }
+        ],
+        "remaining_framework_windows": []
+      },
+      "candidate-next": {
+        "binary_sha256": "62c115ef5e9a9cd954f741bc791f6199261f5aec890aeef756c0582dc407b3ce",
+        "measured_seconds": 1800.6239957809448,
+        "warmup_rounds": 20,
+        "measured_rounds": 100,
+        "created_windows": 300,
+        "hide_restore_cycles": 200,
+        "phases": {
+          "visible": {
+            "first_warmed_bytes": 13303808.0,
+            "last_bytes": 15888384.0,
+            "first_ten_median_bytes": 13377536.0,
+            "last_ten_median_bytes": 15429632.0,
+            "minimum_bytes": 12865536.0,
+            "maximum_bytes": 15888384.0,
+            "tolerance_bytes": 524288,
+            "final_growth_bytes": 2584576.0,
+            "trend": {
+              "bytes_per_round": 21895.399651965196,
+              "projected_growth_bytes": 2167644.5655445545,
+              "projected_growth_95ci_bytes": [
+                2020955.845620385,
+                2314333.2854687236
+              ]
+            },
+            "final_growth_pass": false,
+            "trend_pass": false,
+            "gdi_objects": {
+              "first": 21.0,
+              "last": 21.0,
+              "min": 21.0,
+              "max": 21.0
+            },
+            "user_objects": {
+              "first": 42.0,
+              "last": 42.0,
+              "min": 42.0,
+              "max": 43.0
+            },
+            "kernel_handles": {
+              "first": 633.0,
+              "last": 631.0,
+              "min": 631.0,
+              "max": 633.0
+            }
+          },
+          "closed": {
+            "first_warmed_bytes": 6025216.0,
+            "last_bytes": 10809344.0,
+            "first_ten_median_bytes": 6092800.0,
+            "last_ten_median_bytes": 10356736.0,
+            "minimum_bytes": 5644288.0,
+            "maximum_bytes": 10809344.0,
+            "tolerance_bytes": 524288,
+            "final_growth_bytes": 4784128.0,
+            "trend": {
+              "bytes_per_round": 49504.30761476148,
+              "projected_growth_bytes": 4900926.4538613865,
+              "projected_growth_95ci_bytes": [
+                4127185.3427152745,
+                5674667.5650074985
+              ]
+            },
+            "final_growth_pass": false,
+            "trend_pass": false,
+            "gdi_objects": {
+              "first": 19.0,
+              "last": 19.0,
+              "min": 19.0,
+              "max": 19.0
+            },
+            "user_objects": {
+              "first": 25.0,
+              "last": 25.0,
+              "min": 25.0,
+              "max": 26.0
+            },
+            "kernel_handles": {
+              "first": 234.0,
+              "last": 232.0,
+              "min": 232.0,
+              "max": 234.0
+            }
+          }
+        },
+        "closed_window_classes": [
+          {
+            "class": "GDI+ Hook Window Class",
+            "kind": "top-level",
+            "visible": false
+          },
+          {
+            "class": "IME",
+            "kind": "top-level",
+            "visible": false
+          }
+        ],
+        "remaining_framework_windows": []
+      }
+    },
+    "applicability": "Earlier candidate binaries, identified by their recorded hashes; not the final feature-gated binaries. Failed acceptance evidence is retained and is not a final-build stability pass."
+  },
+  "earlier_heap_diagnostic": {
+    "binary_sha256": "fd20b3f66e3f457ba4436223ee5ecd86dde04e4a663487ecf81148b6359b6c2f",
+    "rounds": 50,
+    "after_close_rust_live_bytes_min": 2428,
+    "after_close_rust_live_bytes_max": 2428,
+    "peak_rust_bytes": 2757363,
+    "applicability": "Earlier instrumented diagnostic binary; stable Rust allocation count is not a native-memory leak exclusion."
+  },
+  "latency": {
+    "schema": "zsui.native-latency-comparison/v2",
+    "status": "passed",
+    "workflow_run": 40438958638,
+    "pairs": 10,
+    "operations_per_category_per_process": 200,
+    "builds": {
+      "baseline": {
+        "sha256": "35DE96FC16C98B400BCE074626DE38B055E188A4F403A91A5535A399C87A8CFA",
+        "source": {
+          "src/rust_text_renderer.rs": "0149169B4BCAC19FB1221EC98A03AEEFEB19D0872919152F2CC375EA88D8870F",
+          "src/native.rs": "764DD473DFFF10F49DA14990C084F4380B1CDD797F309CC8023DAC5A23D30985",
+          "src/platform/windows/text/rust_renderer.rs": "EDDEE93CAE16698A59DB9A011901581B968014BA1AEC7C74AFFD751A1BF98271",
+          "src/windows_gdi_renderer.rs": "7FDB6AD9E9E10EF18B469FF6BB1DA93F83F4944A1643DE5888815F0A19F11CF7",
+          "src/platform/desktop_runtime/windows.rs": "417EC03EE501839F735B0C68816C7DE9D0C37CE2123AFC68480840410EC9EDF4"
+        },
+        "revision": "91cda3bb9b362c42276b5508eb2f79cf0d8ce991"
+      },
+      "environment": {
+        "features": "notepad-demo,accessibility",
+        "profile": "release",
+        "os": "Microsoft Windows NT 10.0.26100.0",
+        "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+        "processors": 4
+      },
+      "candidate": {
+        "sha256": "8842AE06ECB1259DEFF2D7C27FDCCD3AA23FBC59EDE8DD164EECBCDCF07A94D2",
+        "source": {
+          "src/rust_text_renderer.rs": "D6A6776661C320CFEC69D18D95B4522D7A925AA21270C1FF7F3AD71D0F0D9236",
+          "src/native.rs": "522F29A057AD96F9345ECEB27128665FF769AB98E8661E622B56FF943ED3147B",
+          "src/platform/windows/text/rust_renderer.rs": "5267BF0EE39C7C53A0D7F9266EB1B53F31C92C67A3A31AC5B7FB4711DD51D970",
+          "src/windows_gdi_renderer.rs": "F1303E150F3B6FBF987E3B08FB3F7A43E9D6ECBB041ADC0BBD81F2F524FA5E23",
+          "src/platform/desktop_runtime/windows.rs": "69F6A9FCC7F919955F426CCAF213A29BAECA4D0A55CFC1567D77955D9E442226"
+        },
+        "revision": "b558b627e065052779732cfdb994064bf07e6802"
+      }
+    },
+    "categories": {
+      "input_ms": {
+        "baseline_p95_median_ms": 31.53105,
+        "candidate_p95_median_ms": 31.5502,
+        "difference_ms": 0.01914999999999978,
+        "paired_difference_95ci_ms": [
+          -0.01589999999999847,
+          0.21090000000000053
+        ],
+        "allowed_regression_ms": 1.5765525,
+        "gate_pass": true
+      },
+      "scroll_ms": {
+        "baseline_p95_median_ms": 31.9443,
+        "candidate_p95_median_ms": 31.9666,
+        "difference_ms": 0.02230000000000132,
+        "paired_difference_95ci_ms": [
+          -0.057299999999999685,
+          0.16385000000000005
+        ],
+        "allowed_regression_ms": 1.597215,
+        "gate_pass": true
+      },
+      "restore_ms": {
+        "baseline_p95_median_ms": 31.66425,
+        "candidate_p95_median_ms": 31.6404,
+        "difference_ms": -0.023849999999999483,
+        "paired_difference_95ci_ms": [
+          -0.47075000000000067,
+          6.5801
+        ],
+        "allowed_regression_ms": 1.5832125000000001,
+        "gate_pass": true
+      }
+    },
+    "method": "Median of per-process p95 values; ten alternating independent process pairs; 10000 paired bootstrap resamples. Native messages, explicit repaint and DwmFlush; input foreground/focus and resulting content validated. Automation/frame-boundary latency, not a physical-keyboard end-to-end measurement."
+  },
+  "adoption": {
+    "default": "Borrowed complete cache keys, exact-length geometry, borrowed paint text and paired buffered-paint lifetime; UIA empty replacement fix.",
+    "experimental": "windows-font-sharing is opt-in and excluded from window/full; final-build long-run and compositor startup acceptance are not established.",
+    "deferred": [
+      "glyph atlas replacement",
+      "dirty-region painting",
+      "arena control tree",
+      "general public breakpoint layout rules"
+    ]
+  },
+  "limits": [
+    "Windows runtime memory results do not estimate Linux/macOS memory savings.",
+    "Mixed-DPI 1.0/1.5/2.0 sharing is a core test, not a physical multi-monitor certification.",
+    "Window-ready timings are visibility proxies, not compositor first-frame latency.",
+    "A stable Rust live-allocation count does not prove that all native memory is leak-free."
+  ]
+}
