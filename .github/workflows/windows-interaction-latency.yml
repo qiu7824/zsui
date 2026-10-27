@@ -1,0 +1,86 @@
+name: Windows Interaction Latency
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/measure-windows-interaction-latency.ps1"
+      - ".github/workflows/windows-interaction-latency.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-interaction-latency-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  paired-release:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-interaction-latency
+      - name: Build paired release applications
+        run: |
+          $ErrorActionPreference='Stop'
+          $output=Join-Path $env:RUNNER_TEMP 'zsui-interaction-latency'
+          New-Item -ItemType Directory -Path $output | Out-Null
+          $baseline='91cda3bb9b362c42276b5508eb2f79cf0d8ce991'
+          $files=@('src/rust_text_renderer.rs','src/windows_gdi_renderer.rs','src/platform/windows/text/rust_renderer.rs','src/platform/desktop_runtime/windows.rs','src/native.rs')
+          $original=@{}
+          foreach($file in $files){$original[$file]=[IO.File]::ReadAllBytes((Join-Path $PWD $file))}
+          $records=@{}
+          try {
+            foreach($file in $files){
+              $content=& git show "${baseline}:$file"
+              if($LASTEXITCODE -ne 0){throw "Missing baseline source: $file"}
+              [IO.File]::WriteAllText((Join-Path $PWD $file),($content -join "`n")+"`n",[Text.UTF8Encoding]::new($false))
+            }
+            & cargo build --locked --release --no-default-features --features notepad-demo,accessibility --example zsui_notepad --message-format json-render-diagnostics *> (Join-Path $output 'baseline-build.log')
+            if($LASTEXITCODE -ne 0){throw 'Baseline release build failed'}
+            Copy-Item -LiteralPath 'target/release/examples/zsui_notepad.exe' -Destination (Join-Path $output 'baseline.exe')
+            $records.baseline=@{revision=$baseline;sha256=(Get-FileHash -LiteralPath (Join-Path $output 'baseline.exe')).Hash;source=@{}}
+            foreach($file in $files){$records.baseline.source[$file]=(Get-FileHash -LiteralPath $file).Hash}
+          } finally {
+            foreach($file in $files){[IO.File]::WriteAllBytes((Join-Path $PWD $file),$original[$file])}
+          }
+          & cargo build --locked --release --no-default-features --features notepad-demo,accessibility --example zsui_notepad --message-format json-render-diagnostics *> (Join-Path $output 'candidate-build.log')
+          if($LASTEXITCODE -ne 0){throw 'Candidate release build failed'}
+          Copy-Item -LiteralPath 'target/release/examples/zsui_notepad.exe' -Destination (Join-Path $output 'candidate.exe')
+          $records.candidate=@{revision=(& git rev-parse HEAD);sha256=(Get-FileHash -LiteralPath (Join-Path $output 'candidate.exe')).Hash;source=@{}}
+          foreach($file in $files){$records.candidate.source[$file]=(Get-FileHash -LiteralPath $file).Hash}
+          $records.environment=@{rustc=(& rustc -V);os=[Environment]::OSVersion.VersionString;processors=[Environment]::ProcessorCount;features='notepad-demo,accessibility';profile='release'}
+          $records | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'builds.json') -Encoding utf8
+          & git diff --exit-code
+          if($LASTEXITCODE -ne 0){throw 'Source restoration failed'}
+      - name: Measure completed native operations
+        run: |
+          $output=Join-Path $env:RUNNER_TEMP 'zsui-interaction-latency'
+          for($trial=1;$trial -le 10;$trial++) {
+            $order=if($trial%2){@('baseline','candidate')}else{@('candidate','baseline')}
+            foreach($variant in $order){
+              ./scripts/measure-windows-interaction-latency.ps1 -Executable (Join-Path $output "$variant.exe") -OutputDirectory $output -Variant $variant -Trial $trial -Operations 200 -VerifyEmptyReplacement:($variant -eq 'candidate')
+            }
+          }
+      - name: Upload measurements and failures
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-interaction-latency
+          path: ${{ runner.temp }}/zsui-interaction-latency
+          retention-days: 14
+          if-no-files-found: error

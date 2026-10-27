@@ -242,6 +242,8 @@
         "comparisons/scripts/build_unix_performance_matrix.sh",
         "comparisons/scripts/macos_window_probe.swift",
         "comparisons/scripts/tests/test_performance_matrix.py",
+        "scripts/measure-windows-interaction-latency.ps1",
+        ".github/workflows/windows-interaction-latency.yml",
         ".github/workflows/ui-performance-matrix.yml",
         "examples/ui_performance_minimal.rs",
         "examples/ui-documents/performance-viewer.json",

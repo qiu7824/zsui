@@ -1597,6 +1597,16 @@ history remain authoritative for implementation status.
   on restoration. Preserve whole-frame no-flicker presentation. Cache caps are
   not a process memory cap; retain exact text geometry and safe UIA snapshots
   or synchronization before adopting shared mutable text contexts or arenas.
+- `windows-font-sharing` is an experimental opt-in for engine-owned read-only
+  font-file mappings inside a native multiwindow run. Keep mutable shaping,
+  layout and raster caches window-local; a weak thread-local discovery index
+  must not extend a font mapping's lifetime. It is not selected by `window`
+  or `full`. Multiwindow savings alone do not establish the long-run private
+  memory gate or authorize enabling the feature by default.
+- Text cache hits borrow the complete text/style key and retained geometry uses
+  exact-length storage. Hashes never replace full equality. Windows buffered
+  paint initialization and teardown are paired on the owning UI thread, with
+  active paints holding a lifetime lease until their native buffer is ended.
 - Use the current repository and generated evidence for progress numbers; do
   not copy stale counts or completion claims into this memory.
 - Performance claims use four independent release workloads: Minimal, Common,
