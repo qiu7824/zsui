@@ -8,17 +8,18 @@ requires a separate design and target proof.
 
 ## Implemented Windows lifecycle
 
-Ordinary Win32 painting composes the dirty area band by band in one top-down
-DIB owned by the UI thread (128 Ki pixels, at least 32 rows) and presents each
-band with one `BitBlt`; a rebuilt plan invalidates only the old and new bounds
-of changed commands. Only commands that can touch a band are replayed into it.
-When no band can be allocated, the whole client area is painted into the
-top-down `BeginBufferedPaint` DIB through `GetBufferedPaintBits` and
-`EndBufferedPaint` presents it. In both cases Rust text composites directly
-into the off-screen pixels: a private `WindowsBufferedTextSurface<'paint>`
-borrows the band or paint owner exclusively. The Rust pixel slice exists only
-during composition, after `GdiFlush`; native drawing resumes after the slice
-is released. Background erase remains suppressed.
+Ordinary Win32 painting presents each update in one operation. A rebuilt plan
+invalidates only the old and new bounds of changed commands, and only
+commands that can touch the update are replayed. An update that fits in one
+band of a top-down DIB owned by the UI thread (128 Ki pixels, at least 32
+rows) is composed there and presented with one `BitBlt`. A taller update is
+painted into a top-down `BeginBufferedPaint` DIB the size of the update and
+presented by `EndBufferedPaint`. An update is never split across several
+presentations. In both cases Rust text composites directly into the
+off-screen pixels: a private `WindowsBufferedTextSurface<'paint>` borrows the
+band or paint owner exclusively. The Rust pixel slice exists only during
+composition, after `GdiFlush`; native drawing resumes after the slice is
+released. Background erase remains suppressed.
 
 Buffered painting is initialized per UI thread. The native application run and
 each active paint retain a thread-bound lease; the final lease pairs
@@ -26,12 +27,12 @@ each active paint retain a thread-bound lease; the final lease pairs
 flag cannot establish the required lifetime for other UI threads.
 
 The borrowed pixels belong to the band or paint buffer, not DWM's private
-compositor storage. The band follows the widest dirty area: 512 KiB up to 4096
-pixels wide and 32 rows beyond that, independent of window height and window
-count. A full-window buffer exists only on the uxtheme fallback; at
-1080 x 760 one 32-bit surface occupies approximately 3.13 MiB before stride
-padding. A completed band is not an atomic frame, so tearing is measured
-separately from flicker.
+compositor storage. The band follows the widest small update: 512 KiB up to
+4096 pixels wide and 32 rows beyond that, independent of window height and
+window count, and it is released after one second without painting. Updates
+taller than a band still allocate an update-sized uxtheme buffer; a
+full-window repaint at 1080 x 760 needs approximately 3.13 MiB before stride
+padding, which uxtheme releases once painting goes idle.
 
 Native DCs without accessible pixels and nonrectangular clips use a reusable
 512 x 64 BGRA scratch tile, capped at 128 KiB per renderer. Background copy,
@@ -203,8 +204,9 @@ Cache caps must not be advertised as a fixed process-wide 1 MiB limit.
    stale-handle safety; compare memory, cache misses and frame-time percentiles.
 5. **Dirty subtrees and tiled presentation:** prove invalidation, transparency,
    effects, occlusion, scrolling and resize damage before replacing whole-frame
-   presentation. A completed tile is not an atomic completed frame. Plan-diff
-   damage with band presentation is the candidate under paired evaluation.
+   presentation. A completed tile is not an atomic completed frame: splitting
+   one update across bands tore in paired measurements, so updates that do
+   not fit one band use an update-sized buffered paint instead.
 6. **Compact Element/RenderObject storage:** preserve stable identities and
    behavior first, then compare arena layouts against representative workloads.
 

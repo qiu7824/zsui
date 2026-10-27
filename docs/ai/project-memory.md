@@ -744,18 +744,20 @@ history remain authoritative for implementation status.
   must not keep a separate popup-open flag or bypass application messages.
 - Preserve the buffered, background-erase-suppressed Windows paint path.
   Flicker is a release blocker for self-drawn Windows surfaces.
-- Band presentation is a candidate replacement for whole-frame presentation:
-  on 2026-10-27 the user chose to relax the whole-frame rule only on paired
-  Windows evidence. The candidate WM_PAINT composes the dirty rectangle band
-  by band in one UI-thread-owned top-down DIB (128 Ki pixels, at least 32
-  rows), presents each band with one `BitBlt` and lends the band's pixels to
-  buffered Rust text; uxtheme buffered paint is the fallback. A rebuilt plan
-  invalidates only the old and new bounds of changed commands
-  (`native_draw_plan_damage`). Acceptance evidence comes from the paired
-  Proxy Demo Comparison workflow (memory, paint CPU, notepad latency, pixel
-  identity after scroll, modal scrim, dismissal, rapid resize and occlusion,
-  tearing and flicker). Run `40285562543` predates the borrowed text surface
-  on main, so its gains overlap that change and are not acceptance evidence.
+- Win32 presents every update in one operation. A rebuilt plan invalidates
+  only the old and new bounds of changed commands (`native_draw_plan_damage`);
+  an update that fits in one band of the UI thread's 512 KiB top-down DIB is
+  composed there and presented with one `BitBlt`, and taller updates use an
+  update-sized uxtheme buffered paint. The band lends its pixels to buffered
+  Rust text and is released after one second without painting. Never split
+  one update across several presentations: paired run `40445169295` against
+  main `3d95284` showed that band-split presentation tore (12 vs 2 torn frames
+  on the composed desktop, 7 vs 0 through `PrintWindow`), raised restore p95
+  from 31.7 to 44.3 ms and kept the band while hidden (+490 KiB), even though
+  it confirmed lower visible private bytes (-15.9% at 680x560, -30.5% at
+  1000x720), private growth of 0.05 instead of 4.04 bytes per window pixel,
+  half the paint CPU, unchanged input/scroll latency and pixel-identical
+  scroll, dialog, resize and occlusion scenes.
 - Native desktop windows stay hidden until the initial draw plan, typed input
   route, appearance and icon are attached. Backends with native menu surfaces
   also attach them before showing the window. Win32, AppKit and Linux must

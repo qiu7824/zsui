@@ -345,15 +345,16 @@ Win32 main/quick window style mapping, transient-window host, create-params,
 message-loop wrapper and `NativeMainWindowHost` implementation live in
 `src/platform/windows/mod.rs`. That direct host is available as
 framework code and the one-line `native_window(...).run()` convenience path uses
-it on Windows. The Win32 paint path suppresses background erase and composes
-the dirty area band by band in one top-down DIB owned by the UI thread
-(512 KiB of BGRA, at least 32 rows); each band reaches the target HDC with one
-`BitBlt`, so no pixel shows an erased state and scratch memory does not grow
-with window height or window count. uxtheme buffered paint remains the
-fallback when the band cannot be allocated. A rebuilt draw plan is compared
-with the previous plan and only the old and new bounds of changed commands are
-invalidated. Rust text composites directly into whichever DIB section the
-target DC has selected. It can now also attach a product-neutral
+it on Windows. The Win32 paint path suppresses background erase and presents
+each update off-screen in one operation. A rebuilt draw plan is compared with
+the previous plan and only the old and new bounds of changed commands are
+invalidated. An update that fits in one band of the UI thread's top-down DIB
+(512 KiB of BGRA, at least 32 rows) is composed there and presented with one
+`BitBlt`; larger updates use a uxtheme buffered paint the size of the update.
+The band is released after one second without painting, so scratch memory
+follows the size of recent small updates rather than window area or window
+count. Rust text composites directly into the band or buffered-paint pixels.
+It can now also attach a product-neutral
 `NativeDrawPlan` to an `HWND`, so the GDI sink paints real framework draw
 commands instead of only a background fill. The GDI path
 uses internal RAII wrappers for buffered paint, window HDC acquisition,

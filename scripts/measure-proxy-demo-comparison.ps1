@@ -438,7 +438,7 @@ $root = (New-Item -ItemType Directory -Force -Path $Output).FullName
 $variants = @("baseline", "candidate")
 $proxy = @{ baseline = (Resolve-Path $BaselineProxy).Path; candidate = (Resolve-Path $CandidateProxy).Path }
 $notepad = @{ baseline = (Resolve-Path $BaselineNotepad).Path; candidate = (Resolve-Path $CandidateNotepad).Path }
-$labels = @{ baseline = "main（整帧）"; candidate = "本分支（分带 + 局部重绘）" }
+$labels = @{ baseline = "main（整窗重绘）"; candidate = "本分支（局部重绘，单次呈现）" }
 
 function Convert-BmpToPng([string]$Path) {
     $png = [IO.Path]::ChangeExtension($Path, ".png")
@@ -827,7 +827,7 @@ function Verdict($Statistic) {
 }
 
 $lines = [Collections.Generic.List[string]]::new()
-$lines.Add("## 分带呈现 + 局部重绘 vs main 整帧呈现（Windows Server 2025，$Pairs 对交替进程）")
+$lines.Add("## 局部重绘（每次更新单次呈现）vs main 整窗重绘（Windows Server 2025，$Pairs 对交替进程）")
 $lines.Add("")
 $lines.Add("桌面 ${screenWidth}x${screenHeight}。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
 $lines.Add("")

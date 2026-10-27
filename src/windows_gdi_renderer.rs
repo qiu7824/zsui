@@ -479,10 +479,6 @@ impl WindowsPaintBand {
         self.dc
     }
 
-    pub(crate) const fn rows(&self) -> u32 {
-        self.rows
-    }
-
     /// Composes `area` (logical client coordinates, at most `width` wide and
     /// `rows` tall) off-screen and presents it to `target` with one `BitBlt`.
     pub(crate) unsafe fn present(
@@ -552,24 +548,82 @@ impl Drop for WindowsPaintBand {
     }
 }
 
-/// Runs `paint` with this UI thread's band, wide enough for `width` pixels.
-/// Returns `None` when the band is already in use by a nested paint or cannot
-/// be allocated; callers then fall back to whole-surface buffered paint.
+/// Runs `paint` with this UI thread's band when a `width` x `height` update
+/// fits in a single band, so the whole update is presented at once. Returns
+/// `None` for taller updates, while a nested paint holds the band, or when it
+/// cannot be allocated; callers then use an update-sized buffered paint.
 #[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
 pub(crate) fn with_windows_paint_band<R>(
     reference: HDC,
     width: u32,
+    height: u32,
     paint: impl FnOnce(&mut WindowsPaintBand) -> R,
 ) -> Option<R> {
-    WINDOWS_PAINT_BAND.with(|slot| {
+    let result = WINDOWS_PAINT_BAND.with(|slot| {
         let mut slot = slot.try_borrow_mut().ok()?;
+        let band_width = slot.as_ref().map_or(width, |band| band.width.max(width));
+        if height > WindowsPaintBand::rows_for_width(band_width) {
+            return None;
+        }
         if slot.as_ref().is_none_or(|band| band.width < width) {
             // Release the narrower band before allocating its replacement.
             *slot = None;
-            *slot = unsafe { WindowsPaintBand::new(reference, width) };
+            *slot = unsafe { WindowsPaintBand::new(reference, band_width) };
         }
         slot.as_mut().map(paint)
-    })
+    });
+    #[cfg(feature = "windows-win32")]
+    if result.is_some() {
+        schedule_idle_band_release();
+    }
+    result
+}
+
+/// Like uxtheme's own paint-buffer cache, the band is released once painting
+/// has been idle for this long.
+#[cfg(feature = "windows-win32")]
+const WINDOWS_PAINT_BAND_IDLE_MS: u32 = 1000;
+
+#[cfg(feature = "windows-win32")]
+thread_local! {
+    static WINDOWS_PAINT_BAND_IDLE_TIMER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// (Re)arms the thread timer that releases an idle band. Thread timers are
+/// dispatched by the UI thread's message loop to the callback below.
+#[cfg(feature = "windows-win32")]
+fn schedule_idle_band_release() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetTimer;
+
+    WINDOWS_PAINT_BAND_IDLE_TIMER.with(|timer| {
+        let id = unsafe {
+            SetTimer(
+                std::ptr::null_mut(),
+                timer.get(),
+                WINDOWS_PAINT_BAND_IDLE_MS,
+                Some(release_idle_band),
+            )
+        };
+        timer.set(id);
+    });
+}
+
+#[cfg(feature = "windows-win32")]
+unsafe extern "system" fn release_idle_band(
+    _window: windows_sys::Win32::Foundation::HWND,
+    _message: u32,
+    id: usize,
+    _time: u32,
+) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::KillTimer;
+
+    KillTimer(std::ptr::null_mut(), id);
+    WINDOWS_PAINT_BAND_IDLE_TIMER.with(|timer| {
+        if timer.get() == id {
+            timer.set(0);
+        }
+    });
+    release_windows_paint_band();
 }
 
 /// Drops this UI thread's paint band; the next paint allocates it again.
@@ -2078,6 +2132,34 @@ impl WindowsGdiDrawSink {
         }
         #[cfg(not(feature = "windows-rust-text"))]
         let _ = band;
+        draw_commands_within(self, plan, area);
+    }
+
+    /// Replays only the commands that can touch `area` into a buffered paint
+    /// covering that area.
+    #[cfg_attr(not(feature = "windows-win32"), allow(dead_code))]
+    pub(crate) fn draw_native_plan_buffered_within(
+        &mut self,
+        plan: &NativeDrawPlan,
+        paint: &mut WindowsBufferedPaint,
+        area: Rect,
+    ) {
+        #[cfg(feature = "windows-rust-text")]
+        if self.hdc() == paint.hdc() {
+            if let Some(surface) = paint.text_surface() {
+                draw_commands_within(
+                    &mut WindowsBufferedDrawSink {
+                        sink: self,
+                        surface,
+                    },
+                    plan,
+                    area,
+                );
+                return;
+            }
+        }
+        #[cfg(not(feature = "windows-rust-text"))]
+        let _ = paint;
         draw_commands_within(self, plan, area);
     }
 

@@ -580,15 +580,17 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
             right: ps.rcPaint.right.min(rect.right),
             bottom: ps.rcPaint.bottom.min(rect.bottom),
         };
-        if dirty.right > dirty.left
-            && dirty.bottom > dirty.top
-            && !paint_window_bands(hwnd, target, dirty)
-        {
+        if dirty.right > dirty.left && dirty.bottom > dirty.top {
+            // Each paint presents its whole update in one operation: through
+            // the thread's band when the update fits, otherwise through a
+            // buffered paint the size of the update.
             let surface = window_paint_surface(hwnd);
-            if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &rect) {
-                surface.paint(buffered.hdc(), rect, Some(&mut buffered));
-            } else {
-                surface.paint(target, rect, None);
+            if !paint_window_band(&surface, target, dirty) {
+                if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &dirty) {
+                    surface.paint_area(buffered.hdc(), dirty, &mut buffered);
+                } else {
+                    surface.paint(target, rect, None);
+                }
             }
         }
     }
@@ -597,30 +599,19 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
     0
 }
 
-/// Paints `dirty` band by band through the UI thread's off-screen band.
-/// Returns `false` when no band is available, so the caller falls back to a
-/// whole-surface buffered paint.
-unsafe fn paint_window_bands(
-    hwnd: HWND,
+/// Presents `dirty` with one `BitBlt` from the UI thread's band. Returns
+/// `false` when the update does not fit in one band or no band is available.
+unsafe fn paint_window_band(
+    surface: &WindowsPaintSurface,
     target: windows_sys::Win32::Graphics::Gdi::HDC,
     dirty: RECT,
 ) -> bool {
-    let surface = window_paint_surface(hwnd);
     let width = (dirty.right - dirty.left) as u32;
-    crate::windows_gdi_renderer::with_windows_paint_band(target, width, |band| {
-        let mut top = dirty.top;
-        while top < dirty.bottom {
-            let area = RECT {
-                left: dirty.left,
-                top,
-                right: dirty.right,
-                bottom: (top + band.rows() as i32).min(dirty.bottom),
-            };
-            band.present(target, area, |band, area| surface.paint_band(band, area));
-            top = area.bottom;
-        }
+    let height = (dirty.bottom - dirty.top) as u32;
+    crate::windows_gdi_renderer::with_windows_paint_band(target, width, height, |band| {
+        band.present(target, dirty, |band, area| surface.paint_band(band, area))
     })
-    .is_some()
+    .unwrap_or(false)
 }
 
 unsafe fn paint_window_client_to_dc(
@@ -701,6 +692,21 @@ impl WindowsPaintSurface {
             } else {
                 sink.draw_native_plan(plan);
             }
+        }
+    }
+
+    /// Fills an update-sized buffered paint and replays only the commands
+    /// that can touch it.
+    unsafe fn paint_area(
+        &self,
+        dc: windows_sys::Win32::Graphics::Gdi::HDC,
+        area: RECT,
+        buffered: &mut WindowsBufferedPaint,
+    ) {
+        self.fill(dc, area);
+        if let Some(plan) = &self.draw_plan {
+            self.sink(dc)
+                .draw_native_plan_buffered_within(plan, buffered, rect_from_win(area));
         }
     }
 

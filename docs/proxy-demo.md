@@ -65,7 +65,7 @@ method in [memory-stability-plan.md](memory-stability-plan.md):
 - input, scroll and restore p95 latency of the notepad through
   `scripts/measure-windows-interaction-latency.ps1`, also as ten alternating
   pairs, against the `max(5%, 1 ms)` regression limit. That probe forces a full
-  repaint per operation, the worst case for band presentation;
+  repaint per operation, which exercises the update-sized buffered path;
 - pixel identity after scripted partial updates in this demo, and after
   editing, scrolling, a modal dialog with scrim and shadow, its dismissal,
   sixteen rapid resizes and occlusion in the notepad. Captures only paint the
