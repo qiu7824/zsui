@@ -79,6 +79,9 @@ public static class ZsuiPaintProbe
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+    [DllImport("user32.dll")] static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
+    public static int WindowDpiAwareness(IntPtr window) { return GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(window)); }
     [DllImport("user32.dll")] static extern bool SystemParametersInfoW(uint action, uint parameter, out RECT rect, uint update);
 
     /// Desktop area outside the taskbar, in physical pixels.
@@ -219,7 +222,11 @@ public static class ZsuiPaintProbe
     /// "print" asks DWM for the window's own surface.
     public static Frame Capture(IntPtr window, string mode)
     {
-        var previousDpi = SetThreadDpiAwarenessContext(new IntPtr(-4));
+        // PrintWindow paints in the target's coordinate space. In particular,
+        // an unaware target paints a logical bitmap that DWM later scales;
+        // allocating a physical-size bitmap leaves unpainted black pixels.
+        var captureDpi = mode == "print" ? GetWindowDpiAwarenessContext(window) : new IntPtr(-4);
+        var previousDpi = SetThreadDpiAwarenessContext(captureDpi);
         if (previousDpi == IntPtr.Zero) throw new InvalidOperationException("Cannot establish physical-pixel capture context");
         try { return CaptureClient(window, mode); }
         finally { SetThreadDpiAwarenessContext(previousDpi); }
@@ -227,6 +234,7 @@ public static class ZsuiPaintProbe
 
     static Frame CaptureClient(IntPtr window, string mode)
     {
+        if (mode == "screen") DwmFlush();
         RECT client;
         GetClientRect(window, out client);
         int width = client.Right - client.Left;
@@ -251,7 +259,7 @@ public static class ZsuiPaintProbe
         IntPtr bitmap = CreateDIBSection(memory, ref header, 0, out bits, IntPtr.Zero, 0);
         IntPtr previous = SelectObject(memory, bitmap);
         bool captured = mode == "print"
-            ? PrintWindow(window, memory, 3)
+            ? PrintWindow(window, memory, 1)
             : BitBlt(memory, 0, 0, width, height, screen, origin.X, origin.Y, 0x00CC0020 | 0x40000000);
         GdiFlush();
         var frame = new Frame { Width = width, Height = height, Bgra = new byte[width * height * 4] };
@@ -568,7 +576,7 @@ function Start-Window([string]$Exe, [string[]]$Arguments) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
         throw "no window appeared for $Exe"
     }
-    return @{ process = $process; window = $window; birth = $process.StartTime }
+    return @{ process = $process; window = $window; birth = $process.StartTime; dpi_awareness = [ZsuiPaintProbe]::WindowDpiAwareness($window); window_dpi = [ZsuiPaintProbe]::GetDpiForWindow($window) }
 }
 
 function Get-Median([double[]]$Values) {
@@ -597,6 +605,7 @@ $results = [ordered]@{
     monitors = $monitors
     pairs = $Pairs
     binaries = [ordered]@{}
+    capture_coordinates = @{screen='physical desktop pixels after DwmFlush';print='client bitmap in target window DPI context; unaware targets are logical pixels'}
 }
 foreach ($variant in $variants) {
     $results.binaries[$variant] = [ordered]@{
@@ -659,7 +668,7 @@ foreach ($size in $sizes) {
             $peak = $run.process.PeakWorkingSet64
             Stop-Run $run
             $memory["$variant-$($size.name)"].Add([ordered]@{
-                pair = $pair; client = $client; visible = $visible; hidden = $hidden; restored = $restored; peak_working_set = $peak
+                pair = $pair; client = $client; dpi_awareness = $run.dpi_awareness; window_dpi = $run.window_dpi; visible = $visible; hidden = $hidden; restored = $restored; peak_working_set = $peak
             })
         }
     }

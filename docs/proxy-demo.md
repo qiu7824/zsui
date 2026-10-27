@@ -78,7 +78,11 @@ method in [memory-stability-plan.md](memory-stability-plan.md):
   window, so a clean result is shown to be a measurement and not a blind spot.
 
 Tearing and flicker are captured both from the composed desktop and through
-`PrintWindow`. The workflow repeats everything at 100% and, at 1920×1080, at
+client-only `PrintWindow`. Desktop sampling waits for DWM and uses physical
+pixels. Off-screen capture adopts the target window's DPI-awareness context;
+for a DPI-unaware application this is a logical bitmap, not a native-resolution
+high-DPI surface. Reports record window DPI awareness and DPI separately.
+The workflow repeats everything at 100% and, at 1920×1080, at
 150% and 175% scale, set on the running desktop by
 `scripts/set-windows-display-scale.ps1` the way the Settings app does. That is
 the largest mode the hosted display adapter offers, and Windows offers at most
