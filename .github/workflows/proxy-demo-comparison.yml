@@ -7,6 +7,7 @@ on:
       - "examples/zsui_proxy_client.rs"
       - "scripts/measure-proxy-demo-comparison.ps1"
       - "scripts/proxy-demo-flicker-control.ps1"
+      - "scripts/set-windows-display-scale.ps1"
       - "src/render_protocol.rs"
       - "src/windows_gdi_renderer.rs"
       - "src/platform/windows/**"
@@ -28,9 +29,25 @@ concurrency:
 
 jobs:
   windows:
-    name: Windows Server 2025 whole-frame vs band paint path
+    name: Windows Server 2025 at ${{ matrix.scale }}% scale
     runs-on: windows-2025
     timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scale: 100
+            width: 0
+            height: 0
+            transition: 0
+          - scale: 150
+            width: 1920
+            height: 1080
+            transition: 100
+          - scale: 200
+            width: 2560
+            height: 1440
+            transition: 100
     env:
       RUST_BACKTRACE: "1"
 
@@ -94,6 +111,15 @@ jobs:
             }
           }
 
+      - name: Configure the display
+        if: matrix.scale != 100
+        shell: pwsh
+        run: |
+          ./new/scripts/set-windows-display-scale.ps1 `
+            -Width ${{ matrix.width }} `
+            -Height ${{ matrix.height }} `
+            -Scale ${{ matrix.scale }}
+
       - name: Measure memory, latency, pixels, tearing and flicker
         shell: pwsh
         run: |
@@ -102,6 +128,8 @@ jobs:
             -CandidateProxy target/proxy-demo-bin/candidate-proxy.exe `
             -BaselineNotepad target/proxy-demo-bin/baseline-notepad.exe `
             -CandidateNotepad target/proxy-demo-bin/candidate-notepad.exe `
+            -Scale ${{ matrix.scale }} `
+            -TransitionScale ${{ matrix.transition }} `
             -Output target/proxy-demo-comparison
           Get-Content target/proxy-demo-comparison/summary.md | Add-Content $env:GITHUB_STEP_SUMMARY
           Get-Content target/proxy-demo-comparison/summary.md
@@ -111,6 +139,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: proxy-demo-comparison-windows-2025
+          name: proxy-demo-comparison-windows-2025-${{ matrix.scale }}
           path: target/proxy-demo-comparison
           retention-days: 30

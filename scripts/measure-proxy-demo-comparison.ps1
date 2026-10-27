@@ -8,7 +8,12 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$CandidateNotepad,
     [string]$Output = "target/proxy-demo-comparison",
-    [int]$Pairs = 10
+    [int]$Pairs = 10,
+    # Display scale the desktop is already set to; window sizes scale with it.
+    [int]$Scale = 100,
+    # When set, notepad and demo scenes also switch the running desktop to
+    # this scale and back, as moving to a monitor with another DPI does.
+    [int]$TransitionScale = 0
 )
 
 # Paired Windows comparison of two builds for the paint-path acceptance gate
@@ -72,6 +77,16 @@ public static class ZsuiPaintProbe
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr window, IntPtr dc);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+    /// Window rectangles, screen captures and UIA bounds must be physical
+    /// pixels at every scale, so the measuring process is per-monitor aware.
+    public static void BecomeDpiAware()
+    {
+        SetProcessDpiAwarenessContext(new IntPtr(-4));
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+    }
     [DllImport("dwmapi.dll")] static extern int DwmFlush();
     [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
@@ -435,6 +450,13 @@ public static class ZsuiPaintProbe
 '@
 
 $root = (New-Item -ItemType Directory -Force -Path $Output).FullName
+[ZsuiPaintProbe]::BecomeDpiAware()
+$displayScript = Join-Path $PSScriptRoot "set-windows-display-scale.ps1"
+$display = & $displayScript -Query | ConvertFrom-Json
+$monitors = @($display.monitors)
+$secondMonitor = $monitors | Where-Object { $_.left -ne 0 -or $_.top -ne 0 } | Select-Object -First 1
+$factor = $Scale / 100.0
+function Px([int]$Logical) { return [int][Math]::Round($Logical * $factor) }
 $variants = @("baseline", "candidate")
 $proxy = @{ baseline = (Resolve-Path $BaselineProxy).Path; candidate = (Resolve-Path $CandidateProxy).Path }
 $notepad = @{ baseline = (Resolve-Path $BaselineNotepad).Path; candidate = (Resolve-Path $CandidateNotepad).Path }
@@ -494,6 +516,9 @@ $screenHeight = [ZsuiPaintProbe]::GetSystemMetrics(1)
 Write-Host "Desktop: ${screenWidth}x${screenHeight}"
 $results = [ordered]@{
     desktop = "${screenWidth}x${screenHeight}"
+    scale = $Scale
+    transition_scale = $TransitionScale
+    monitors = $monitors
     pairs = $Pairs
     binaries = [ordered]@{}
 }
@@ -529,7 +554,10 @@ function Measure-Phase($Run) {
     }
 }
 
-$sizes = @(@{ name = "small"; width = 680; height = 560 }, @{ name = "large"; width = 1000; height = 720 })
+$sizes = @(
+    @{ name = "small"; width = (Px 680); height = (Px 560) },
+    @{ name = "large"; width = (Px 1000); height = (Px 720) }
+)
 $memory = [ordered]@{}
 foreach ($size in $sizes) {
     foreach ($variant in $variants) {
@@ -613,7 +641,7 @@ foreach ($scene in $proxyScenes.Keys) {
     $frames = @{}
     foreach ($variant in $variants) {
         $run = Start-Window $proxy[$variant] ($proxyScenes[$scene] + @(
-            "--always-on-top", "--width", "680", "--height", "560"
+            "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
         ))
         try {
             Start-Sleep -Milliseconds 3000
@@ -625,6 +653,33 @@ foreach ($scene in $proxyScenes.Keys) {
         }
     }
     Compare-Scenes $frames $scene
+}
+
+if ($TransitionScale -gt 0) {
+    $frames = @{ switched = @{}; restored = @{} }
+    foreach ($variant in $variants) {
+        $run = Start-Window $proxy[$variant] @(
+            "--demo-node", "--connect", "--ticks", "20", "--tick-ms", "40",
+            "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
+        )
+        try {
+            Start-Sleep -Milliseconds 2500
+            & $displayScript -Scale $TransitionScale | Out-Null
+            Start-Sleep -Milliseconds 2000
+            [ZsuiPaintProbe]::Settle($run.window)
+            $frames.switched[$variant] = [ZsuiPaintProbe]::Capture($run.window, "print")
+            & $displayScript -Scale $Scale | Out-Null
+            Start-Sleep -Milliseconds 2000
+            [ZsuiPaintProbe]::Settle($run.window)
+            $frames.restored[$variant] = [ZsuiPaintProbe]::Capture($run.window, "print")
+            Save-Frame $frames.switched[$variant] (Join-Path $root "proxy-dpi-switched-$variant")
+            Save-Frame $frames.restored[$variant] (Join-Path $root "proxy-dpi-restored-$variant")
+        } finally {
+            Stop-Run $run
+        }
+    }
+    Compare-Scenes $frames.switched "proxy-dpi-switched"
+    Compare-Scenes $frames.restored "proxy-dpi-restored"
 }
 
 function Find-Named($Root, [string]$Name, [int]$TimeoutMs) {
@@ -640,10 +695,17 @@ function Find-Named($Root, [string]$Name, [int]$TimeoutMs) {
 }
 
 $notepadScenes = @("edited", "scrolled", "dialog", "dismissed", "resized", "uncovered")
+if ($TransitionScale -gt 0) { $notepadScenes += @("dpi-switched", "dpi-restored") }
+if ($secondMonitor) { $notepadScenes += @("monitor-2", "monitor-1") }
+
+function Switch-Scale([int]$Percent) {
+    & $displayScript -Scale $Percent | Out-Null
+    Start-Sleep -Milliseconds 2000
+}
 $notepadFrames = @{}
 foreach ($scene in $notepadScenes) { $notepadFrames[$scene] = @{} }
 foreach ($variant in $variants) {
-    $run = Start-Window $notepad[$variant] @("--width", "900", "--height", "620")
+    $run = Start-Window $notepad[$variant] @("--width", "$(Px 900)", "--height", "$(Px 620)")
     try {
         $window = $run.window
         [ZsuiPaintProbe]::Place($window, 0, 0)
@@ -710,6 +772,25 @@ foreach ($variant in $variants) {
         Start-Sleep -Milliseconds 500
         [ZsuiPaintProbe]::Settle($window)
         $notepadFrames.uncovered[$variant] = [ZsuiPaintProbe]::Capture($window, "print")
+
+        if ($TransitionScale -gt 0) {
+            Switch-Scale $TransitionScale
+            [ZsuiPaintProbe]::Settle($window)
+            $notepadFrames["dpi-switched"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
+            Switch-Scale $Scale
+            [ZsuiPaintProbe]::Settle($window)
+            $notepadFrames["dpi-restored"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
+        }
+        if ($secondMonitor) {
+            [ZsuiPaintProbe]::Place($window, $secondMonitor.left + 20, $secondMonitor.top + 20)
+            Start-Sleep -Milliseconds 1500
+            [ZsuiPaintProbe]::Settle($window)
+            $notepadFrames["monitor-2"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
+            [ZsuiPaintProbe]::Place($window, 0, 0)
+            Start-Sleep -Milliseconds 1500
+            [ZsuiPaintProbe]::Settle($window)
+            $notepadFrames["monitor-1"][$variant] = [ZsuiPaintProbe]::Capture($window, "print")
+        }
         foreach ($scene in $notepadScenes) {
             Save-Frame $notepadFrames[$scene][$variant] (Join-Path $root "notepad-$scene-$variant")
         }
@@ -749,7 +830,7 @@ foreach ($kind in "tear", "flicker") {
         foreach ($variant in $variants) {
             $arguments = @(
                 "--demo-node", "--connect", "--tick-ms", "30",
-                "--always-on-top", "--width", "680", "--height", "560"
+                "--always-on-top", "--width", "$(Px 680)", "--height", "$(Px 560)"
             )
             if ($kind -eq "tear") { $arguments += "--tear-probe" }
             $run = Start-Window $proxy[$variant] $arguments
@@ -829,7 +910,8 @@ function Verdict($Statistic) {
 $lines = [Collections.Generic.List[string]]::new()
 $lines.Add("## 局部重绘（每次更新单次呈现）vs main 整窗重绘（Windows Server 2025，$Pairs 对交替进程）")
 $lines.Add("")
-$lines.Add("桌面 ${screenWidth}x${screenHeight}。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
+$monitorText = @($monitors | ForEach-Object { "$($_.width)x$($_.height) @ $($_.dpi) DPI" }) -join "；"
+$lines.Add("桌面 ${screenWidth}x${screenHeight}，缩放 $Scale%（$monitorText）。窗口尺寸按缩放放大。每进程每阶段 20 次采样取中位数；区间为 10,000 次配对 bootstrap 的 95% 区间，差值为候选减基线。")
 $lines.Add("")
 $lines.Add("### 私有字节与工作集（MiB，演示每 100 ms 刷新）")
 $lines.Add("")
@@ -880,8 +962,15 @@ $sceneNames = [ordered]@{
     "notepad-dismissed" = "记事本：取消对话框后"
     "notepad-resized" = "记事本：快速改尺寸 16 次后"
     "notepad-uncovered" = "记事本：被遮挡后移开"
+    "proxy-dpi-switched" = "代理演示：运行中切到 $TransitionScale% 后"
+    "proxy-dpi-restored" = "代理演示：切回 $Scale% 后"
+    "notepad-dpi-switched" = "记事本：运行中切到 $TransitionScale% 后"
+    "notepad-dpi-restored" = "记事本：切回 $Scale% 后"
+    "notepad-monitor-2" = "记事本：移到第二块显示器"
+    "notepad-monitor-1" = "记事本：移回主显示器"
 }
 foreach ($scene in $sceneNames.Keys) {
+    if (-not $pixels.Contains($scene)) { continue }
     $result = $pixels[$scene]
     if ($result.same_size) {
         $lines.Add("| $($sceneNames[$scene]) | $($result.size) | $($result.differing_pixels) | $($result.max_channel_delta) |")
@@ -908,7 +997,12 @@ foreach ($key in $probes.Keys) {
     }
 }
 $lines.Add("")
-$lines.Add("未覆盖：150%/200% DPI 与物理多显示器、合成器首帧时间、30 分钟长时循环。截图、差异图与逐进程数据在构件 proxy-demo-comparison-windows-2025 中。")
+$uncovered = [Collections.Generic.List[string]]::new()
+if (-not $secondMonitor) { $uncovered.Add("多显示器（本机只有 $($monitors.Count) 块显示器）") }
+if ($TransitionScale -le 0) { $uncovered.Add("运行中 DPI 切换") }
+$uncovered.Add("合成器首帧时间")
+$uncovered.Add("30 分钟长时循环")
+$lines.Add("未覆盖：$($uncovered -join '、')。截图、差异图与逐进程数据在本次运行的构件中。")
 
 $summary = Join-Path $root "summary.md"
 $lines | Set-Content -Path $summary -Encoding utf8
