@@ -18,7 +18,7 @@ fn view(state: &State) -> ViewNode<Message> {
             textbox(state.query.clone())
                 .on_change(Message::Query)
                 .flex(1.0),
-            checkbox("仅在线 / Online only", state.online_only).on_check(Message::OnlineOnly),
+            checkbox("仅在线 / Online only", state.online_only).on_toggle(Message::OnlineOnly),
             button("重置 / Reset")
                 .on_click(Message::Reset)
                 .width(Dp::new(120.0)),
