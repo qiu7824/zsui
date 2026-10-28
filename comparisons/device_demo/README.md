@@ -60,6 +60,15 @@ medians precede the cross-round median. Raw rounds and screenshots remain in the
 artifact. The first-frame counter is a visible-client/redraw/DwmFlush proxy,
 not an optical presentation measurement. The file cache is never purged.
 
+An interrupted run can continue with the same arguments plus `-Resume`.
+Completed observations remain in per-round checkpoints; resume requires the
+same sampling settings, executable manifest and measurement-script hash.
+Visible-window selection excludes zero-client helper windows and retains the
+chosen window identity. WebView2 descendants are accepted as part of their
+owning Tauri application. Occluded observations are discarded and retried.
+GPU queries with no process instances report zero attributed counters; this
+does not include compositor-owned memory or prove a zero-cost display path.
+
 `--benchmark-empty` hides the demo content while retaining the same application
 and renderer setup. `--benchmark-repaint` requests load, slider, numeric and
 progress updates every 16 ms using each toolkit's application scheduler. ZSUI

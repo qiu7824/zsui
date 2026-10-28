@@ -7,6 +7,7 @@ param(
     [switch]$SkipBuild,
     [switch]$DeviceDemo,
     [switch]$BuildOnly,
+    [switch]$Resume,
     [ValidateRange(1, 10)][int]$RepeatRuns = 1,
     [switch]$IncludeGpuMemory,
     [ValidateSet('zsui','egui','iced','slint','tauri','gpui')][string[]]$Frameworks = @()
@@ -16,6 +17,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $script:processIdentities = @{}
 $script:processChildren = @{}
+$script:benchmarkWindows = @{}
+$script:rejectedAttempts = @()
 $script:measurementRound = 1
 $script:launchNumber = 0
 $script:deviceBuildFailures = [Collections.Generic.List[string]]::new()
@@ -287,6 +290,9 @@ if (-not ("ZsuiPerformanceMatrixWindow" -as [type])) {
 using System;
 using System.Runtime.InteropServices;
 public static class ZsuiPerformanceMatrixWindow {
+    public delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
     [StructLayout(LayoutKind.Sequential)]
@@ -301,6 +307,7 @@ public static class ZsuiPerformanceMatrixWindow {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
     [DllImport("user32.dll")] public static extern bool GetUpdateRect(IntPtr hwnd, IntPtr rect, bool erase);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hwnd, int command);
@@ -308,6 +315,23 @@ public static class ZsuiPerformanceMatrixWindow {
     [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr hwnd, IntPtr updateRect, IntPtr updateRegion, uint flags);
     [DllImport("user32.dll")] public static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
     [DllImport("dwmapi.dll")] public static extern int DwmFlush();
+    public static IntPtr FindApplicationWindow(uint processId) {
+        IntPtr best = IntPtr.Zero;
+        long largest = 0;
+        EnumWindows((window, parameter) => {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            RECT client;
+            if (owner != processId || !IsWindowVisible(window) || !GetClientRect(window, out client)) return true;
+            int width = client.Right - client.Left, height = client.Bottom - client.Top;
+            // OpenGL/winit may expose a zero-client helper before its actual UI.
+            if (width < 64 || height < 64) return true;
+            long area = (long)width * height;
+            if (area > largest) { best = window; largest = area; }
+            return true;
+        }, IntPtr.Zero);
+        return best;
+    }
 }
 "@
 }
@@ -329,8 +353,28 @@ function Start-BenchmarkProcess {
     $process = Start-Process @start
     $script:processIdentities[$process.Id] = $process.StartTime.ToFileTimeUtc()
     $script:processChildren[$process.Id] = @($process.Id)
+    $script:benchmarkWindows.Remove($process.Id)
     @{pid=$process.Id;creation_ticks=$process.StartTime.ToFileTimeUtc();executable=$Executable;arguments=@($Arguments);round=$script:measurementRound} | ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $outputDir 'launches.jsonl') -Encoding utf8
     [pscustomobject]@{ process = $process; stopwatch = $stopwatch }
+}
+
+function Get-BenchmarkWindow {
+    param([System.Diagnostics.Process]$Process)
+    if ($Process.HasExited) { return [IntPtr]::Zero }
+    if ($Process.StartTime.ToFileTimeUtc() -ne $script:processIdentities[$Process.Id]) { throw 'Benchmark process identity changed' }
+    if ($script:benchmarkWindows.ContainsKey($Process.Id)) {
+        $window = [IntPtr]$script:benchmarkWindows[$Process.Id]
+        [uint32]$owner = 0
+        [void][ZsuiPerformanceMatrixWindow]::GetWindowThreadProcessId($window, [ref]$owner)
+        if ($owner -eq $Process.Id) { return $window }
+        throw 'Measured application window was destroyed or replaced'
+    }
+    $window = [ZsuiPerformanceMatrixWindow]::FindApplicationWindow([uint32]$Process.Id)
+    if ($window -ne [IntPtr]::Zero) {
+        $script:benchmarkWindows[$Process.Id] = $window
+        @{pid=$Process.Id;creation_ticks=$Process.StartTime.ToFileTimeUtc();window=$window.ToInt64();round=$script:measurementRound} | ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $outputDir 'windows.jsonl') -Encoding utf8
+    }
+    return $window
 }
 
 function Wait-MainWindow {
@@ -339,19 +383,20 @@ function Wait-MainWindow {
         Start-Sleep -Milliseconds 10
         $Process.Refresh()
         if ($Process.HasExited) { return [long]0 }
-        if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
-            [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Process.MainWindowHandle, 4)
-            [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr](-1), 30, 30, 0, 0, 0x0051)
+        $window = Get-BenchmarkWindow -Process $Process
+        if ($window -ne [IntPtr]::Zero) {
+            [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($window, 4)
+            [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($window, [IntPtr](-1), 30, 30, 0, 0, 0x0051)
             if ($DeviceDemo) {
                 $outer = New-Object ZsuiPerformanceMatrixWindow+RECT
                 $client = New-Object ZsuiPerformanceMatrixWindow+RECT
-                $dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($Process.MainWindowHandle)
+                $dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($window)
                 if ($dpi -eq 0) { throw "Window DPI unavailable" }
-                [void][ZsuiPerformanceMatrixWindow]::GetWindowRect($Process.MainWindowHandle, [ref]$outer)
-                [void][ZsuiPerformanceMatrixWindow]::GetClientRect($Process.MainWindowHandle, [ref]$client)
+                [void][ZsuiPerformanceMatrixWindow]::GetWindowRect($window, [ref]$outer)
+                [void][ZsuiPerformanceMatrixWindow]::GetClientRect($window, [ref]$client)
                 $width = [int][Math]::Round(960 * $dpi / 96) + $outer.Right - $outer.Left - $client.Right
                 $height = [int][Math]::Round(680 * $dpi / 96) + $outer.Bottom - $outer.Top - $client.Bottom
-                if (-not [ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr]::Zero, 0, 0, $width, $height, 0x0016)) {
+                if (-not [ZsuiPerformanceMatrixWindow]::SetWindowPos($window, [IntPtr]::Zero, 0, 0, $width, $height, 0x0016)) {
                     throw "Cannot establish the fixed device-demo client size"
                 }
             }
@@ -365,21 +410,22 @@ function Wait-FirstPresentedFrame {
     param([System.Diagnostics.Process]$Process, [Diagnostics.Stopwatch]$Stopwatch, [int]$TimeoutMs = 15000)
     do {
         $Process.Refresh()
-        if ($Process.HasExited -or $Process.MainWindowHandle -eq [IntPtr]::Zero) { return [long]0 }
+        $window = Get-BenchmarkWindow -Process $Process
+        if ($Process.HasExited -or $window -eq [IntPtr]::Zero) { return [long]0 }
         $client = New-Object ZsuiPerformanceMatrixWindow+RECT
         if (
-            [ZsuiPerformanceMatrixWindow]::IsWindowVisible($Process.MainWindowHandle) -and
-            [ZsuiPerformanceMatrixWindow]::GetClientRect($Process.MainWindowHandle, [ref]$client) -and
+            [ZsuiPerformanceMatrixWindow]::IsWindowVisible($window) -and
+            [ZsuiPerformanceMatrixWindow]::GetClientRect($window, [ref]$client) -and
             ($client.Right - $client.Left) -gt 0 -and ($client.Bottom - $client.Top) -gt 0
         ) {
             [void][ZsuiPerformanceMatrixWindow]::RedrawWindow(
-                $Process.MainWindowHandle,
+                $window,
                 [IntPtr]::Zero,
                 [IntPtr]::Zero,
                 0x0001 -bor 0x0100 -bor 0x0080
             )
             [void][ZsuiPerformanceMatrixWindow]::DwmFlush()
-            if (-not [ZsuiPerformanceMatrixWindow]::GetUpdateRect($Process.MainWindowHandle, [IntPtr]::Zero, $false)) {
+            if (-not [ZsuiPerformanceMatrixWindow]::GetUpdateRect($window, [IntPtr]::Zero, $false)) {
                 return [long]$Stopwatch.ElapsedMilliseconds
             }
         }
@@ -417,12 +463,10 @@ function Get-ProcessGroup {
 
 function Get-PrivateWorkingSet {
     param([System.Diagnostics.Process[]]$Processes)
-    [long]$total = 0
-    foreach ($process in $Processes) {
-        $sample = Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "IDProcess=$($process.Id)" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($sample) { $total += [long]$sample.WorkingSetPrivate }
-    }
-    return $total
+    $filter = ($Processes | ForEach-Object { "IDProcess=$($_.Id)" }) -join ' OR '
+    $samples = @(Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter $filter -ErrorAction Stop)
+    if ($samples.Count -ne $Processes.Count) { throw 'Private working-set counters did not cover the complete process tree' }
+    return [long](($samples | Measure-Object WorkingSetPrivate -Sum).Sum)
 }
 
 function Get-ProcessSnapshot {
@@ -446,10 +490,16 @@ function Get-GpuMemory {
         $ids = @((Get-ProcessGroup -RootProcessId $RootProcessId).Id)
         $records = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory -ErrorAction Stop |
             Where-Object { $_.Name -match '^pid_(\d+)_' -and [int]$Matches[1] -in $ids })
+        [long]$dedicated = 0
+        [long]$shared = 0
+        if ($records.Count -gt 0) {
+            $dedicated = [long](($records | Measure-Object DedicatedUsage -Sum).Sum)
+            $shared = [long](($records | Measure-Object SharedUsage -Sum).Sum)
+        }
         [ordered]@{
             available = $true
-            dedicated_bytes = [long](($records | Measure-Object DedicatedUsage -Sum).Sum)
-            shared_bytes = [long](($records | Measure-Object SharedUsage -Sum).Sum)
+            dedicated_bytes = $dedicated
+            shared_bytes = $shared
             counter_instances = $records.Count
         }
     } catch {
@@ -458,9 +508,10 @@ function Get-GpuMemory {
 }
 
 function Measure-Memory {
-    param([int]$RootProcessId)
+    param([int]$RootProcessId, [IntPtr]$Window = [IntPtr]::Zero)
     $samples = @()
     for ($index = 0; $index -lt $MemorySamples; $index++) {
+        if ($DeviceDemo -and $Window -ne [IntPtr]::Zero) { Assert-WindowExposed $Window }
         $samples += Get-ProcessSnapshot -RootProcessId $RootProcessId
         if ($index + 1 -lt $MemorySamples) { Start-Sleep -Milliseconds 350 }
     }
@@ -479,7 +530,8 @@ function Measure-Memory {
 
 function Show-MeasuredWindow {
     param([IntPtr]$Window)
-    [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Window,5)
+    $command = if ([ZsuiPerformanceMatrixWindow]::IsIconic($Window)) { 9 } else { 5 }
+    [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Window,$command)
     [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Window,[IntPtr](-1),30,30,0,0,0x0041)
     [void][ZsuiPerformanceMatrixWindow]::BringWindowToTop($Window)
     [void][ZsuiPerformanceMatrixWindow]::SetForegroundWindow($Window)
@@ -488,8 +540,11 @@ function Show-MeasuredWindow {
 
 function Assert-WindowExposed {
     param([IntPtr]$Window)
+    $priorContext = [ZsuiPerformanceMatrixWindow]::SetThreadDpiAwarenessContext([IntPtr](-4))
+    try {
     $point=New-Object ZsuiPerformanceMatrixWindow+POINT
-    $point.X=720; $point.Y=150
+    $scale=[ZsuiPerformanceMatrixWindow]::GetDpiForWindow($Window)/96.0
+    $point.X=[int](720*$scale); $point.Y=[int](150*$scale)
     if(-not [ZsuiPerformanceMatrixWindow]::ClientToScreen($Window,[ref]$point)){throw 'Measured window has no client origin'}
     $hit=[ZsuiPerformanceMatrixWindow]::WindowFromPoint($point)
     $actualRoot=[ZsuiPerformanceMatrixWindow]::GetAncestor($hit,2)
@@ -498,8 +553,14 @@ function Assert-WindowExposed {
         [void][ZsuiPerformanceMatrixWindow]::GetWindowThreadProcessId($Window,[ref]$ownerPid)
         [void][ZsuiPerformanceMatrixWindow]::GetWindowThreadProcessId($hit,[ref]$hitPid)
         if($hitPid -notin $script:processChildren[[int]$ownerPid]) {
-            throw "Measured window became occluded; sample rejected (window=$Window hit=$hit root=$actualRoot owner=$ownerPid hitOwner=$hitPid)"
+            $null = @(Get-ProcessGroup -RootProcessId ([int]$ownerPid))
         }
+        if($hitPid -notin $script:processChildren[[int]$ownerPid]) {
+            throw "Measured window became occluded; sample rejected (window=$Window hit=$hit root=$actualRoot owner=$ownerPid hitOwner=$hitPid x=$($point.X) y=$($point.Y) scale=$scale)"
+        }
+    }
+    } finally {
+        if($priorContext -ne [IntPtr]::Zero){[void][ZsuiPerformanceMatrixWindow]::SetThreadDpiAwarenessContext($priorContext)}
     }
 }
 
@@ -551,14 +612,13 @@ function Measure-Cpu {
 function Save-WindowScreenshot {
     param([System.Diagnostics.Process]$Process, [string]$Path)
     $Process.Refresh()
-    if ($Process.MainWindowHandle -eq [IntPtr]::Zero) { return $false }
-    [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($Process.MainWindowHandle, 5)
-    [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr](-1), 30, 30, 0, 0, 0x0041)
-    [void][ZsuiPerformanceMatrixWindow]::BringWindowToTop($Process.MainWindowHandle)
-    [void][ZsuiPerformanceMatrixWindow]::SetForegroundWindow($Process.MainWindowHandle)
+    $window = Get-BenchmarkWindow -Process $Process
+    if ($window -eq [IntPtr]::Zero) { return $false }
+    Show-MeasuredWindow $window
     Start-Sleep -Milliseconds 400
+    if ($DeviceDemo) { Wait-WindowExposed $window }
     $rect = New-Object ZsuiPerformanceMatrixWindow+RECT
-    if (-not [ZsuiPerformanceMatrixWindow]::GetWindowRect($Process.MainWindowHandle, [ref]$rect)) { return $false }
+    if (-not [ZsuiPerformanceMatrixWindow]::GetWindowRect($window, [ref]$rect)) { return $false }
     $inset = 8
     $width = [Math]::Max(1, $rect.Right - $rect.Left - (2 * $inset))
     $height = [Math]::Max(1, $rect.Bottom - $rect.Top - (2 * $inset))
@@ -569,7 +629,7 @@ function Save-WindowScreenshot {
         $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
     }
     finally {
-        [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($Process.MainWindowHandle, [IntPtr](-2), 0, 0, 0, 0, 0x0043)
+        [void][ZsuiPerformanceMatrixWindow]::SetWindowPos($window, [IntPtr](-2), 0, 0, 0, 0, 0x0043)
         $graphics.Dispose()
         $bitmap.Dispose()
     }
@@ -591,7 +651,8 @@ function Stop-BenchmarkProcess {
     if ($Process.HasExited) { return }
     $group = @(Get-ProcessGroup -RootProcessId $Process.Id)
     if (-not $Process.HasExited) {
-        $Process.CloseMainWindow() | Out-Null
+        $window = Get-BenchmarkWindow -Process $Process
+        if ($window -ne [IntPtr]::Zero) { [void][ZsuiPerformanceMatrixWindow]::PostMessage($window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) }
         [void]$Process.WaitForExit(1200)
     }
     foreach ($item in $group) {
@@ -610,7 +671,9 @@ function Measure-EmptyWindow {
         $frameMs = Wait-FirstPresentedFrame -Process $launch.process -Stopwatch $launch.stopwatch
         if ($windowMs -eq 0 -or $frameMs -eq 0) { throw "$($Application.framework_name) $($Application.profile_name) empty window did not present" }
         Start-Sleep -Seconds $WarmupSeconds
-        $memory = Measure-Memory -RootProcessId $launch.process.Id
+        $window = Get-BenchmarkWindow -Process $launch.process
+        if ($DeviceDemo) { Show-MeasuredWindow $window; Wait-WindowExposed $window }
+        $memory = Measure-Memory -RootProcessId $launch.process.Id -Window $window
         [pscustomobject]@{ startup_to_window_ms = $windowMs; first_frame_ms = $frameMs; memory = $memory }
     }
     finally {
@@ -661,13 +724,13 @@ function Measure-RepaintApplication {
             $null = Save-WindowScreenshot -Process $launch.process -Path (Join-Path $outputDir "$($Application.framework)-dynamic-full-$script:measurementRound.png")
             $signatures=@()
             for($check=0;$check -lt 3;$check++) {
-                $signatures+=Get-DeviceLoadSignature -Window $launch.process.MainWindowHandle -Path (Join-Path $outputDir "$($Application.framework)-dynamic-$script:measurementRound-$check.png")
+                $signatures+=Get-DeviceLoadSignature -Window (Get-BenchmarkWindow -Process $launch.process) -Path (Join-Path $outputDir "$($Application.framework)-dynamic-$script:measurementRound-$check.png")
                 Start-Sleep -Milliseconds 350
             }
             if(@($signatures | Sort-Object -Unique).Count -lt 2){throw "$($Application.framework_name) did not update the visible load metric"}
         }
         $externalRedraw = $Application.framework -eq "zsui" -and -not $DeviceDemo
-        $cpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $launch.process.MainWindowHandle -ForceRepaint $externalRedraw
+        $cpu = Measure-Cpu -RootProcessId $launch.process.Id -Window (Get-BenchmarkWindow -Process $launch.process) -ForceRepaint $externalRedraw
         $cpu.requested_hz = 60
         $cpu | Add-Member -NotePropertyName driver -NotePropertyValue $(if ($externalRedraw) { "win32_redraw_window" } else { "application_render_loop" })
         if ($DeviceDemo) { $cpu | Add-Member -NotePropertyName dynamic_metric_verified -NotePropertyValue $true }
@@ -710,16 +773,18 @@ function Measure-Application {
                 $coldLikeWindow = $windowMs
                 $coldLikeFrame = $frameMs
                 Start-Sleep -Seconds $WarmupSeconds
-                $pageMemory = Measure-Memory -RootProcessId $launch.process.Id
+                $window = Get-BenchmarkWindow -Process $launch.process
+                if ($DeviceDemo) { Show-MeasuredWindow $window; Wait-WindowExposed $window }
+                $pageMemory = Measure-Memory -RootProcessId $launch.process.Id -Window $window
                 if ($IncludeGpuMemory) { $gpuMemory = Get-GpuMemory -RootProcessId $launch.process.Id }
                 $client = New-Object ZsuiPerformanceMatrixWindow+RECT
-                if (-not [ZsuiPerformanceMatrixWindow]::GetClientRect($launch.process.MainWindowHandle, [ref]$client)) { throw "Missing measured client rectangle" }
-                $clientSize = @{ width_pixels = $client.Right; height_pixels = $client.Bottom; dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($launch.process.MainWindowHandle) }
+                if (-not [ZsuiPerformanceMatrixWindow]::GetClientRect($window, [ref]$client)) { throw "Missing measured client rectangle" }
+                $clientSize = @{ width_pixels = $client.Right; height_pixels = $client.Bottom; dpi = [ZsuiPerformanceMatrixWindow]::GetDpiForWindow($window) }
                 $captured = Save-WindowScreenshot -Process $launch.process -Path $screenshot
-                $idleCpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $launch.process.MainWindowHandle -ForceRepaint $false
-                [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($launch.process.MainWindowHandle, 0)
+                $idleCpu = Measure-Cpu -RootProcessId $launch.process.Id -Window $window -ForceRepaint $false
+                [void][ZsuiPerformanceMatrixWindow]::ShowWindowAsync($window, 0)
                 Start-Sleep -Seconds $WarmupSeconds
-                if ($launch.process.HasExited -or [ZsuiPerformanceMatrixWindow]::IsWindowVisible($launch.process.MainWindowHandle)) {
+                if ($launch.process.HasExited -or [ZsuiPerformanceMatrixWindow]::IsWindowVisible($window)) {
                     throw "Hide phase did not reach a live hidden window"
                 }
                 $hiddenMemory = Measure-Memory -RootProcessId $launch.process.Id
@@ -778,17 +843,44 @@ function Measure-Application {
     }
 }
 
+$settingsPath = Join-Path $outputDir 'measurement-settings.json'
+$settings = [ordered]@{memory_samples=$MemorySamples;startup_runs=$StartupRuns;warmup_seconds=$WarmupSeconds;cpu_seconds=$CpuSampleSeconds;rounds=$RepeatRuns;gpu=[bool]$IncludeGpuMemory;device=[bool]$DeviceDemo;frameworks=@($labels.Keys);build=$buildManifest;sampler_sha256=(Get-FileHash -LiteralPath $PSCommandPath).Hash}
+$settingsJson = $settings | ConvertTo-Json -Depth 14 -Compress
+if ($Resume) {
+    if (-not $DeviceDemo -or $null -eq $buildManifest) { throw 'Resume requires the device-demo executable manifest' }
+    if (-not (Test-Path -LiteralPath $settingsPath) -or (Get-Content -LiteralPath $settingsPath -Raw).Trim() -ne $settingsJson) { throw 'Resume settings or sampler identity differ from the existing observations' }
+    $script:launchNumber = @(Get-Content -LiteralPath (Join-Path $outputDir 'launches.jsonl')).Count
+    if (Test-Path -LiteralPath (Join-Path $outputDir 'rejected-attempts.jsonl')) { $script:rejectedAttempts = @(Get-Content -LiteralPath (Join-Path $outputDir 'rejected-attempts.jsonl') | ForEach-Object { $_ | ConvertFrom-Json }) }
+} else {
+    if (Test-Path -LiteralPath $settingsPath) { throw 'Existing measurement session: use -Resume or explicitly archive it before starting another session' }
+    Set-Content -LiteralPath $settingsPath -Value $settingsJson -Encoding utf8
+}
 $rounds = @()
 for ($roundIndex = 0; $roundIndex -lt $RepeatRuns; $roundIndex++) {
     $script:measurementRound = $roundIndex + 1
     $results = [ordered]@{}
+    $checkpoint = Join-Path $outputDir "round-$script:measurementRound-progress.json"
+    if ($Resume -and (Test-Path -LiteralPath $checkpoint)) { $results = Get-Content -LiteralPath $checkpoint -Raw | ConvertFrom-Json -AsHashtable }
     $frameworkOrder = @($labels.Keys)
     $frameworkOrder = @(0..($frameworkOrder.Count - 1) | ForEach-Object { $frameworkOrder[($_ + $roundIndex) % $frameworkOrder.Count] })
     foreach ($framework in $frameworkOrder) {
-      $results[$framework] = [ordered]@{}
+      if (-not $results.Contains($framework)) { $results[$framework] = [ordered]@{} }
       foreach ($profile in $profiles.Keys) {
+        if ($results[$framework].Contains($profile)) { continue }
         $application = $applications | Where-Object { $_.framework -eq $framework -and $_.profile -eq $profile } | Select-Object -First 1
-        $results[$framework][$profile] = Measure-Application -Application $application
+        for ($attempt=1; $attempt -le 3; $attempt++) {
+            try {
+                $results[$framework][$profile] = Measure-Application -Application $application
+                break
+            } catch {
+                if (-not $DeviceDemo -or $_.Exception.Message -notlike 'Measured window became occluded*' -or $attempt -eq 3) { throw }
+                $rejection = @{round=$script:measurementRound;framework=$framework;attempt=$attempt;reason=$_.Exception.Message;at=[DateTime]::UtcNow.ToString('o')}
+                $script:rejectedAttempts += $rejection
+                $rejection | ConvertTo-Json -Compress | Add-Content -LiteralPath (Join-Path $outputDir 'rejected-attempts.jsonl') -Encoding utf8
+                Write-Host "restarting rejected observation: $framework / round $script:measurementRound"
+                Start-Sleep -Seconds 2
+            }
+        }
         $memoryPhases = @(
             $results[$framework][$profile].empty_window.memory,
             $results[$framework][$profile].full_page_memory,
@@ -800,6 +892,7 @@ for ($roundIndex = 0; $roundIndex -lt $RepeatRuns; $roundIndex++) {
         if ($framework -ne "tauri" -and ($memoryPhases.process_count | Measure-Object -Maximum).Maximum -ne 1) {
             throw "$($application.framework_name) $($application.profile_name) unexpectedly used more than one process"
         }
+        $results | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath (Join-Path $outputDir "round-$script:measurementRound-progress.json") -Encoding utf8
       }
     }
     $rounds += ,$results
@@ -862,6 +955,7 @@ $report = [ordered]@{
     implementations = $results
     build = $buildManifest
     rounds = $rounds
+    rejected_attempts = $script:rejectedAttempts
     methodology = [ordered]@{
         fairness = "compare frameworks only within the same profile; never compare ZSUI Minimal against another framework's Common, Full or Viewer surface"
         viewer_boundary = "ZSUI formal applications and zsui-viewer are separate build artifacts and report rows; Viewer-only polling, validation and document-component coverage do not enter formal application builds"
