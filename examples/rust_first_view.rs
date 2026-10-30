@@ -27,7 +27,8 @@ struct AppState {
 
 fn view(state: &AppState) -> ViewNode<Msg> {
     column([
-        styled_text(format!("Hello, {}", state.name), SemanticTextStyle::body()),
+        styled_text(format!("Hello, {}", state.name), SemanticTextStyle::body())
+            .text_wrap(zsui::TextWrap::Word),
         textbox(&state.name).id(NAME).on_change(Msg::NameChanged),
         row([
             styled_text("Dark mode", SemanticTextStyle::body()),
@@ -42,7 +43,8 @@ fn view(state: &AppState) -> ViewNode<Msg> {
         ),
     ])
     .gap(Dp::new(12.0))
-    .padding(Dp::new(20.0))
+    .padding_xy(Dp::new(20.0), Dp::new(12.0))
+    .border(zsui::ThemeColorToken::Border)
 }
 
 fn update(state: &mut AppState, msg: Msg, cx: &mut AppCx) {

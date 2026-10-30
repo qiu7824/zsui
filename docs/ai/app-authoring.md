@@ -86,6 +86,42 @@ Use [`examples/compact_service_panel.rs`](../../examples/compact_service_panel.r
 as the application-shape reference. It intentionally contains one status
 region and one action region, without a shell.
 
+## Text, spacing and retained scrolling
+
+Use `.text_wrap(TextWrap::Word)` on a label for width-aware wrapping. The same
+modifier configures a multiline text editor; single-line inputs remain single
+line. A wrapping label beside an action needs `.flex(1.0)` to receive the row's
+remaining width. In a column, `.align(ViewAlign::Stretch)` allocates the full
+cross-axis width to its children. Native control and text minimums remain hard
+floors: choose a suitable minimum window width or a vertical composition when
+the controls cannot fit side by side.
+
+`.padding_xy(horizontal, vertical)` and
+`.padding_sides(left, top, right, bottom)` provide logical-unit inner spacing.
+The most recent padding modifier wins, including `.padding(uniform)`.
+Measurement, layout, drawing and input bounds use the same insets.
+`.border(ThemeColorToken::Border)` adds a one-physical-pixel themed outline
+following the node's radius, without adding children or changing its layout.
+Reserve inner space explicitly with padding when the content should be separated
+from the outline. The stable Element API exposes these spacing and outline
+modifiers as well as `text_wrap`.
+
+`scroll(content)` retains its offset across stateful rebuilds for the same
+widget identity. Give independently scrollable pages distinct stable IDs.
+Use `.scroll_y(state.offset).on_scroll(Msg::Scrolled)` for an application-owned
+offset; an explicit `.scroll_y(Dp::new(0.0))` resets it on each rebuild.
+Both modes clamp after content shrinkage or viewport resize. `auto_scroll_y()`
+remains available for a container that should scroll only when it overflows.
+
+Background work calls `UiInvalidationHandle::request_rebuild()` after updating
+application-owned state. Requests made before window binding remain pending;
+no startup delay or synthetic pointer event is required. With `window-chrome`,
+call `AppCx::try_window_command` with `ZsWindowCommand::Hide` or
+`ZsWindowCommand::Show`; hosts execute the request after releasing UI state
+locks. Worker and tray
+callbacks send an application command through `UiInvalidationHandle` and map
+it to the same update path. See [application effects](../app-effects.md).
+
 ## Composite component rule
 
 Read a composite component pack only after the product brief passes its

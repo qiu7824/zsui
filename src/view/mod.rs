@@ -50,3 +50,5 @@ include!("paint.rs");
 include!("overlay.rs");
 include!("layout.rs");
 include!("tests.rs");
+#[cfg(test)]
+mod application_tests;

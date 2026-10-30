@@ -34,7 +34,8 @@ use windows_sys::Win32::{
         RoundRect, SaveDC, SelectObject, SetBkMode, SetBrushOrgEx, SetStretchBltMode, SetTextColor,
         SetViewportOrgEx, StretchDIBits, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLIP_DEFAULT_PRECIS,
         DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, FF_DONTCARE, HALFTONE, HBITMAP, HDC,
-        HGDIOBJ, LOGPIXELSY, NULL_PEN, OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY, TEXTMETRICW,
+        HGDIOBJ, LOGPIXELSY, NULL_BRUSH, NULL_PEN, OUT_DEFAULT_PRECIS, PS_SOLID, SRCCOPY,
+        TEXTMETRICW,
     },
     UI::WindowsAndMessaging::SystemParametersInfoW,
 };
@@ -2220,8 +2221,13 @@ impl WindowsGdiDrawSink {
             self.palette
                 .resolve_fill_with_contrast(stroke, self.high_contrast)
         });
-        let Some(fill_brush) = self.renderer.cached_solid_brush(fill) else {
-            return;
+        let fill_brush = if source_fill.a == 0 {
+            unsafe { GetStockObject(NULL_BRUSH) }
+        } else {
+            let Some(brush) = self.renderer.cached_solid_brush(fill) else {
+                return;
+            };
+            brush
         };
         let pen = stroke_color
             .and_then(|stroke| self.renderer.cached_pen(stroke))

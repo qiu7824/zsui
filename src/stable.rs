@@ -51,6 +51,11 @@ use std::{fmt, path::PathBuf};
 mod controls;
 pub use controls::*;
 
+/// Wrapping policy for labels and multiline text editors.
+pub use crate::TextWrap;
+/// Semantic colors resolved by the active native theme.
+pub use crate::ThemeColorToken;
+
 pub use crate::{
     DialogButtons, DialogLevel, DialogResponse, DirectoryDialogSpec, FileDialogFilter,
     FileDialogSpec, NativeDialogSpec, SaveFileDialogSpec,
@@ -218,6 +223,33 @@ impl<Message> Element<Message> {
     /// Sets uniform inner padding.
     pub fn padding(mut self, padding: Dp) -> Self {
         self.inner = self.inner.padding(padding.into());
+        self
+    }
+
+    /// Sets independent horizontal and vertical inner padding.
+    pub fn padding_xy(mut self, horizontal: Dp, vertical: Dp) -> Self {
+        self.inner = self.inner.padding_xy(horizontal.into(), vertical.into());
+        self
+    }
+
+    /// Sets left, top, right and bottom inner padding.
+    pub fn padding_sides(mut self, left: Dp, top: Dp, right: Dp, bottom: Dp) -> Self {
+        self.inner = self
+            .inner
+            .padding_sides(left.into(), top.into(), right.into(), bottom.into());
+        self
+    }
+
+    /// Draws a theme-resolved one-physical-pixel outline without changing layout.
+    pub fn border(mut self, color: ThemeColorToken) -> Self {
+        self.inner = self.inner.border(color);
+        self
+    }
+
+    /// Sets wrapping for labels and multiline text editors.
+    #[cfg(any(feature = "label", feature = "textbox"))]
+    pub fn text_wrap(mut self, wrap: TextWrap) -> Self {
+        self.inner = self.inner.text_wrap(wrap);
         self
     }
 

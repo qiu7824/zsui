@@ -810,6 +810,10 @@ pub fn items_repeater<T, Msg>(
 }
 
 #[cfg(feature = "scroll")]
+/// Creates a vertical viewport. Stateful rebuilds retain the offset for the
+/// same widget identity; use `scroll_y` to supply an application-controlled
+/// offset, including an explicit reset to zero. Layout clamps either mode
+/// after the content or viewport changes.
 pub fn scroll<Msg>(child: ViewNode<Msg>) -> ViewNode<Msg> {
     ViewNode::<Msg>::new(ViewNodeKind::Scroll {
         offset_y: Dp::new(0.0),

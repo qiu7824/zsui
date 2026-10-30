@@ -255,7 +255,7 @@ fn scroll_viewport_bounds<Msg>(node: &ViewNode<Msg>) -> Option<Rect> {
     if let ViewNodeKind::Tabs { tabs, selected, .. } = &node.kind {
         let selected_index = selected
             .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-        let tab_bounds = tab_layout_bounds(bounds, node.style.padding, node.layout_dpi);
+        let tab_bounds = tab_layout_bounds(bounds, node.style.resolved_padding(), node.layout_dpi);
         return Some(
             crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
@@ -267,7 +267,7 @@ fn scroll_viewport_bounds<Msg>(node: &ViewNode<Msg>) -> Option<Rect> {
             .content_bounds,
         );
     }
-    Some(inset_bounds(bounds, node.style.padding, node.layout_dpi))
+    Some(inset_bounds(bounds, node.style.resolved_padding(), node.layout_dpi))
 }
 
 #[cfg(feature = "scroll")]
@@ -351,7 +351,7 @@ fn items_repeater_scrollbar_layout<Msg>(
     else {
         return None;
     };
-    let content_bounds = inset_bounds(bounds, node.style.padding, node.layout_dpi);
+    let content_bounds = inset_bounds(bounds, node.style.resolved_padding(), node.layout_dpi);
     let content_height = items_repeater_content_height(*total_count, *row_height, item_metrics);
     let viewport_height = Dp::new(
         content_bounds.height.max(0) as f32 / node.layout_dpi.scale_factor().max(f32::EPSILON),
@@ -1180,12 +1180,7 @@ fn navigation_intrinsic_height_px<Msg>(
         .gap
         .map(|gap| gap.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
-    let padding = node
-        .style
-        .padding
-        .map(|padding| padding.to_px(dpi).round_i32().max(0))
-        .unwrap_or(0)
-        .saturating_mul(2);
+    let padding = node.style.padding_extent_px(dpi, true);
     let content = match &node.kind {
         ViewNodeKind::Text { style, .. } => Dp::new(
             style
@@ -1446,12 +1441,7 @@ fn cross_axis_length<Msg>(
     // Padding alone is not content. A surface without an intrinsic size, such
     // as a Canvas or image preview inside a padded boxed-list row, fills the
     // cell rather than shrinking to twice its padding.
-    let padding = child
-        .style
-        .padding
-        .map(|value| value.to_px(dpi).round_i32().max(0))
-        .unwrap_or(0)
-        .saturating_mul(2);
+    let padding = child.style.padding_extent_px(dpi, vertical);
     let stretches_cross_axis = owns_cross_axis(child) || text_stretches_width;
     fixed
         .map(|value| {
@@ -1574,11 +1564,7 @@ fn intrinsic_width_px<Msg>(
                 .map(|value| value.to_px(dpi).round_i32().max(0))
                 .unwrap_or(0),
         );
-    let padding = node
-        .style
-        .padding
-        .map(|value| value.to_px(dpi).round_i32().max(0))
-        .unwrap_or(0);
+    let padding = node.style.padding_extent_px(dpi, false);
     let gap = node
         .style
         .gap
@@ -1628,7 +1614,7 @@ fn intrinsic_width_px<Msg>(
                 typography_scale,
                 text_measurements,
             );
-            let native_padding = if node.style.padding.is_some() {
+            let native_padding = if node.style.resolved_padding().is_some() {
                 0
             } else {
                 let metrics =
@@ -1687,7 +1673,7 @@ fn intrinsic_width_px<Msg>(
             .max()
             .unwrap_or(0),
     };
-    declared.max(content.saturating_add(padding.saturating_mul(2)))
+    declared.max(content.saturating_add(padding))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1749,17 +1735,13 @@ fn measured_height_px<Msg>(
         .map(declared_height)
         .unwrap_or(0)
         .max(node.style.min_height.map(declared_height).unwrap_or(0));
-    let padding = node
-        .style
-        .padding
-        .map(|value| value.to_px(dpi).round_i32().max(0))
-        .unwrap_or(0);
+    let padding = node.style.padding_extent_px(dpi, true);
     let gap = node
         .style
         .gap
         .map(|value| value.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
-    let content_width = available_width.saturating_sub(padding.saturating_mul(2));
+    let content_width = available_width.saturating_sub(node.style.padding_extent_px(dpi, false));
 
     #[cfg(feature = "canvas")]
     if let ViewNodeKind::Canvas {
@@ -1780,7 +1762,7 @@ fn measured_height_px<Msg>(
             );
             if let Some(extent) = builder.build(&context).extent_height() {
                 let content = extent.to_px(dpi).round_i32().max(0);
-                return declared.max(content.saturating_add(padding.saturating_mul(2)));
+                return declared.max(content.saturating_add(padding));
             }
         }
     }
@@ -1809,9 +1791,9 @@ fn measured_height_px<Msg>(
                         .max(0)
                         .saturating_mul(2),
                 );
-            return declared.max(chrome.saturating_add(padding.saturating_mul(2)));
+            return declared.max(chrome.saturating_add(padding));
         }
-        return declared.max(padding.saturating_mul(2));
+        return declared.max(padding);
     }
 
     let content = match &node.kind {
@@ -1965,7 +1947,7 @@ fn measured_height_px<Msg>(
             .max()
             .unwrap_or(0),
     };
-    declared.max(content.saturating_add(padding.saturating_mul(2)))
+    declared.max(content.saturating_add(padding))
 }
 
 #[cfg(feature = "icon")]
@@ -2169,16 +2151,9 @@ fn clamp_visible_month(month: ZsDate, minimum: ZsDate, maximum: ZsDate) -> ZsDat
         .min(maximum.first_day_of_month())
 }
 
-fn inset_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
-    let padding = padding
-        .map(|value| value.to_px(dpi).round_i32().max(0))
-        .unwrap_or(0);
-    Rect {
-        x: bounds.x + padding,
-        y: bounds.y + padding,
-        width: (bounds.width - padding * 2).max(0),
-        height: (bounds.height - padding * 2).max(0),
-    }
+fn inset_bounds(bounds: Rect, padding: Option<[Dp; 4]>, dpi: Dpi) -> Rect {
+    let [left, top, right, bottom] = padding.unwrap_or([Dp::new(0.0); 4]);
+    side_inset_bounds(bounds, left, top, right, bottom, dpi)
 }
 
 #[cfg(feature = "list")]
@@ -2195,17 +2170,17 @@ fn horizontal_inset_bounds(bounds: Rect, inset: Option<Dp>, dpi: Dpi) -> Rect {
 }
 
 #[cfg(feature = "tabs")]
-fn tab_layout_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+fn tab_layout_bounds(bounds: Rect, padding: Option<[Dp; 4]>, dpi: Dpi) -> Rect {
     inset_bounds(bounds, padding, dpi)
 }
 
 #[cfg(any(feature = "label", feature = "button", feature = "textbox"))]
-fn padded_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+fn padded_bounds(bounds: Rect, padding: Option<[Dp; 4]>, dpi: Dpi) -> Rect {
     inset_bounds(bounds, padding, dpi)
 }
 
 #[cfg(feature = "button")]
-fn button_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+fn button_content_bounds(bounds: Rect, padding: Option<[Dp; 4]>, dpi: Dpi) -> Rect {
     if padding.is_some() {
         return padded_bounds(bounds, padding, dpi);
     }
@@ -2222,7 +2197,7 @@ fn button_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
 }
 
 #[cfg(feature = "textbox")]
-fn text_input_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rect {
+fn text_input_content_bounds(bounds: Rect, padding: Option<[Dp; 4]>, dpi: Dpi) -> Rect {
     if padding.is_some() {
         return padded_bounds(bounds, padding, dpi);
     }
@@ -2238,7 +2213,6 @@ fn text_input_content_bounds(bounds: Rect, padding: Option<Dp>, dpi: Dpi) -> Rec
     )
 }
 
-#[cfg(any(feature = "button", feature = "textbox"))]
 fn side_inset_bounds(bounds: Rect, left: Dp, top: Dp, right: Dp, bottom: Dp, dpi: Dpi) -> Rect {
     let left = left.to_px(dpi).round_i32().max(0);
     let top = top.to_px(dpi).round_i32().max(0);

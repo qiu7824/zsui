@@ -1437,7 +1437,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -1908,7 +1908,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -2302,7 +2302,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,

@@ -1028,6 +1028,12 @@ history remain authoritative for implementation status.
   propagates nested/span height. `scroll.content_height` is an optional virtual
   extent override; ordinary nested content is measured without requiring each
   direct parent to declare `height` or `min_height`.
+- Ordinary Scroll retains framework-owned offsets by compatible widget identity
+  across stateful rebuilds. An explicit `.scroll_y(...)` owns the offset in the
+  application and always wins over restoration, including zero; both modes
+  clamp after layout. Text wrapping modifiers apply to labels and multiline
+  editors. Uniform, axis and per-side padding share measurement, painting and
+  input geometry; themed outlines do not change layout or cover child content.
 - `ViewStyle::flex` distributes only a Stack's main axis. Text fills the column
   cross-axis width even when wrapped text is content-height (`flex(0)`), while
   a wrapping label beside a fixed action uses explicit main-axis flex when it

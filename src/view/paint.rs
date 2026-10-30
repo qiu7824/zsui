@@ -43,6 +43,18 @@ impl ViewPaintCx {
     }
 
     fn finish_node<Msg: Clone>(&mut self, _root: &ViewNode<Msg>) {
+        if let (Some(color), Some(bounds)) = (_root.style.border, _root.bounds) {
+            if bounds.width > 0 && bounds.height > 0 {
+                self.draw(NativeDrawCommand::PushClip { rect: bounds });
+                self.draw(NativeDrawCommand::RoundRect {
+                    rect: bounds,
+                    fill: NativeDrawFill::RoleWithAlpha { role: ColorRole::Surface, alpha: 0 },
+                    stroke: Some(NativeDrawFill::Role(color_role_for_token(color))),
+                    radius: radius_px(_root.style.radius, self.dpi),
+                });
+                self.draw(NativeDrawCommand::PopClip);
+            }
+        }
         self.paint_depth = self.paint_depth.saturating_sub(1);
         #[cfg(any(
             feature = "auto-suggest",
@@ -81,7 +93,7 @@ impl<Msg: Clone> ViewNode<Msg> {
         };
         let selected_index = selected
             .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-        let tab_bounds = tab_layout_bounds(cx.bounds, self.style.padding, cx.dpi);
+        let tab_bounds = tab_layout_bounds(cx.bounds, self.style.resolved_padding(), cx.dpi);
         let plan = crate::zs_tab_view_render_plan_for_tabs(
             tab_bounds,
             tabs,
@@ -247,7 +259,7 @@ impl<Msg: Clone> ViewNode<Msg> {
                 ),
                 _ => unreachable!("virtual list layout requires a virtual list node"),
             };
-        let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
+        let content_bounds = inset_bounds(cx.bounds, self.style.resolved_padding(), cx.dpi);
         let viewport_height =
             Dp::new(content_bounds.height.max(0) as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
         let viewport = items_repeater_viewport_with_metrics(
@@ -557,7 +569,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             });
         }
 
-        let content_bounds = inset_bounds(cx.bounds, self.style.padding, cx.dpi);
+        let content_bounds = inset_bounds(cx.bounds, self.style.resolved_padding(), cx.dpi);
         #[cfg(feature = "list")]
         let content_bounds =
             horizontal_inset_bounds(content_bounds, self.list_item_horizontal_inset, cx.dpi);
@@ -606,11 +618,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         let child_layout_bounds = if self.style.overflow_y == ViewOverflow::Auto
             && !matches!(self.kind, ViewNodeKind::Scroll { .. })
         {
-            let padding = self
-                .style
-                .padding
-                .map(|value| value.to_px(cx.dpi).round_i32().max(0))
-                .unwrap_or(0);
+            let padding = self.style.padding_extent_px(cx.dpi, true);
             let natural_content_px = natural_height_px(
                 self,
                 cx.bounds.width,
@@ -618,7 +626,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 cx.typography_scale(),
                 cx.text_measurements.as_ref(),
             )
-            .saturating_sub(padding.saturating_mul(2));
+            .saturating_sub(padding);
             let resolved_content_px = content_bounds.height.max(natural_content_px);
             self.resolved_scroll_content_height =
                 Dp::new(resolved_content_px as f32 / cx.dpi.scale_factor().max(f32::EPSILON));
@@ -1302,7 +1310,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                             tabs.iter().position(|candidate| candidate.id == selected)
                         });
                         let tab_bounds =
-                            tab_layout_bounds(bounds, self.style.padding, self.layout_dpi);
+                            tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
                         return crate::zs_tab_view_render_plan_for_tabs(
                             tab_bounds,
                             tabs,
@@ -1312,7 +1320,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         )
                         .content_bounds;
                     }
-                    inset_bounds(bounds, self.style.padding, self.layout_dpi)
+                    inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi)
                 });
                 let max_offset = scroll_max_offset_y(
                     viewport,
@@ -1680,7 +1688,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             #[cfg(feature = "virtual-list")]
             let list_bounds = self
                 .bounds
-                .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
+                .map(|bounds| inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi));
             match (&mut self.kind, event) {
                 #[cfg(feature = "label")]
                 (ViewNodeKind::NavigationView { pane_open, .. }, ViewEvent::Click { .. }) => {
@@ -2421,7 +2429,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) if self.id == Some(*widget) => {
                     let viewport = self
                         .bounds
-                        .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
+                        .map(|bounds| inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi));
                     let max_offset = scroll_max_offset_y(
                         viewport,
                         Some(self.resolved_scroll_content_height),
@@ -2444,7 +2452,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 ) if self.id == Some(*widget) => {
                     let viewport = self
                         .bounds
-                        .map(|bounds| inset_bounds(bounds, self.style.padding, self.layout_dpi));
+                        .map(|bounds| inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi));
                     let max_offset = scroll_max_offset_y(
                         viewport,
                         Some(self.resolved_scroll_content_height),
@@ -2889,7 +2897,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             }
             #[cfg(feature = "label")]
             ViewNodeKind::Text { text, style } => {
-                let bounds = padded_bounds(bounds, self.style.padding, cx.dpi);
+                let bounds = padded_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 #[cfg(feature = "list")]
                 let bounds =
                     horizontal_inset_bounds(bounds, self.list_item_horizontal_inset, cx.dpi);
@@ -2909,7 +2917,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
                     });
                 }
-                let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                let content_bounds = inset_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 if let Some(frame) = snapshot.frame.clone() {
                     if let Some(command) = crate::zs_image_native_draw_command(
                         frame,
@@ -2953,7 +2961,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         fill: NativeDrawFill::Role(ColorRole::SurfaceRaised),
                     });
                 }
-                let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                let content_bounds = inset_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 let snapshot = source.snapshot();
                 if let Some(frame) = snapshot.frame {
                     if let Some(command) = crate::zs_video_native_draw_command(
@@ -3033,7 +3041,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 text_style.horizontal_align = crate::HorizontalAlign::Center;
                                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                                     label,
-                                    button_content_bounds(bounds, self.style.padding, cx.dpi),
+                                    button_content_bounds(bounds, self.style.resolved_padding(), cx.dpi),
                                     text_style,
                                 )));
                             }
@@ -3093,7 +3101,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         text_style.horizontal_align = crate::HorizontalAlign::Center;
                         cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                             label,
-                            button_content_bounds(bounds, self.style.padding, cx.dpi),
+                            button_content_bounds(bounds, self.style.resolved_padding(), cx.dpi),
                             text_style,
                         )));
                     }
@@ -3346,7 +3354,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     text_style.wrap = *wrap;
                     text_style.ellipsis = false;
                 }
-                let text_bounds = text_input_content_bounds(bounds, self.style.padding, cx.dpi);
+                let text_bounds = text_input_content_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 if *multiline && *wrap == crate::TextWrap::NoWrap {
                     let line_height = Dp::new(
                         crate::TextRole::Body
@@ -3779,7 +3787,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                 let selected_index = selected.and_then(|selected| {
                     tabs.iter().position(|candidate| candidate.id == selected)
                 });
-                let tab_bounds = tab_layout_bounds(bounds, self.style.padding, cx.dpi);
+                let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 let plan = crate::zs_tab_view_render_plan_for_tabs(
                     tab_bounds,
                     tabs,
@@ -3843,7 +3851,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     });
                 }
                 if *show_placeholders {
-                    let content_bounds = inset_bounds(bounds, self.style.padding, cx.dpi);
+                    let content_bounds = inset_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                     for index in visible_range.start..visible_range.end {
                         if row_indices.binary_search(&index).is_ok() {
                             continue;
@@ -3945,7 +3953,7 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         #[cfg(feature = "scroll")]
         if self.style.overflow_y == ViewOverflow::Auto {
             cx.draw(NativeDrawCommand::PushClip {
-                rect: inset_bounds(bounds, self.style.padding, cx.dpi),
+                rect: inset_bounds(bounds, self.style.resolved_padding(), cx.dpi),
             });
         }
         for child in &self.children {

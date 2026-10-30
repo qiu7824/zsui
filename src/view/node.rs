@@ -1226,8 +1226,12 @@ pub enum ViewOverflow {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewStyle {
     pub padding: Option<Dp>,
+    /// Left, top, right and bottom padding; takes precedence over uniform padding.
+    pub padding_sides: Option<[Dp; 4]>,
     pub radius: Option<Dp>,
     pub background: Option<ThemeColorToken>,
+    /// A theme-resolved one-physical-pixel outline, painted inside the bounds.
+    pub border: Option<ThemeColorToken>,
     pub width: Option<Dp>,
     pub height: Option<Dp>,
     pub min_width: Option<Dp>,
@@ -1245,8 +1249,10 @@ impl Default for ViewStyle {
     fn default() -> Self {
         Self {
             padding: None,
+            padding_sides: None,
             radius: None,
             background: None,
+            border: None,
             width: None,
             height: None,
             min_width: None,
@@ -1259,6 +1265,19 @@ impl Default for ViewStyle {
             #[cfg(feature = "scroll")]
             overflow_y: ViewOverflow::Visible,
         }
+    }
+}
+
+impl ViewStyle {
+    fn resolved_padding(&self) -> Option<[Dp; 4]> {
+        self.padding_sides.or_else(|| self.padding.map(|value| [value; 4]))
+    }
+
+    fn padding_extent_px(&self, dpi: Dpi, vertical: bool) -> i32 {
+        let sides = self.resolved_padding().unwrap_or([Dp::new(0.0); 4]);
+        let axis = usize::from(vertical);
+        sides[axis].to_px(dpi).round_i32().max(0)
+            .saturating_add(sides[axis + 2].to_px(dpi).round_i32().max(0))
     }
 }
 
@@ -1312,6 +1331,8 @@ pub struct ViewNode<Msg> {
     document_poll_interval_ms: Option<u64>,
     #[cfg(feature = "scroll")]
     adaptive_scroll_offset_y: Dp,
+    #[cfg(feature = "scroll")]
+    scroll_offset_controlled: bool,
     #[cfg(feature = "scroll")]
     resolved_scroll_content_height: Dp,
 
@@ -1388,6 +1409,8 @@ impl<Msg> ViewNode<Msg> {
             document_poll_interval_ms: None,
             #[cfg(feature = "scroll")]
             adaptive_scroll_offset_y: Dp::new(0.0),
+            #[cfg(feature = "scroll")]
+            scroll_offset_controlled: false,
             #[cfg(feature = "scroll")]
             resolved_scroll_content_height: Dp::new(0.0),
 
@@ -1775,6 +1798,41 @@ impl<Msg> ViewNode<Msg> {
 
     pub fn padding(mut self, padding: Dp) -> Self {
         self.style.padding = Some(padding);
+        self.style.padding_sides = None;
+        self
+    }
+
+    /// Sets independent horizontal and vertical inner padding.
+    pub fn padding_xy(self, horizontal: Dp, vertical: Dp) -> Self {
+        self.padding_sides(horizontal, vertical, horizontal, vertical)
+    }
+
+    /// Sets left, top, right and bottom inner padding in logical units.
+    pub fn padding_sides(mut self, left: Dp, top: Dp, right: Dp, bottom: Dp) -> Self {
+        self.style.padding = None;
+        self.style.padding_sides = Some([left, top, right, bottom]);
+        self
+    }
+
+    /// Paints a one-physical-pixel theme outline inside the node's bounds.
+    /// The outline follows `radius` and does not change layout or padding.
+    pub fn border(mut self, color: ThemeColorToken) -> Self {
+        self.style.border = Some(color);
+        self
+    }
+
+    /// Sets wrapping for labels and multiline text editors. Single-line inputs
+    /// keep their single-line contract.
+    #[cfg(any(feature = "label", feature = "textbox"))]
+    pub fn text_wrap(mut self, wrap: crate::TextWrap) -> Self {
+        #[cfg(feature = "label")]
+        if let ViewNodeKind::Text { style, .. } = &mut self.kind {
+            style.wrap = wrap;
+        }
+        #[cfg(feature = "textbox")]
+        if let ViewNodeKind::Textbox { multiline: true, wrap: current, .. } = &mut self.kind {
+            *current = wrap;
+        }
         self
     }
 
@@ -1886,6 +1944,16 @@ impl<Msg> ViewNode<Msg> {
             && previous.style.overflow_y == ViewOverflow::Auto
         {
             self.adaptive_scroll_offset_y = previous.adaptive_scroll_offset_y;
+        }
+
+        if same_node && !self.scroll_offset_controlled {
+            if let (
+                ViewNodeKind::Scroll { offset_y, .. },
+                ViewNodeKind::Scroll { offset_y: previous_offset, .. },
+            ) = (&mut self.kind, &previous.kind)
+            {
+                *offset_y = *previous_offset;
+            }
         }
 
         for (index, child) in self.children.iter_mut().enumerate() {
@@ -2164,21 +2232,6 @@ impl<Msg: Clone> ViewNode<Msg> {
         } = &mut self.kind
         {
             *on_selection_change = Some(message);
-        }
-        self
-    }
-
-    #[cfg(feature = "textbox")]
-    pub fn text_wrap(mut self, wrap: crate::TextWrap) -> Self {
-        if let ViewNodeKind::Textbox {
-            multiline,
-            wrap: current,
-            ..
-        } = &mut self.kind
-        {
-            if *multiline {
-                *current = wrap;
-            }
         }
         self
     }
@@ -3454,7 +3507,10 @@ impl<Msg: Clone> ViewNode<Msg> {
     }
 
     #[cfg(feature = "scroll")]
+    /// Sets an application-controlled offset. Without this modifier, an ordinary
+    /// Scroll retains its offset across compatible stateful View rebuilds.
     pub fn scroll_y(mut self, offset_y: Dp) -> Self {
+        self.scroll_offset_controlled = true;
         match &mut self.kind {
             ViewNodeKind::Scroll {
                 offset_y: current, ..

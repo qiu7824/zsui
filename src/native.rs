@@ -11140,6 +11140,54 @@ mod tests {
         assert!(!handle.take_request());
     }
 
+    #[cfg(feature = "label")]
+    #[test]
+    fn application_feedback_startup_update_repaints_without_pointer_input_or_delay() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let value = Arc::new(AtomicUsize::new(0));
+        let observed = value.clone();
+        let handle = UiInvalidationHandle::new();
+        let builder = native_window("Startup update")
+            .invalidation_handle(handle.clone())
+            .stateful_view(
+                (),
+                move |_| crate::text(observed.load(Ordering::SeqCst).to_string()),
+                |_, _: (), _| {},
+            );
+        let mut runtime = builder.native_view_input_runtime();
+        value.store(42, Ordering::SeqCst);
+        assert!(handle.request_rebuild());
+        let wakes = Arc::new(AtomicUsize::new(0));
+        let count = wakes.clone();
+        let _binding = runtime.bind_invalidation_target(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+        });
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
+        let report = runtime.refresh_invalidated_view();
+        assert!(report.handled);
+        assert!(report
+            .redraw_plan
+            .unwrap()
+            .commands
+            .iter()
+            .any(|command| matches!(command,
+            NativeDrawCommand::Text(text) if text.text == "42")));
+        value.store(43, Ordering::SeqCst);
+        assert!(handle.request_rebuild());
+        assert_eq!(wakes.load(Ordering::SeqCst), 2);
+        let report = runtime.refresh_invalidated_view();
+        assert!(report
+            .redraw_plan
+            .unwrap()
+            .commands
+            .iter()
+            .any(|command| matches!(command,
+            NativeDrawCommand::Text(text) if text.text == "43")));
+    }
+
     #[test]
     fn queued_application_commands_preserve_order_and_reject_overflow() {
         let handle = UiInvalidationHandle::new();
