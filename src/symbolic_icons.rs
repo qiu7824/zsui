@@ -245,7 +245,7 @@ pub(crate) fn draw_normalized_icon(context: &mut impl SymbolicIconCanvas, icon: 
             stroke(context);
         }
         ZsIcon::Check => draw_check(context, 2.5, 5.2, 13.3),
-        ZsIcon::Info => {
+        ZsIcon::Info | ZsIcon::Properties => {
             circle_outline(context);
             context.arc(8.0, 4.8, 0.75, 0.0, std::f64::consts::TAU);
             fill(context);
@@ -414,6 +414,76 @@ pub(crate) fn draw_normalized_icon(context: &mut impl SymbolicIconCanvas, icon: 
             path(context, &[(4.5, 8.5), (9.5, 8.5)]);
             stroke(context);
         }
+        ZsIcon::Back => {
+            path(context, &[(13.0, 8.0), (3.0, 8.0)]);
+            path(context, &[(7.0, 3.5), (2.5, 8.0), (7.0, 12.5)]);
+            stroke(context);
+        }
+        ZsIcon::Forward => {
+            path(context, &[(3.0, 8.0), (13.0, 8.0)]);
+            path(context, &[(9.0, 3.5), (13.5, 8.0), (9.0, 12.5)]);
+            stroke(context);
+        }
+        ZsIcon::Up => {
+            path(context, &[(8.0, 13.0), (8.0, 3.0)]);
+            path(context, &[(3.5, 7.0), (8.0, 2.5), (12.5, 7.0)]);
+            stroke(context);
+        }
+        ZsIcon::Sort => {
+            path(context, &[(5.0, 13.0), (5.0, 3.0)]);
+            path(context, &[(2.0, 6.0), (5.0, 3.0), (8.0, 6.0)]);
+            path(context, &[(11.0, 3.0), (11.0, 13.0)]);
+            path(context, &[(8.0, 10.0), (11.0, 13.0), (14.0, 10.0)]);
+            stroke(context);
+        }
+        ZsIcon::View => {
+            for (x, y) in [(2.5, 2.5), (9.0, 2.5), (2.5, 9.0), (9.0, 9.0)] {
+                rounded_rect(context, RectF::new(x, y, 4.5, 4.5), 0.5);
+            }
+            stroke(context);
+        }
+        ZsIcon::Rename => {
+            rounded_rect(context, RectF::new(2.0, 5.0, 12.0, 7.0), 1.0);
+            stroke(context);
+            path(context, &[(7.0, 2.0), (11.0, 2.0)]);
+            path(context, &[(9.0, 2.0), (9.0, 14.0)]);
+            path(context, &[(7.0, 14.0), (11.0, 14.0)]);
+            stroke(context);
+        }
+        ZsIcon::Share => {
+            path(
+                context,
+                &[(3.0, 7.0), (3.0, 13.0), (13.0, 13.0), (13.0, 7.0)],
+            );
+            path(context, &[(8.0, 10.0), (8.0, 2.0)]);
+            path(context, &[(4.5, 5.5), (8.0, 2.0), (11.5, 5.5)]);
+            stroke(context);
+        }
+        ZsIcon::Maximize => {
+            context.rectangle(2.5, 2.5, 11.0, 11.0);
+            stroke(context);
+        }
+        ZsIcon::Restore => {
+            path(context, &[(5.0, 3.0), (13.0, 3.0), (13.0, 11.0)]);
+            context.rectangle(2.5, 5.5, 8.0, 8.0);
+            stroke(context);
+        }
+        ZsIcon::Star | ZsIcon::StarFilled => {
+            let points: Vec<_> = (0..10)
+                .map(|index| {
+                    let angle =
+                        std::f64::consts::PI * index as f64 / 5.0 - std::f64::consts::FRAC_PI_2;
+                    let radius = if index % 2 == 0 { 6.3 } else { 2.8 };
+                    (8.0 + radius * angle.cos(), 8.0 + radius * angle.sin())
+                })
+                .collect();
+            polygon(context, &points);
+            if icon == ZsIcon::StarFilled {
+                fill(context);
+            } else {
+                stroke(context);
+            }
+        }
         ZsIcon::ChevronUp => draw_chevron(context, &[(3.5, 10.0), (8.0, 5.5), (12.5, 10.0)]),
         ZsIcon::ChevronDown => draw_chevron(context, &[(3.5, 6.0), (8.0, 10.5), (12.5, 6.0)]),
         ZsIcon::Calendar => {
@@ -436,7 +506,7 @@ pub(crate) fn draw_normalized_icon(context: &mut impl SymbolicIconCanvas, icon: 
         }
         ZsIcon::ChevronLeft => draw_chevron(context, &[(10.0, 3.5), (5.5, 8.0), (10.0, 12.5)]),
         ZsIcon::ChevronRight => draw_chevron(context, &[(6.0, 3.5), (10.5, 8.0), (6.0, 12.5)]),
-        ZsIcon::PasswordReveal => {
+        ZsIcon::PasswordReveal | ZsIcon::Preview => {
             context.move_to(1.5, 8.0);
             context.curve_to(4.0, 3.8, 12.0, 3.8, 14.5, 8.0);
             context.curve_to(12.0, 12.2, 4.0, 12.2, 1.5, 8.0);

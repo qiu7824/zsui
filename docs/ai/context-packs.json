@@ -316,7 +316,11 @@
         "examples/zsui_proxy_client.rs",
         "scripts/measure-proxy-demo-comparison.ps1",
         "scripts/check-proxy-demo-results.ps1",
-        ".github/workflows/proxy-demo-comparison.yml"
+        ".github/workflows/proxy-demo-comparison.yml",
+        "src/platform/windows/direct2d.rs",
+        "src/platform/windows/chrome.rs",
+        "src/platform/windows/integration.rs",
+        "docs/native-window-integration.md"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -407,7 +411,21 @@
         "examples/desktop_reliability.rs",
         "src/linux_file_dialog.rs",
         "examples/desktop_lifecycle.rs",
-        "src/window_chrome.rs"
+        "src/window_chrome.rs",
+        "src/native_host.rs",
+        "src/platform_palette.rs",
+        "src/shell_integration.rs",
+        "src/platform/windows/integration.rs",
+        "src/platform/windows/interop.rs",
+        "src/platform/windows/shell.rs",
+        "src/platform/windows/shell_controls.rs",
+        "src/platform/windows/shell_menu.rs",
+        "src/platform/windows/menu_bridge.rs",
+        "src/platform/windows/desktop_layer.rs",
+        "src/platform/windows/native_theme.rs",
+        "docs/native-window-integration.md",
+        "examples/native_integration.rs",
+        "src/window_integration.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",

@@ -8,6 +8,28 @@
 /// Semver-stable application-authoring surface for the ZSUI 0.2 release line.
 pub mod stable;
 
+pub mod platform_palette;
+#[cfg(feature = "windows-shell")]
+pub mod shell_integration;
+pub mod window_integration;
+pub use platform_palette::PlatformPalette;
+#[cfg(feature = "windows-shell")]
+pub use shell_integration::{
+    DragEffects, DragOutcome, DragPayload, DropEffect, DropResponse, FilesDropped,
+    ShellMenuOutcome, ShellMenuSpec,
+};
+pub use window_integration::{
+    AlphaHitTest, IntegratedTitleBar, WindowBackdrop, WindowIntegration, WindowLayer,
+    WindowRenderer, WindowSurface,
+};
+pub use window_integration::{CaptionMetrics, NativeWindowEvent};
+#[cfg(feature = "native-host")]
+pub mod native_host;
+#[cfg(feature = "native-host")]
+pub use native_host::{
+    native_host, NativeChildSpec, NativeHostId, NativeHostPlacement, NativeHosts,
+};
+
 /// Convenient imports for the semver-stable application-authoring surface.
 pub mod prelude {
     pub use crate::stable::*;
@@ -1382,7 +1404,23 @@ mod tests {
         );
         assert_eq!(
             windows.window_transparency.status,
-            CapabilityStatus::Unsupported
+            if cfg!(all(windows, feature = "window-surface")) {
+                CapabilityStatus::Supported
+            } else {
+                CapabilityStatus::Unsupported
+            }
+        );
+        assert_eq!(
+            windows.global_hotkeys.is_fully_supported(),
+            cfg!(all(windows, feature = "hotkey"))
+        );
+        assert_eq!(
+            windows.clipboard_files.is_fully_supported(),
+            cfg!(all(
+                windows,
+                feature = "clipboard",
+                feature = "windows-shell"
+            ))
         );
         assert_eq!(windows.menus.status, CapabilityStatus::Supported);
         assert_eq!(
@@ -1482,6 +1520,7 @@ mod tests {
         );
 
         let windows_transparent = Window::new("Example")
+            .decorations(false)
             .transparent(true)
             .resolve_for(&HostCapabilities::windows_native_window_host());
         let macos_transparent = Window::new("Example")
@@ -1490,7 +1529,10 @@ mod tests {
         let linux_transparent = Window::new("Example")
             .transparent(true)
             .resolve_for(&HostCapabilities::linux_native_window_host());
-        assert!(!windows_transparent.effective.transparent);
+        assert_eq!(
+            windows_transparent.effective.transparent,
+            cfg!(all(windows, feature = "window-surface"))
+        );
         assert!(!macos_transparent.effective.transparent);
         assert_eq!(
             linux_transparent.effective.transparent,

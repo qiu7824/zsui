@@ -4326,6 +4326,7 @@ dependencies = [
  "unicode-segmentation",
  "windows",
  "windows-core",
+ "windows-numerics",
  "windows-sys 0.59.0",
  "winit",
  "zeroize",

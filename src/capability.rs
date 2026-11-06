@@ -240,8 +240,12 @@ impl HostCapabilities {
         capabilities.window_always_on_top =
             CapabilitySupport::supported("Win32 extended styles honor topmost windows");
         capabilities.window_transparency = CapabilitySupport::unsupported(
-            "Win32 main window transparency is not mapped by the native window host yet",
+            "enable window-surface for per-pixel Win32 transparency",
         );
+        #[cfg(all(windows, feature = "window-surface"))]
+        {
+            capabilities.window_transparency = CapabilitySupport::supported("Win32 per-pixel alpha surfaces use premultiplied Direct2D DIBs and UpdateLayeredWindow");
+        }
         capabilities.tray_or_status_menu = CapabilitySupport::partial(
             "Win32 status items, right-click callbacks, typed popup-menu commands and Explorer restart recovery are connected; target user-selection proof is still pending",
         );
@@ -256,8 +260,17 @@ impl HostCapabilities {
         );
         capabilities.clipboard_text = native_text_clipboard_support();
         capabilities.clipboard_image = native_image_clipboard_support();
-        capabilities.clipboard_files =
-            CapabilitySupport::unsupported("the native file clipboard service is not connected");
+        capabilities.clipboard_files = CapabilitySupport::unsupported(
+            "enable clipboard-files for the Win32 file clipboard service",
+        );
+        #[cfg(all(windows, feature = "clipboard", feature = "windows-shell"))]
+        {
+            capabilities.clipboard_files = CapabilitySupport::supported("Win32 Shell IDataObject and CF_HDROP file lists are connected through the STA clipboard service");
+        }
+        #[cfg(all(windows, feature = "hotkey"))]
+        {
+            capabilities.global_hotkeys = CapabilitySupport::supported("window-owned RegisterHotKey bindings dispatch typed commands and are unregistered at teardown");
+        }
         capabilities
     }
 

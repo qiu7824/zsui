@@ -461,6 +461,8 @@ impl WindowsWin32ViewInputRoute {
             hit_target_count: shared.hit_target_count,
             event_count: shared.view_event_count,
             message_count: shared.message_count,
+            #[cfg(feature = "windows-shell")]
+            drop_response: shared.drop_response,
             ui_command_count: shared.ui_command_count,
             app_command_count: shared.app_command_count,
             ui_command_ids: shared.ui_command_ids,

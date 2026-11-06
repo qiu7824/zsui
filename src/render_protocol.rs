@@ -1133,6 +1133,16 @@ pub fn required_native_draw_command_operation_names() -> Vec<&'static str> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeDrawPlan {
+    #[cfg(feature = "native-host")]
+    #[serde(default)]
+    pub(crate) native_occlusions: Vec<crate::native_host::NativeSurfaceOcclusion>,
+    #[cfg(feature = "windows-shell")]
+    #[serde(default)]
+    pub(crate) file_drop_targets: Vec<crate::shell_integration::FileDropPlacement>,
+    /// Native child placement metadata; it contains no platform handles.
+    #[cfg(feature = "native-host")]
+    #[serde(default)]
+    pub native_hosts: Vec<crate::NativeHostPlacement>,
     pub commands: Vec<NativeDrawCommand>,
     pub theme_mode: ZsuiThemeMode,
     /// Per-mille scale resolved from the target desktop's configured UI font.
@@ -1158,6 +1168,12 @@ pub(crate) fn normalize_typography_scale_per_mille(scale: f32) -> u16 {
 impl Default for NativeDrawPlan {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "native-host")]
+            native_occlusions: Vec::new(),
+            #[cfg(feature = "windows-shell")]
+            file_drop_targets: Vec::new(),
+            #[cfg(feature = "native-host")]
+            native_hosts: Vec::new(),
             commands: Vec::new(),
             theme_mode: ZsuiThemeMode::System,
             typography_scale_per_mille: default_typography_scale_per_mille(),
@@ -1168,6 +1184,12 @@ impl Default for NativeDrawPlan {
 impl NativeDrawPlan {
     pub fn new(commands: impl IntoIterator<Item = NativeDrawCommand>) -> Self {
         Self {
+            #[cfg(feature = "native-host")]
+            native_occlusions: Vec::new(),
+            #[cfg(feature = "windows-shell")]
+            file_drop_targets: Vec::new(),
+            #[cfg(feature = "native-host")]
+            native_hosts: Vec::new(),
             commands: commands.into_iter().collect(),
             theme_mode: ZsuiThemeMode::System,
             typography_scale_per_mille: default_typography_scale_per_mille(),
@@ -1311,6 +1333,12 @@ pub(crate) fn native_draw_plan_damage(
     previous: &NativeDrawPlan,
     next: &NativeDrawPlan,
 ) -> NativeDrawPlanDamage {
+    #[cfg(feature = "native-host")]
+    if previous.native_hosts != next.native_hosts
+        || previous.native_occlusions != next.native_occlusions
+    {
+        return NativeDrawPlanDamage::Full;
+    }
     if previous.theme_mode != next.theme_mode
         || previous.typography_scale_per_mille != next.typography_scale_per_mille
         || previous.commands.len() != next.commands.len()

@@ -176,8 +176,19 @@ impl ViewEditableTextDescriptor {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ViewEvent {
+    #[cfg(feature = "windows-shell")]
+    FilesDropped {
+        widget: WidgetId,
+        files: crate::FilesDropped,
+    },
+    #[cfg(feature = "native-window-events")]
+    NativeWindow {
+        event: crate::NativeWindowEvent,
+    },
     #[cfg(feature = "window-chrome")]
-    WindowStateChanged { state: crate::ZsWindowState },
+    WindowStateChanged {
+        state: crate::ZsWindowState,
+    },
     #[cfg(feature = "resize")]
     Resized {
         widget: WidgetId,
@@ -591,6 +602,10 @@ impl ViewHitTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ViewHitTargetKind {
     Unknown,
+    #[cfg(feature = "windows-shell")]
+    FileDropRegion,
+    #[cfg(feature = "native-host")]
+    NativeHost(crate::NativeHostId),
     #[cfg(feature = "resize")]
     ResizeHandle(crate::ZsResizeHandle),
     #[cfg(feature = "canvas")]
@@ -1102,6 +1117,10 @@ impl ViewHitTargetKind {
     /// pointer/wheel targets and intentionally do not own focus visuals.
     pub const fn focus_behavior(self) -> ViewFocusBehavior {
         match self {
+            #[cfg(feature = "windows-shell")]
+            Self::FileDropRegion => ViewFocusBehavior::None,
+            #[cfg(feature = "native-host")]
+            Self::NativeHost(_) => ViewFocusBehavior::TabStop,
             #[cfg(feature = "resize")]
             Self::ResizeHandle(_) => ViewFocusBehavior::TabStop,
             Self::Unknown | Self::Button | Self::Textbox | Self::TextEditor => {
@@ -1321,6 +1340,8 @@ impl<Msg> Default for ViewEventCx<Msg> {
 
 #[derive(Debug, Clone, Default)]
 pub struct AppCx {
+    #[cfg(feature = "windows-shell")]
+    drop_response: Option<crate::DropResponse>,
     allowance: crate::dispatch_queue::DispatchAllowance,
     rejected: usize,
     commands: Vec<Command>,
@@ -1335,6 +1356,22 @@ pub struct AppCx {
 }
 
 impl AppCx {
+    /// Acknowledges a completed native drop. Move and link targets must call
+    /// this before their drop update returns; queued asynchronous work should
+    /// use the non-destructive copy contract instead.
+    #[cfg(feature = "windows-shell")]
+    pub fn accept_drop(&mut self, effect: crate::DropEffect) {
+        self.drop_response = Some(crate::DropResponse::Accepted(effect));
+    }
+    /// Declines a native drop even when a matching View handler exists.
+    #[cfg(feature = "windows-shell")]
+    pub fn reject_drop(&mut self) {
+        self.drop_response = Some(crate::DropResponse::Rejected);
+    }
+    #[cfg(feature = "windows-shell")]
+    pub(crate) fn drop_response(&self) -> Option<crate::DropResponse> {
+        self.drop_response
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -1569,6 +1606,39 @@ impl AppCx {
             },
         ))
     }
+
+    /// Starts a Shell drag outside the update lock and reports cancellation or completion.
+    #[cfg(feature = "windows-shell")]
+    pub fn start_drag<Msg: Send + 'static>(
+        &mut self,
+        payload: crate::DragPayload,
+        effects: crate::DragEffects,
+        respond: impl Fn(ZsuiResult<crate::DragOutcome>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::StartDrag { payload, effects },
+            move |outcome| match outcome {
+                AppEffectOutcome::StartDrag(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
+
+    /// Opens a merged native Shell menu outside the update lock.
+    #[cfg(feature = "windows-shell")]
+    pub fn shell_menu<Msg: Send + 'static>(
+        &mut self,
+        spec: crate::ShellMenuSpec,
+        respond: impl Fn(ZsuiResult<crate::ShellMenuOutcome>) -> Msg + Send + Sync + 'static,
+    ) -> Result<crate::AppEffectCancellation, crate::QueueFull> {
+        self.try_effect_request(AppEffectRequest::typed(
+            AppEffect::ShellMenu(spec),
+            move |outcome| match outcome {
+                AppEffectOutcome::ShellMenu(result) => Some(respond(result)),
+                _ => None,
+            },
+        ))
+    }
     #[cfg(feature = "text-input-core")]
     pub fn text_edit_command(&mut self, command: ZsTextEditCommand) {
         let _ = self.try_text_edit_command(ZsTextEditCommandRequest::focused(command));
@@ -1618,8 +1688,15 @@ impl AppCx {
 
     /// Queues a native window action or reports per-update backpressure.
     #[cfg(feature = "window-chrome")]
-    pub fn try_window_command(&mut self, command: crate::ZsWindowCommand) -> Result<(), crate::QueueFull> {
-        self.admit("window command", self.window_commands.len(), crate::DISPATCH_BATCH_SIZE)?;
+    pub fn try_window_command(
+        &mut self,
+        command: crate::ZsWindowCommand,
+    ) -> Result<(), crate::QueueFull> {
+        self.admit(
+            "window command",
+            self.window_commands.len(),
+            crate::DISPATCH_BATCH_SIZE,
+        )?;
         self.window_commands.push(command);
         Ok(())
     }

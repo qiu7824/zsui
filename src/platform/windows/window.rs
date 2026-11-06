@@ -19,6 +19,11 @@ pub fn set_windows_win32_window_draw_plan(hwnd: HWND, plan: NativeDrawPlan) -> b
             renderer_resources: route_resources.unwrap_or_default(),
         });
     }
+    drop(plans);
+    sync_windows_native_hosts(hwnd as HWND);
+    if let Some(services) = window_services(hwnd as HWND) {
+        services.sync_appearance();
+    }
     true
 }
 
@@ -343,6 +348,10 @@ impl NativeMainWindowHost for WindowsWin32MainWindowHost {
 
     fn hide_main_window(&mut self, handle: Self::Handle) {
         self.record(NativeMainWindowHostOperation::HideMainWindow);
+        #[cfg(feature = "desktop-layer")]
+        if set_desktop_window_visibility(handle, false) {
+            return;
+        }
         unsafe {
             ShowWindow(handle, SW_HIDE);
         }
@@ -350,6 +359,10 @@ impl NativeMainWindowHost for WindowsWin32MainWindowHost {
 
     fn present_main_window(&mut self, handle: Self::Handle, mode: NativeMainWindowPresentMode) {
         self.record(NativeMainWindowHostOperation::PresentMainWindow);
+        #[cfg(feature = "desktop-layer")]
+        if set_desktop_window_visibility(handle, true) {
+            return;
+        }
         unsafe {
             match mode {
                 NativeMainWindowPresentMode::ActivateAndFocus => {
@@ -399,6 +412,10 @@ impl NativeMainWindowHost for WindowsWin32MainWindowHost {
 
     fn activate_main_window(&mut self, handle: Self::Handle) {
         self.record(NativeMainWindowHostOperation::ActivateMainWindow);
+        #[cfg(feature = "desktop-layer")]
+        if set_desktop_window_visibility(handle, true) {
+            return;
+        }
         unsafe {
             ShowWindow(handle, SW_SHOW);
             SetWindowPos(
@@ -417,6 +434,10 @@ impl NativeMainWindowHost for WindowsWin32MainWindowHost {
 
     fn foreground_main_window(&mut self, handle: Self::Handle) {
         self.record(NativeMainWindowHostOperation::ForegroundMainWindow);
+        #[cfg(feature = "desktop-layer")]
+        if set_desktop_window_visibility(handle, true) {
+            return;
+        }
         unsafe {
             SetForegroundWindow(handle);
         }
@@ -424,6 +445,10 @@ impl NativeMainWindowHost for WindowsWin32MainWindowHost {
 
     fn restore_main_window(&mut self, handle: Self::Handle) {
         self.record(NativeMainWindowHostOperation::RestoreMainWindow);
+        #[cfg(feature = "desktop-layer")]
+        if set_desktop_window_visibility(handle, true) {
+            return;
+        }
         unsafe {
             ShowWindow(handle, SW_SHOW);
         }
@@ -574,6 +599,30 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
 
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
+        #[cfg(feature = "windows-direct2d")]
+        if let Some(services) = window_services(hwnd).filter(|services| services.uses_direct2d()) {
+            if rect.right > 0 && rect.bottom > 0 {
+                let opaque = services.integration.borrow().surface == crate::WindowSurface::Opaque;
+                let mut buffered = if opaque {
+                    WindowsBufferedPaint::begin(target, &rect)
+                } else {
+                    None
+                };
+                let dc = buffered.as_ref().map_or(target, |buffer| buffer.hdc());
+                if let Err(error) =
+                    services.paint_direct2d(dc, rect.right as u32, rect.bottom as u32, false)
+                {
+                    services.record_error(error);
+                }
+                #[cfg(feature = "window-chrome")]
+                if let Some(buffered) = buffered.as_mut() {
+                    paint_integrated_caption(hwnd, buffered);
+                }
+                drop(buffered);
+            }
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
         let dirty = RECT {
             left: ps.rcPaint.left.max(rect.left),
             top: ps.rcPaint.top.max(rect.top),
@@ -589,11 +638,15 @@ unsafe fn paint_no_flicker_background(hwnd: HWND) -> LRESULT {
                 && dirty.top == rect.top
                 && dirty.right == rect.right
                 && dirty.bottom == rect.bottom;
-            if full_client {
+            let integrated = window_services(hwnd)
+                .is_some_and(|services| services.integration.borrow().title_bar.is_some());
+            if full_client || integrated {
                 // Restore and explicit whole-window redraws keep the established
                 // replay path; damage culling cannot save work for a full frame.
                 if let Some(mut buffered) = WindowsBufferedPaint::begin(target, &rect) {
                     surface.paint(buffered.hdc(), rect, Some(&mut buffered));
+                    #[cfg(feature = "window-chrome")]
+                    paint_integrated_caption(hwnd, &mut buffered);
                 } else {
                     surface.paint(target, rect, None);
                 }
@@ -635,6 +688,18 @@ unsafe fn paint_window_client_to_dc(
     }
     let mut rect: RECT = zeroed();
     if GetClientRect(hwnd, &mut rect) != 0 {
+        #[cfg(feature = "windows-direct2d")]
+        if let Some(services) = window_services(hwnd).filter(|services| services.uses_direct2d()) {
+            if rect.right > 0 && rect.bottom > 0 {
+                if let Err(error) =
+                    services.paint_direct2d(target, rect.right as u32, rect.bottom as u32, true)
+                {
+                    services.record_error(error);
+                }
+            }
+            GdiFlush();
+            return 0;
+        }
         window_paint_surface(hwnd).paint(target, rect, None);
         GdiFlush();
     }

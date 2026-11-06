@@ -1,5 +1,7 @@
 #[derive(Debug, Clone, Default)]
 pub struct LiveViewUpdate {
+    #[cfg(feature = "windows-shell")]
+    pub drop_response: Option<crate::DropResponse>,
     pub redraw: bool,
     pub message_count: usize,
     pub commands: Vec<Command>,
@@ -290,7 +292,11 @@ impl SharedLiveViewRuntime {
     }
 
     #[cfg(feature = "canvas")]
-    pub fn canvas_hover_region(&self, widget: WidgetId, point: crate::Point) -> Option<Option<u64>> {
+    pub fn canvas_hover_region(
+        &self,
+        widget: WidgetId,
+        point: crate::Point,
+    ) -> Option<Option<u64>> {
         self.lock().canvas_hover_region(widget, point)
     }
 
@@ -645,6 +651,8 @@ where
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
             redraw: !self.suspended,
+            #[cfg(feature = "windows-shell")]
+            drop_response: app_cx.drop_response(),
             message_count,
             commands: app_cx.commands().to_vec(),
             ui_commands: app_cx.ui_commands().to_vec(),

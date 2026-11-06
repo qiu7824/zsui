@@ -360,6 +360,39 @@ impl WindowsBufferedPaint {
         self.update_target = update_target;
     }
 
+    #[cfg(all(feature = "windows-win32", feature = "window-chrome"))]
+    pub(crate) unsafe fn clear_background_alpha(&mut self, rect: RECT, background: Color) {
+        let mut bits = std::ptr::null_mut();
+        let mut stride = 0;
+        if GetBufferedPaintBits(self.buffer, &mut bits, &mut stride) != 0
+            || bits.is_null()
+            || stride <= 0
+        {
+            return;
+        }
+        windows_sys::Win32::UI::Controls::BufferedPaintSetAlpha(
+            self.buffer as isize,
+            std::ptr::null(),
+            255,
+        );
+        let left = rect.left.max(self.rect.left);
+        let top = rect.top.max(self.rect.top);
+        let right = rect.right.min(self.rect.right);
+        let bottom = rect.bottom.min(self.rect.bottom);
+        for y in top..bottom {
+            for x in left..right {
+                let pixel =
+                    bits.add(((y - self.rect.top) * stride + (x - self.rect.left)) as usize);
+                if (*pixel).rgbRed == background.r
+                    && (*pixel).rgbGreen == background.g
+                    && (*pixel).rgbBlue == background.b
+                {
+                    *pixel = std::mem::zeroed();
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "windows-rust-text")]
     fn text_surface(&mut self) -> Option<WindowsBufferedTextSurface<'_>> {
         let width = u32::try_from(self.rect.right.checked_sub(self.rect.left)?).ok()?;

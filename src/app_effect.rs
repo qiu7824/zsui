@@ -25,6 +25,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AppEffect {
+    /// Starts a Shell drag on the requesting window's UI thread.
+    #[cfg(feature = "windows-shell")]
+    StartDrag {
+        payload: crate::DragPayload,
+        effects: crate::DragEffects,
+    },
+    /// Opens a merged Shell/application context menu.
+    #[cfg(feature = "windows-shell")]
+    ShellMenu(crate::ShellMenuSpec),
     /// Opens the native file-open dialog. `Ok(None)` means the user cancelled.
     OpenFileDialog(FileDialogSpec),
     /// Opens the native save dialog. `Ok(None)` means the user cancelled.
@@ -44,6 +53,12 @@ pub enum AppEffect {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AppEffectOutcome {
+    /// Completion of a Shell drag.
+    #[cfg(feature = "windows-shell")]
+    StartDrag(ZsuiResult<crate::DragOutcome>),
+    /// Selection from a Shell/application menu.
+    #[cfg(feature = "windows-shell")]
+    ShellMenu(ZsuiResult<crate::ShellMenuOutcome>),
     /// Result of [`AppEffect::OpenFileDialog`].
     OpenFileDialog(ZsuiResult<Option<Vec<PathBuf>>>),
     /// Result of [`AppEffect::SaveFileDialog`].
@@ -274,6 +289,15 @@ impl fmt::Debug for AppEffectRequest {
 #[allow(dead_code)] // Called by the per-host pending-effect drain patches.
 pub(crate) fn execute_native_app_effect(effect: &AppEffect) -> AppEffectOutcome {
     match effect {
+        #[cfg(feature = "windows-shell")]
+        AppEffect::StartDrag { .. } => AppEffectOutcome::StartDrag(Err(
+            crate::ZsuiError::unsupported("shell_drag", "a live Windows window is required"),
+        )),
+        #[cfg(feature = "windows-shell")]
+        AppEffect::ShellMenu(_) => AppEffectOutcome::ShellMenu(Err(crate::ZsuiError::unsupported(
+            "shell_menu",
+            "a live Windows window is required",
+        ))),
         AppEffect::OpenFileDialog(spec) => {
             AppEffectOutcome::OpenFileDialog(NativeFileDialogService::new().open_file_dialog(spec))
         }

@@ -306,7 +306,8 @@ mod tests {
     #[test]
     fn all_semantic_icons_render_on_gdi_without_system_fonts() {
         let mut surface = Surface::new();
-        let mut atlas = vec![255_u8; 9 * 48 * 5 * 48 * 4];
+        let rows = crate::ZsIcon::ALL.len().div_ceil(9);
+        let mut atlas = vec![255_u8; 9 * 48 * rows * 48 * 4];
         for (index, icon) in crate::ZsIcon::ALL.into_iter().enumerate() {
             surface.bytes().fill(255);
             let command = NativeDrawIconCommand::new(
@@ -346,7 +347,7 @@ mod tests {
             let directory = std::path::PathBuf::from(directory);
             std::fs::create_dir_all(&directory).unwrap();
             let file = std::fs::File::create(directory.join("windows-symbolic-icons.png")).unwrap();
-            let mut encoder = png::Encoder::new(file, 9 * 48, 5 * 48);
+            let mut encoder = png::Encoder::new(file, 9 * 48, rows as u32 * 48);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
             encoder

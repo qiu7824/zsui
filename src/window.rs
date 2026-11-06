@@ -20,6 +20,20 @@ pub struct WindowSpec {
     pub custom_title_bar: bool,
     pub always_on_top: bool,
     pub transparent: bool,
+    /// Optional host integration policies, with conservative defaults.
+    #[serde(default)]
+    pub integration: crate::WindowIntegration,
+    /// Global keyboard bindings owned by this native window.
+    #[serde(default)]
+    pub global_hotkeys: Vec<crate::HotkeySpec>,
+    /// Safe native child declarations for this window.
+    #[cfg(feature = "native-host")]
+    #[serde(default)]
+    pub native_hosts: crate::NativeHosts,
+    /// Per-window native providers; runtime objects are never serialized.
+    #[cfg(all(windows, feature = "windows-win32", feature = "native-host"))]
+    #[serde(skip)]
+    pub windows_hooks: Option<crate::windows_win32_host::interop::WindowsWindowHooks>,
     pub icon_path: Option<String>,
     pub menu: Option<MenuSpec>,
     pub content: Option<UiNode>,
@@ -58,6 +72,12 @@ impl WindowSpec {
             custom_title_bar: false,
             always_on_top: false,
             transparent: false,
+            integration: crate::WindowIntegration::default(),
+            global_hotkeys: Vec::new(),
+            #[cfg(feature = "native-host")]
+            native_hosts: crate::NativeHosts::default(),
+            #[cfg(all(windows, feature = "windows-win32", feature = "native-host"))]
+            windows_hooks: None,
             icon_path: None,
             menu: None,
             content: None,

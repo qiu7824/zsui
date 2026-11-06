@@ -28,6 +28,10 @@ impl<Msg> ViewNode<Msg> {
     }
     fn event_targets_self(&self, event: &ViewEvent) -> bool {
         match (self.id, event) {
+            #[cfg(feature = "windows-shell")]
+            (Some(own), ViewEvent::FilesDropped { widget, .. }) => own == *widget,
+            #[cfg(feature = "native-window-events")]
+            (_, ViewEvent::NativeWindow { .. }) => false,
             #[cfg(feature = "resize")]
             (Some(id), ViewEvent::Resized { widget, .. }) => id == *widget,
             (Some(id), ViewEvent::Click { widget })
@@ -1437,7 +1441,8 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds =
+                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -1547,6 +1552,22 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_hit_targets(&self, hit_targets: &mut Vec<ViewHitTarget>, clip: Option<Rect>) {
+        #[cfg(feature = "native-host")]
+        if let Some((id, focusable)) = self.native_host {
+            if focusable {
+                if let (Some(widget), Some(bounds)) = (
+                    self.id,
+                    self.bounds.and_then(|bounds| clipped_rect(bounds, clip)),
+                ) {
+                    hit_targets.push(ViewHitTarget::with_kind(
+                        widget,
+                        bounds,
+                        ViewHitTargetKind::NativeHost(id),
+                    ));
+                }
+            }
+            return;
+        }
         #[cfg(feature = "menu-flyout")]
         if matches!(self.kind, ViewNodeKind::MenuFlyout { .. }) {
             #[cfg(feature = "context-menu")]
@@ -1908,7 +1929,8 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds =
+                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -1952,6 +1974,10 @@ impl<Msg> ViewNode<Msg> {
         #[cfg(feature = "progress-ring")]
         {
             accepts_input &= !matches!(self.kind, ViewNodeKind::ProgressRing { .. });
+        }
+        #[cfg(feature = "windows-shell")]
+        {
+            accepts_input &= self.hit_target_kind() != ViewHitTargetKind::FileDropRegion;
         }
         if accepts_input {
             if let (Some(widget), Some(bounds)) = (self.id, self.bounds) {
@@ -2302,7 +2328,8 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds = tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds =
+                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -3475,6 +3502,15 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn hit_target_kind(&self) -> ViewHitTargetKind {
+        let kind = self.base_hit_target_kind();
+        #[cfg(feature = "windows-shell")]
+        if kind == ViewHitTargetKind::Unknown && self.file_drop_handler.is_some() {
+            return ViewHitTargetKind::FileDropRegion;
+        }
+        kind
+    }
+
+    fn base_hit_target_kind(&self) -> ViewHitTargetKind {
         match &self.kind {
             #[cfg(feature = "canvas")]
             ViewNodeKind::Canvas { .. } => ViewHitTargetKind::Canvas,

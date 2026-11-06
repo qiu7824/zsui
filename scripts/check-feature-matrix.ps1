@@ -1,8 +1,16 @@
 param(
-    [switch]$Locked
+    [switch]$Locked,
+    [string]$ArtifactLog
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($ArtifactLog) {
+    if (-not [System.IO.Path]::IsPathRooted($ArtifactLog)) { throw "ArtifactLog must be an absolute path" }
+    $artifactParent = Split-Path -Parent $ArtifactLog
+    if (-not (Test-Path -LiteralPath $artifactParent -PathType Container)) { throw "ArtifactLog parent directory does not exist: $artifactParent" }
+    [System.IO.File]::WriteAllText($ArtifactLog, "", [System.Text.UTF8Encoding]::new($false))
+}
 
 $cargoArgs = @("check", "--no-default-features")
 if ($Locked) {
@@ -38,6 +46,12 @@ $singleFeatures = @(
     "textbox",
     "shortcuts",
     "window-chrome",
+    "native-window-events",
+    "native-host",
+    "window-surface",
+    "desktop-layer",
+    "windows-shell",
+    "windows-direct2d",
     "password-box",
     "tooltip",
     "dialog",
@@ -76,6 +90,7 @@ $singleFeatures = @(
     "android",
     "mobile",
     "clipboard",
+    "clipboard-files",
     "image",
     "image-preview",
     "video",
@@ -132,7 +147,15 @@ function Invoke-CargoFeatureCheck {
     param([string]$Features)
 
     Write-Host "cargo feature check: $Features"
-    & cargo @cargoArgs --features $Features
+    if ($ArtifactLog) {
+        & cargo @cargoArgs --features $Features --message-format=json-render-diagnostics | ForEach-Object {
+            [System.IO.File]::AppendAllText($ArtifactLog, "$_`n", [System.Text.UTF8Encoding]::new($false))
+            $record = $_ | ConvertFrom-Json
+            if ($record.reason -eq "compiler-message") { Write-Host $record.message.rendered }
+        }
+    } else {
+        & cargo @cargoArgs --features $Features
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "cargo check failed for features: $Features"
     }

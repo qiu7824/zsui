@@ -172,6 +172,14 @@ impl WindowsWin32MessageLoop {
             if code == 0 {
                 return WindowsWin32MessageLoopResult::Quit(msg.wParam as i32);
             }
+            if windows.iter().any(|window| {
+                window
+                    .services
+                    .as_ref()
+                    .is_some_and(|services| services.pre_translate(&msg))
+            }) {
+                continue;
+            }
             if windows
                 .iter()
                 .any(|window| window.translate_accelerator(&msg))
@@ -280,6 +288,9 @@ pub fn create_owned_windows_for_specs_with_routes(
                 host.apply_main_window_appearance(created.main);
                 host.apply_main_window_appearance(created.quick);
                 let mut owned = WindowsWin32OwnedMainWindowHandles::new(created);
+                if let Some(services) = owned.services.as_ref() {
+                    services.configure(spec)?;
+                }
                 if let Some(icon_path) = icon_path.as_deref() {
                     let icon = WindowsWin32OwnedAppIconResource::from_icon_path(icon_path)?;
                     owned.set_main_owned_app_icon(&mut host, icon);
@@ -292,7 +303,15 @@ pub fn create_owned_windows_for_specs_with_routes(
                 }
                 if main_visible {
                     unsafe {
-                        ShowWindow(created.main, SW_SHOW);
+                        ShowWindow(
+                            created.main,
+                            if matches!(spec.integration.layer, crate::WindowLayer::Desktop { .. })
+                            {
+                                SW_SHOWNOACTIVATE
+                            } else {
+                                SW_SHOW
+                            },
+                        );
                         UpdateWindow(created.main);
                     }
                 }
@@ -311,6 +330,7 @@ pub fn create_owned_windows_for_specs_with_routes(
 
 #[derive(Debug)]
 pub struct WindowsWin32OwnedMainWindowHandles {
+    services: Option<Rc<WindowsWindowServices>>,
     handles: NativeMainWindowHandles<HWND>,
     app_icons: Vec<WindowsWin32OwnedAppIconResource>,
     window_menu: Option<WindowsWin32OwnedWindowMenu>,
@@ -320,6 +340,7 @@ pub struct WindowsWin32OwnedMainWindowHandles {
 impl WindowsWin32OwnedMainWindowHandles {
     pub fn new(handles: NativeMainWindowHandles<HWND>) -> Self {
         Self {
+            services: window_services(handles.main),
             handles,
             app_icons: Vec::new(),
             window_menu: None,
@@ -534,7 +555,6 @@ fn system_metric(metric: i32) -> i32 {
     unsafe { GetSystemMetrics(metric).max(1) }
 }
 
-
 pub fn run_windows_win32_native_window_event_loop(specs: &[WindowSpec]) -> ZsuiResult<()> {
     run_windows_win32_native_window_event_loop_with_status_items(specs, &[])
 }
@@ -608,7 +628,15 @@ pub fn run_windows_win32_native_window_event_loop_with_routes_and_status_items(
         }
         _status_item_host = Some(host);
     }
-    match WindowsWin32MessageLoop::run_with_windows(&_handles) {
+    let outcome = WindowsWin32MessageLoop::run_with_windows(&_handles);
+    if let Some(error) = _handles
+        .iter()
+        .filter_map(|handle| handle.services.as_ref())
+        .find_map(|services| services.error.borrow_mut().take())
+    {
+        return Err(ZsuiError::host("native_integration", error));
+    }
+    match outcome {
         WindowsWin32MessageLoopResult::Quit(_) => Ok(()),
         WindowsWin32MessageLoopResult::Failed => Err(ZsuiError::host(
             "windows_win32_message_loop",

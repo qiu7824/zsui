@@ -106,11 +106,37 @@ pub enum Icon {
     ChevronRight,
     /// Reveal protected text while explicitly requested.
     PasswordReveal,
+    /// Back action or content.
+    Back,
+    /// Forward action or content.
+    Forward,
+    /// Up action or content.
+    Up,
+    /// Sort action or content.
+    Sort,
+    /// View action or content.
+    View,
+    /// Rename action or content.
+    Rename,
+    /// Share action or content.
+    Share,
+    /// Maximize action or content.
+    Maximize,
+    /// Restore action or content.
+    Restore,
+    /// Preview action or content.
+    Preview,
+    /// Properties action or content.
+    Properties,
+    /// Star action or content.
+    Star,
+    /// StarFilled action or content.
+    StarFilled,
 }
 
 impl Icon {
     /// All stable semantic icons, in catalog order.
-    pub const ALL: [Self; 45] = [
+    pub const ALL: [Self; 58] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -156,6 +182,19 @@ impl Icon {
         Self::ChevronLeft,
         Self::ChevronRight,
         Self::PasswordReveal,
+        Self::Back,
+        Self::Forward,
+        Self::Up,
+        Self::Sort,
+        Self::View,
+        Self::Rename,
+        Self::Share,
+        Self::Maximize,
+        Self::Restore,
+        Self::Preview,
+        Self::Properties,
+        Self::Star,
+        Self::StarFilled,
     ];
     #[cfg(any(feature = "icon", feature = "button"))]
     const fn into_raw(self) -> crate::ZsIcon {
@@ -205,6 +244,19 @@ impl Icon {
             Self::ChevronLeft => crate::ZsIcon::ChevronLeft,
             Self::ChevronRight => crate::ZsIcon::ChevronRight,
             Self::PasswordReveal => crate::ZsIcon::PasswordReveal,
+            Self::Back => crate::ZsIcon::Back,
+            Self::Forward => crate::ZsIcon::Forward,
+            Self::Up => crate::ZsIcon::Up,
+            Self::Sort => crate::ZsIcon::Sort,
+            Self::View => crate::ZsIcon::View,
+            Self::Rename => crate::ZsIcon::Rename,
+            Self::Share => crate::ZsIcon::Share,
+            Self::Maximize => crate::ZsIcon::Maximize,
+            Self::Restore => crate::ZsIcon::Restore,
+            Self::Preview => crate::ZsIcon::Preview,
+            Self::Properties => crate::ZsIcon::Properties,
+            Self::Star => crate::ZsIcon::Star,
+            Self::StarFilled => crate::ZsIcon::StarFilled,
         }
     }
 }

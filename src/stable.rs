@@ -56,6 +56,31 @@ pub use crate::TextWrap;
 /// Semantic colors resolved by the active native theme.
 pub use crate::ThemeColorToken;
 
+/// Typed native window commands, including show/hide and close-veto-aware close.
+#[cfg(feature = "window-chrome")]
+pub use crate::ZsWindowCommand as WindowCommand;
+/// Native-window appearance, stacking and presentation policies.
+pub use crate::{
+    AlphaHitTest, NativeWindowEvent, WindowBackdrop, WindowLayer, WindowRenderer, WindowSurface,
+};
+/// Resolved system palette and its semantic colors.
+pub use crate::{Color, PlatformPalette, ZsuiThemeMode as ThemeMode};
+/// File transfers and native context-menu requests.
+#[cfg(feature = "windows-shell")]
+pub use crate::{
+    DragEffects, DragOutcome, DragPayload, DropEffect, FilesDropped, ShellMenuOutcome,
+    ShellMenuSpec,
+};
+/// Stable native child identities and declarative, handle-free provider sets.
+#[cfg(feature = "native-host")]
+pub use crate::{NativeChildSpec, NativeHostId, NativeHosts};
+
+/// Declares a native child slot controlled by the owning window's provider set.
+#[cfg(feature = "native-host")]
+pub fn native_host<Message>(id: NativeHostId) -> Element<Message> {
+    Element::from_raw(crate::native_host(id))
+}
+
 pub use crate::{
     DialogButtons, DialogLevel, DialogResponse, DirectoryDialogSpec, FileDialogFilter,
     FileDialogSpec, NativeDialogSpec, SaveFileDialogSpec,
@@ -206,6 +231,57 @@ pub struct Element<Message> {
 }
 
 impl<Message> Element<Message> {
+    /// Selects a semantic appearance for this subtree and its native window.
+    pub fn theme_mode(mut self, mode: ThemeMode) -> Self {
+        self.inner = self.inner.theme_mode(mode);
+        self
+    }
+    /// Marks noninteractive parts of an integrated title area as draggable.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_drag_region(mut self) -> Self
+    where
+        Message: Clone,
+    {
+        self.inner = self.inner.window_drag_region();
+        self
+    }
+    /// Controls Tab/F6 traversal into a native child slot.
+    #[cfg(feature = "native-host")]
+    pub fn native_focusable(mut self, focusable: bool) -> Self {
+        self.inner = self.inner.native_focusable(focusable);
+        self
+    }
+
+    /// Maps native window notifications into the application's typed message.
+    #[cfg(feature = "native-window-events")]
+    pub fn on_native_window_event(
+        mut self,
+        handler: impl Fn(NativeWindowEvent) -> Message + Send + Sync + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_native_window_event(handler);
+        self
+    }
+
+    /// Receives file copies dropped inside this element's visible bounds.
+    #[cfg(feature = "windows-shell")]
+    pub fn on_drop_files(
+        mut self,
+        handler: impl Fn(FilesDropped) -> Message + Send + Sync + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_drop_files(handler);
+        self
+    }
+
+    /// Receives explicitly permitted file transfer operations.
+    #[cfg(feature = "windows-shell")]
+    pub fn on_drop_files_with(
+        mut self,
+        effects: DragEffects,
+        handler: impl Fn(FilesDropped) -> Message + Send + Sync + 'static,
+    ) -> Self {
+        self.inner = self.inner.on_drop_files_with(effects, handler);
+        self
+    }
     fn from_raw(inner: crate::ViewNode<Message>) -> Self {
         Self { inner }
     }
@@ -404,6 +480,48 @@ pub struct UpdateContext<'a> {
 }
 
 impl UpdateContext<'_> {
+    /// Requests a native window action without exposing a platform handle.
+    #[cfg(feature = "window-chrome")]
+    pub fn window_command(&mut self, command: WindowCommand) {
+        self.inner.window_command(command);
+    }
+    /// Moves keyboard focus after the next layout.
+    pub fn focus(&mut self, widget: WidgetId) {
+        self.inner.focus(widget.into());
+    }
+    /// Acknowledges a completed native drop; move/link operations require it.
+    #[cfg(feature = "windows-shell")]
+    pub fn accept_drop(&mut self, effect: DropEffect) {
+        self.inner.accept_drop(effect);
+    }
+    /// Declines the current native drop.
+    #[cfg(feature = "windows-shell")]
+    pub fn reject_drop(&mut self) {
+        self.inner.reject_drop();
+    }
+    /// Starts a Shell drag outside the application update lock.
+    #[cfg(feature = "windows-shell")]
+    pub fn start_drag<Message: Send + 'static>(
+        &mut self,
+        payload: DragPayload,
+        effects: DragEffects,
+        respond: impl Fn(Result<DragOutcome, Error>) -> Message + Send + Sync + 'static,
+    ) -> Result<EffectCancellation, QueueFull> {
+        self.inner.start_drag(payload, effects, move |result| {
+            respond(result.map_err(Error))
+        })
+    }
+
+    /// Opens a native Shell/application menu outside the update lock.
+    #[cfg(feature = "windows-shell")]
+    pub fn shell_menu<Message: Send + 'static>(
+        &mut self,
+        spec: ShellMenuSpec,
+        respond: impl Fn(Result<ShellMenuOutcome, Error>) -> Message + Send + Sync + 'static,
+    ) -> Result<EffectCancellation, QueueFull> {
+        self.inner
+            .shell_menu(spec, move |result| respond(result.map_err(Error)))
+    }
     /// Requests orderly shutdown after the current update completes.
     pub fn quit(&mut self) {
         self.inner.quit();
@@ -521,6 +639,80 @@ pub fn window(title: impl Into<String>) -> WindowBuilder {
 }
 
 impl WindowBuilder {
+    /// Installs typed application command delivery independently of the View's
+    /// lifetime, so global shortcuts remain usable while a hidden View is released.
+    pub fn stateful_with_commands<State, Message, ViewFn, UpdateFn, CommandFn>(
+        mut self,
+        state: State,
+        view: ViewFn,
+        update: UpdateFn,
+        command: CommandFn,
+    ) -> RunnableWindow
+    where
+        State: Send + 'static,
+        Message: Clone + Send + 'static,
+        ViewFn: Fn(&State) -> Element<Message> + Send + 'static,
+        UpdateFn: for<'a> Fn(&mut State, Message, &mut UpdateContext<'a>) + Send + 'static,
+        CommandFn: Fn(&crate::Command) -> Option<Message> + Send + 'static,
+    {
+        self.inner = self.inner.stateful_view_with_app_commands(
+            state,
+            move |state| view(state).into_raw(),
+            move |state, message, context| {
+                update(state, message, &mut UpdateContext { inner: context })
+            },
+            command,
+        );
+        RunnableWindow { inner: self.inner }
+    }
+    /// Registers safe native child providers for this window.
+    #[cfg(feature = "native-host")]
+    pub fn native_hosts(mut self, providers: NativeHosts) -> Self {
+        self.inner = self.inner.native_hosts(providers);
+        self
+    }
+
+    /// Uses system caption buttons and reserves the requested logical title height.
+    #[cfg(feature = "window-chrome")]
+    pub fn integrated_title_bar(
+        mut self,
+        height: Dp,
+        backdrop: WindowBackdrop,
+    ) -> Result<Self, Error> {
+        let title = crate::IntegratedTitleBar::new(crate::Dp::new(height.0))
+            .map_err(Error)?
+            .backdrop(backdrop);
+        self.inner = self.inner.integrated_title_bar(title);
+        Ok(self)
+    }
+
+    /// Selects an opaque or per-pixel-alpha surface for an undecorated window.
+    #[cfg(feature = "window-surface")]
+    pub fn surface(mut self, surface: WindowSurface) -> Self {
+        self.inner = self.inner.surface(surface);
+        self
+    }
+
+    /// Selects normal or non-activating desktop stacking.
+    #[cfg(feature = "desktop-layer")]
+    pub fn layer(mut self, layer: WindowLayer) -> Self {
+        self.inner = self.inner.layer(layer);
+        self
+    }
+
+    /// Selects the optional Windows raster backend.
+    #[cfg(feature = "windows-direct2d")]
+    pub fn renderer(mut self, renderer: WindowRenderer) -> Self {
+        self.inner = self.inner.renderer(renderer);
+        self
+    }
+
+    /// Registers a system-wide shortcut; notifications arrive as NativeWindowEvent.
+    #[cfg(feature = "hotkey")]
+    pub fn global_hotkey(mut self, shortcut: crate::HotkeySpec) -> Self {
+        self.inner = self.inner.global_hotkey(shortcut);
+        self
+    }
     /// Sets the application identity used by desktop services.
     pub fn app_name(mut self, name: impl Into<String>) -> Self {
         self.inner = self.inner.app_name(name);

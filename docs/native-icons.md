@@ -100,7 +100,7 @@ All native renderers have the complete built-in vector fallback.
 
 ## Runtime evidence
 
-The Windows fallback paint test checks all 45 semantic icons for nonempty GDI+
+The Windows fallback paint test checks all 58 semantic icons for nonempty GDI+
 pixels; the native layout example exercises light, dark and high-contrast
 rendering, including differently tinted instances of one icon. Native target
 captures cover all 45 icons in light, dark and high-contrast scenes on

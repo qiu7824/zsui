@@ -10,6 +10,33 @@ fn windows_palette_for_draw_plan(draw_plan: Option<&NativeDrawPlan>) -> WindowsG
     }
 }
 
+pub(crate) fn windows_platform_palette(mode: crate::ZsuiThemeMode) -> crate::PlatformPalette {
+    let mode = resolved_windows_theme_mode(mode);
+    let palette = match mode {
+        crate::ZsuiThemeMode::HighContrast => windows_high_contrast_palette(),
+        crate::ZsuiThemeMode::Dark => WindowsGdiPalette::from_theme(&crate::ZsuiTheme::dark()),
+        _ => WindowsGdiPalette::default(),
+    };
+    crate::PlatformPalette {
+        mode,
+        colors: [
+            palette.primary_text,
+            palette.secondary_text,
+            palette.disabled_text,
+            palette.accent,
+            palette.accent_text,
+            palette.surface,
+            palette.surface_raised,
+            palette.control,
+            palette.border,
+            palette.strong_stroke,
+            palette.success,
+            palette.warning,
+            palette.danger,
+        ],
+    }
+}
+
 fn resolved_windows_theme_mode(theme_mode: crate::ZsuiThemeMode) -> crate::ZsuiThemeMode {
     resolved_windows_theme_mode_for_system(theme_mode, windows_system_theme_mode())
 }

@@ -1,0 +1,72 @@
+{
+  "project": "Microsoft Fluent UI System Icons",
+  "license": "MIT",
+  "commit": "e15fc0de25fab983e3e42bac8798be69a85c23bf",
+  "assets": [
+    {
+      "file": "back.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Arrow%20Left/SVG/ic_fluent_arrow_left_20_regular.svg",
+      "sha256": "db86c904f14b430f6100b1c6bfe7e9b44fdc0ab375bcbbf9c74d371c87389009"
+    },
+    {
+      "file": "forward.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Arrow%20Right/SVG/ic_fluent_arrow_right_20_regular.svg",
+      "sha256": "b69b65ab472132acbe2ece874a387e5355a84181398572aecae827e4d043d622"
+    },
+    {
+      "file": "up.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Arrow%20Up/SVG/ic_fluent_arrow_up_20_regular.svg",
+      "sha256": "56172b2b7f9c077f90f51f147c432fa20cb1bb168230eec33751c493d6824bb6"
+    },
+    {
+      "file": "sort.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Arrow%20Sort/SVG/ic_fluent_arrow_sort_20_regular.svg",
+      "sha256": "2f4c40b5fa1a5dff788f77b5b1d41c61f388d0a45ebfb9a10343fe7904ba119a"
+    },
+    {
+      "file": "view.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Grid/SVG/ic_fluent_grid_20_regular.svg",
+      "sha256": "ad71db325e5c3521696f990a485a39d812871033ec85cbcc73b0ca0cbf50a55e"
+    },
+    {
+      "file": "rename.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Rename/SVG/ic_fluent_rename_20_regular.svg",
+      "sha256": "df0cff51d2aa82fdacb2a764d47a8b77cf2fd5ef5efa1e87ffc223832bd0dd8b"
+    },
+    {
+      "file": "share.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Share/SVG/ic_fluent_share_20_regular.svg",
+      "sha256": "0daa9ea313db8c6a2b92bd097312ef8851a449ef9b499ba69b525692eaa0c7a7"
+    },
+    {
+      "file": "maximize.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Square/SVG/ic_fluent_square_20_regular.svg",
+      "sha256": "6c9a157db4987d07e029f2fa0271f8b504fdae2e31423647defc0a4536d0130b"
+    },
+    {
+      "file": "restore.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Square%20Multiple/SVG/ic_fluent_square_multiple_20_regular.svg",
+      "sha256": "1531d8153716d09a5441adedb1b1fea4d2ee7484d407d2c368ffbf8d66b05709"
+    },
+    {
+      "file": "preview.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Eye/SVG/ic_fluent_eye_20_regular.svg",
+      "sha256": "3fedb211bdbd5d47c9d1e2a820fe73ffd0067ebf555ed8fe435033a09d0d2d1d"
+    },
+    {
+      "file": "properties.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Info/SVG/ic_fluent_info_20_regular.svg",
+      "sha256": "498bc2a24fb99480e7565b502467a4cc8e967b41b0c374c1283a68fc0da73b7a"
+    },
+    {
+      "file": "star.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Star/SVG/ic_fluent_star_20_regular.svg",
+      "sha256": "dec99558a39bededa688446716215216a8e051c6518a51f886f53a08a67e16cb"
+    },
+    {
+      "file": "star-filled.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/e15fc0de25fab983e3e42bac8798be69a85c23bf/assets/Star/SVG/ic_fluent_star_20_filled.svg",
+      "sha256": "81784fe79cae62b5d4c0ed90741d32f276321d841b45c173592df72adf30623b"
+    }
+  ]
+}

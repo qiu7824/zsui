@@ -125,6 +125,8 @@ sudo apt-get install build-essential pkg-config libdbus-1-dev libcairo2-dev libp
 选择 `linux-gtk` 时还需要 `libgtk-4-dev`。其他发行版安装对应开发包。
 后端选择与移植约束见[平台移植](https://github.com/qiu7824/zsui/blob/main/docs/porting.md)。
 
+Windows 原生控件插槽、系统标题栏、透明桌面表面、Shell 菜单与拖放、文件剪贴板和全局热键见[原生窗口集成](docs/native-window-integration.md)。
+
 ## Cargo features
 
 默认配置提供窗口、按钮与文本。需要额外控件时按功能启用：

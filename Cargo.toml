@@ -67,6 +67,7 @@ softbuffer = { version = "0.4.8", default-features = false, features = ["wayland
 windows-sys = { version = "0.59", optional = true, features = ["Win32_Foundation", "Win32_Globalization", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_System_LibraryLoader", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs", "Win32_UI_HiDpi", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }
 windows = { version = "0.62.2", optional = true, default-features = false, features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_UI_Accessibility"] }
 windows-core = { version = "0.62.2", optional = true }
+windows-numerics = { version = "0.3", optional = true }
 
 [features]
 default = ["window", "button", "label"]
@@ -98,7 +99,13 @@ textbox = ["text-input-core"]
 # Application keyboard shortcuts declared on View nodes (ZsAccelerator -> Msg).
 shortcuts = ["widgets-base"]
 # Application-drawn title bars: drag regions and window commands (Win32).
-window-chrome = ["widgets-base"]
+native-window-events = []
+window-chrome = ["widgets-base", "native-window-events"]
+native-host = ["widgets-base", "native-window-events"]
+window-surface = ["windows-direct2d"]
+desktop-layer = ["native-window-events"]
+windows-shell = ["native-host", "windows-win32", "windows-sys/Win32_System_DataExchange", "dep:windows", "dep:windows-core", "windows/Win32_UI_Shell", "windows/Win32_UI_Shell_Common", "windows/Win32_UI_WindowsAndMessaging", "windows/Win32_System_Memory", "windows/Win32_System_Com_StructuredStorage", "windows/Win32_System_SystemServices", "windows/Win32_Graphics_Gdi"]
+windows-direct2d = ["windows-win32", "dep:windows", "dep:windows-core", "dep:windows-numerics", "windows/Win32_Graphics_Direct2D", "windows/Win32_Graphics_Direct2D_Common", "windows/Win32_Graphics_Dxgi_Common", "windows/Win32_Graphics_Gdi"]
 password-box = ["text-input-core", "dep:zeroize"]
 tooltip = ["widgets-base"]
 dialog = ["widgets-base"]
@@ -121,14 +128,14 @@ time-picker = ["widgets-input"]
 color-picker = ["widgets-input"]
 tabs = ["widgets-base"]
 table = ["widgets-list", "resize"]
-dark-mode = []
+dark-mode = ["native-window-events"]
 style = []
 localization = ["dep:fluent-bundle", "dep:sys-locale", "dep:unic-langid"]
 shell = ["button", "label", "resize"]
 document-shell = ["style", "button"]
 calculator = ["style", "button", "label", "grid", "dep:rust_decimal"]
 tray = ["shell"]
-hotkey = ["shell"]
+hotkey = ["shell", "native-window-events"]
 settings = ["widgets-input", "widgets-list", "toggle"]
 product-adapter = []
 ui-document = []
@@ -137,11 +144,12 @@ ui-viewer = ["ui-document-runtime", "window", "button", "accordion", "badge", "s
 android = []
 mobile = ["android"]
 clipboard = ["dep:arboard"]
+clipboard-files = ["clipboard", "windows-shell"]
 image = ["dep:png"]
 icon = ["widgets-base"]
 image-preview = ["image", "widgets-base"]
 video = ["widgets-base"]
-native-smoke = ["image", "dep:objc2-core-graphics", "objc2-app-kit?/objc2-core-graphics", "objc2-app-kit?/NSScreen", "objc2-core-graphics/CGEvent", "objc2-core-graphics/CGEventSource", "objc2-core-graphics/CGEventTypes", "objc2-core-graphics/CGRemoteOperation"]
+native-smoke = ["image", "dep:objc2-core-graphics", "objc2-app-kit?/objc2-core-graphics", "objc2-app-kit?/NSScreen", "objc2-core-graphics/CGEvent", "objc2-core-graphics/CGEventSource", "objc2-core-graphics/CGEventTypes", "objc2-core-graphics/CGRemoteOperation", "windows-sys?/Win32_System_StationsAndDesktops", "windows-sys?/Win32_Security", "windows-sys?/Win32_System_DataExchange"]
 fluent-icons = []
 notepad-demo = ["window", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
 notepad-demo-gtk = ["linux-gtk", "button", "label", "textbox", "tabs", "dialog", "clipboard", "document-shell"]
@@ -167,6 +175,12 @@ linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
 all-widgets = ["button", "accordion", "badge", "split-view", "breadcrumb", "canvas", "flyout", "menu-flyout", "context-menu", "toggle-button", "icon", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "video", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "shell", "document-shell"]
 full = [
+    "clipboard-files",
+    "native-host",
+    "window-surface",
+    "desktop-layer",
+    "windows-shell",
+    "windows-direct2d",
     "accessibility",
     "all-widgets",
     "shortcuts",
@@ -200,6 +214,11 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+[[example]]
+name = "native_integration"
+path = "examples/native_integration.rs"
+required-features = ["windows-shell", "window-chrome", "label", "dark-mode", "hotkey"]
 
 [dev-dependencies]
 serde_json = "1"

@@ -2116,6 +2116,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub ime_committed: bool,
     pub ime_cancelled: bool,
     pub redraw_plan: Option<NativeDrawPlan>,
+    #[cfg(feature = "windows-shell")]
+    pub drop_response: Option<crate::DropResponse>,
     pub quit_requested: bool,
     #[cfg(feature = "window-chrome")]
     pub window_commands: Vec<crate::ZsWindowCommand>,
@@ -2757,6 +2759,35 @@ impl NativeViewInputRuntime {
         report.handled = true;
         self.focus_target(target, &mut report);
         report
+    }
+
+    #[cfg(feature = "native-window-events")]
+    pub(crate) fn dispatch_native_window_event(
+        &mut self,
+        event: crate::NativeWindowEvent,
+    ) -> NativeViewInputDispatchReport {
+        self.dispatch_view_event(
+            ViewEvent::NativeWindow { event },
+            NativeViewInputDispatchReport {
+                handled: true,
+                ..Default::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "windows-shell")]
+    pub(crate) fn dispatch_files_dropped(
+        &mut self,
+        widget: crate::WidgetId,
+        files: crate::FilesDropped,
+    ) -> NativeViewInputDispatchReport {
+        self.dispatch_view_event(
+            ViewEvent::FilesDropped { widget, files },
+            NativeViewInputDispatchReport {
+                handled: true,
+                ..Default::default()
+            },
+        )
     }
 
     #[cfg(feature = "accessibility")]
@@ -8770,6 +8801,10 @@ impl NativeViewInputRuntime {
         {
             let update = live_view.dispatch_event_with_allowance(&event, self.dispatch_allowance());
             report.message_count += update.message_count;
+            #[cfg(feature = "windows-shell")]
+            {
+                report.drop_response = update.drop_response;
+            }
             #[cfg(feature = "text-input-core")]
             text_edit_commands.extend(update.text_edit_commands.iter().copied());
             #[cfg(feature = "window-chrome")]
@@ -10219,6 +10254,49 @@ impl PartialEq for NativeWindowBuilder {
 }
 
 impl NativeWindowBuilder {
+    /// Registers native child declarations without exposing platform handles.
+    #[cfg(feature = "native-host")]
+    pub fn native_hosts(mut self, hosts: crate::NativeHosts) -> Self {
+        self.window.native_hosts = hosts;
+        self
+    }
+    /// Uses system caption buttons above a View-owned title area.
+    #[cfg(feature = "window-chrome")]
+    pub fn integrated_title_bar(mut self, title_bar: crate::IntegratedTitleBar) -> Self {
+        self.window.integration.title_bar = Some(title_bar);
+        self.window.custom_title_bar = true;
+        self
+    }
+
+    /// Chooses an opaque or per-pixel-alpha presentation surface.
+    #[cfg(feature = "window-surface")]
+    pub fn surface(mut self, surface: crate::WindowSurface) -> Self {
+        self.window.integration.surface = surface;
+        self.window.transparent = surface != crate::WindowSurface::Opaque;
+        self
+    }
+
+    /// Chooses normal or non-activating desktop stacking.
+    #[cfg(feature = "desktop-layer")]
+    pub fn layer(mut self, layer: crate::WindowLayer) -> Self {
+        self.window.integration.layer = layer;
+        self
+    }
+
+    /// Selects the optional Windows raster backend.
+    #[cfg(feature = "windows-direct2d")]
+    pub fn renderer(mut self, renderer: crate::WindowRenderer) -> Self {
+        self.window.integration.renderer = renderer;
+        self
+    }
+
+    /// Registers a system-wide shortcut for this window's command handler.
+    #[cfg(feature = "hotkey")]
+    pub fn global_hotkey(mut self, spec: crate::HotkeySpec) -> Self {
+        self.window.global_hotkeys.push(spec);
+        self
+    }
+
     pub fn new(title: impl Into<String>) -> Self {
         let title = title.into();
         Self {
@@ -10524,6 +10602,11 @@ impl NativeWindowBuilder {
         &self.window
     }
 
+    #[allow(dead_code)] // Optional backend extension implementations.
+    pub(crate) fn window_spec_mut(&mut self) -> &mut WindowSpec {
+        &mut self.window
+    }
+
     pub fn native_draw_plan(&self) -> Option<&NativeDrawPlan> {
         self.draw_plan.as_ref()
     }
@@ -10565,6 +10648,9 @@ impl NativeWindowBuilder {
     }
 
     pub fn build(self) -> ZsuiResult<ZsuiApp> {
+        self.window
+            .integration
+            .validate(self.window.decorations, self.window.always_on_top)?;
         if self.invalidation_handle.is_some() && self.live_view_runtime.is_none() {
             return Err(ZsuiError::invalid_spec(
                 "invalidation_handle",
@@ -10608,7 +10694,7 @@ impl NativeWindowBuilder {
         )
     }
 
-    fn native_view_input_runtime(&self) -> NativeViewInputRuntime {
+    pub(crate) fn native_view_input_runtime(&self) -> NativeViewInputRuntime {
         let mut runtime = NativeViewInputRuntime::new(
             Rect {
                 x: 0,
@@ -10657,6 +10743,42 @@ impl TypedNativeWindowBuilder<NativeWindowContentMissing> {
 }
 
 impl<ContentState> TypedNativeWindowBuilder<ContentState> {
+    /// Registers handle-free native child providers.
+    #[cfg(feature = "native-host")]
+    pub fn native_hosts(mut self, hosts: crate::NativeHosts) -> Self {
+        self.inner = self.inner.native_hosts(hosts);
+        self
+    }
+    /// Uses a system-integrated title area.
+    #[cfg(feature = "window-chrome")]
+    pub fn integrated_title_bar(mut self, title: crate::IntegratedTitleBar) -> Self {
+        self.inner = self.inner.integrated_title_bar(title);
+        self
+    }
+    /// Selects the native surface policy.
+    #[cfg(feature = "window-surface")]
+    pub fn surface(mut self, surface: crate::WindowSurface) -> Self {
+        self.inner = self.inner.surface(surface);
+        self
+    }
+    /// Selects the native window layer.
+    #[cfg(feature = "desktop-layer")]
+    pub fn layer(mut self, layer: crate::WindowLayer) -> Self {
+        self.inner = self.inner.layer(layer);
+        self
+    }
+    /// Selects the Windows renderer.
+    #[cfg(feature = "windows-direct2d")]
+    pub fn renderer(mut self, renderer: crate::WindowRenderer) -> Self {
+        self.inner = self.inner.renderer(renderer);
+        self
+    }
+    /// Registers a system-wide keyboard shortcut.
+    #[cfg(feature = "hotkey")]
+    pub fn global_hotkey(mut self, hotkey: crate::HotkeySpec) -> Self {
+        self.inner = self.inner.global_hotkey(hotkey);
+        self
+    }
     pub fn app_name(mut self, app_name: impl Into<String>) -> Self {
         self.inner = self.inner.app_name(app_name);
         self
@@ -11045,6 +11167,14 @@ impl ZsuiHost for NativeWindowHost {
     }
 
     fn run_event_loop(&mut self) -> ZsuiResult<()> {
+        if let Some(window) = self.windows.first_mut() {
+            window.global_hotkeys.extend(
+                self.inner
+                    .hotkeys()
+                    .iter()
+                    .map(|record| record.spec.clone()),
+            );
+        }
         crate::desktop_runtime::run_event_loop(
             self.windows.clone(),
             self.trays.clone(),

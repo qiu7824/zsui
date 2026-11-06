@@ -126,6 +126,46 @@ pub(super) struct DesktopNativeSmokeMetadata {
 }
 
 pub(super) trait DesktopRuntimeBackend: Default {
+    fn validate_window_integration(
+        &self,
+        windows: &[WindowSpec],
+        plans: &[Option<NativeDrawPlan>],
+    ) -> ZsuiResult<()> {
+        for window in windows {
+            if window.integration != crate::WindowIntegration::default() {
+                return Err(ZsuiError::unsupported(
+                    "native_window_integration",
+                    "the selected host does not implement the requested window integration policy",
+                ));
+            }
+            #[cfg(feature = "native-host")]
+            if !window.native_hosts.providers.is_empty() {
+                return Err(ZsuiError::unsupported(
+                    "native_host",
+                    "the selected host does not implement native child providers",
+                ));
+            }
+        }
+        #[cfg(feature = "native-host")]
+        if plans
+            .iter()
+            .flatten()
+            .any(|plan| !plan.native_hosts.is_empty())
+        {
+            return Err(ZsuiError::unsupported(
+                "native_host",
+                "the selected host does not implement native child slots",
+            ));
+        }
+        let _ = plans;
+        Ok(())
+    }
+    fn platform_palette(&self, _mode: crate::ZsuiThemeMode) -> ZsuiResult<crate::PlatformPalette> {
+        Err(ZsuiError::unsupported(
+            "platform_palette",
+            "the current host does not expose a native palette snapshot",
+        ))
+    }
     #[cfg(test)]
     fn backend_name(&self) -> &'static str;
 
@@ -204,6 +244,7 @@ pub(crate) fn run_event_loop(
     view_runtimes: Vec<NativeViewInputRuntime>,
     shell_runtimes: Vec<Option<ZsShellRuntime>>,
 ) -> ZsuiResult<()> {
+    SelectedDesktopRuntimeBackend::default().validate_window_integration(&windows, &draw_plans)?;
     SelectedDesktopRuntimeBackend::default().run_event_loop(DesktopRuntimeRequest {
         windows,
         trays,
@@ -223,6 +264,10 @@ pub(crate) fn native_host_capabilities() -> HostCapabilities {
 
 pub(crate) fn desktop_capabilities() -> DesktopCapabilities {
     SelectedDesktopRuntimeBackend::default().desktop_capabilities()
+}
+
+pub(crate) fn platform_palette(mode: crate::ZsuiThemeMode) -> ZsuiResult<crate::PlatformPalette> {
+    SelectedDesktopRuntimeBackend::default().platform_palette(mode)
 }
 
 pub(crate) fn native_proof_backend_name() -> &'static str {
@@ -267,6 +312,7 @@ pub(crate) fn run_smoke_event_loop(
     shell_runtime: Option<ZsShellRuntime>,
     options: NativeWindowSmokeRunOptions,
 ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+    SelectedDesktopRuntimeBackend::default().validate_window_integration(&windows, &draw_plans)?;
     SelectedDesktopRuntimeBackend::default().run_smoke_event_loop(DesktopSmokeRequest {
         windows,
         draw_plans,

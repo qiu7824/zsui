@@ -11,6 +11,16 @@ use crate::{
 pub(super) struct Backend;
 
 impl DesktopRuntimeBackend for Backend {
+    fn validate_window_integration(
+        &self,
+        _windows: &[crate::WindowSpec],
+        _plans: &[Option<crate::NativeDrawPlan>],
+    ) -> ZsuiResult<()> {
+        Ok(())
+    }
+    fn platform_palette(&self, mode: crate::ZsuiThemeMode) -> ZsuiResult<crate::PlatformPalette> {
+        Ok(crate::windows_win32_host::windows_platform_palette(mode))
+    }
     #[cfg(test)]
     fn backend_name(&self) -> &'static str {
         "windows_win32"

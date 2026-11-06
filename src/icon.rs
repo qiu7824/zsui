@@ -47,6 +47,19 @@ pub enum ZsIcon {
     ChevronLeft,
     ChevronRight,
     PasswordReveal,
+    Back,
+    Forward,
+    Up,
+    Sort,
+    View,
+    Rename,
+    Share,
+    Maximize,
+    Restore,
+    Preview,
+    Properties,
+    Star,
+    StarFilled,
 }
 
 /// Semantic standalone-icon size resolved through the active desktop profile.
@@ -108,7 +121,7 @@ impl ZsIconRole {
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 45] = [
+    pub const ALL: [Self; 58] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -154,10 +167,37 @@ impl ZsIcon {
         Self::ChevronLeft,
         Self::ChevronRight,
         Self::PasswordReveal,
+        Self::Back,
+        Self::Forward,
+        Self::Up,
+        Self::Sort,
+        Self::View,
+        Self::Rename,
+        Self::Share,
+        Self::Maximize,
+        Self::Restore,
+        Self::Preview,
+        Self::Properties,
+        Self::Star,
+        Self::StarFilled,
     ];
 
     pub const fn asset_name(self) -> &'static str {
         match self {
+            Self::Back => "back",
+            Self::Forward => "forward",
+            Self::Up => "up",
+            Self::Sort => "sort",
+            Self::View => "view",
+            Self::Rename => "rename",
+            Self::Share => "share",
+            Self::Maximize => "maximize",
+            Self::Restore => "restore",
+            Self::Preview => "preview",
+            Self::Properties => "properties",
+            Self::Star => "star",
+            Self::StarFilled => "star-filled",
+
             Self::App => "app",
             Self::Calculator => "calculator",
             Self::History => "history",
@@ -206,6 +246,20 @@ impl ZsIcon {
 
     pub const fn gtk_symbolic_name(self) -> &'static str {
         match self {
+            Self::Back => "go-previous-symbolic",
+            Self::Forward => "go-next-symbolic",
+            Self::Up => "go-up-symbolic",
+            Self::Sort => "view-sort-ascending-symbolic",
+            Self::View => "view-grid-symbolic",
+            Self::Rename => "edit-rename-symbolic",
+            Self::Share => "document-send-symbolic",
+            Self::Maximize => "window-maximize-symbolic",
+            Self::Restore => "window-restore-symbolic",
+            Self::Preview => "view-reveal-symbolic",
+            Self::Properties => "document-properties-symbolic",
+            Self::Star => "non-starred-symbolic",
+            Self::StarFilled => "starred-symbolic",
+
             Self::App => "edit-paste-symbolic",
             Self::Calculator => "accessories-calculator-symbolic",
             Self::History => "document-open-recent-symbolic",
@@ -254,6 +308,20 @@ impl ZsIcon {
 
     pub const fn windows_fluent_glyph(self) -> &'static str {
         match self {
+            Self::Back => "\u{E72B}",
+            Self::Forward => "\u{E72A}",
+            Self::Up => "\u{E74A}",
+            Self::Sort => "\u{E8CB}",
+            Self::View => "\u{E8A9}",
+            Self::Rename => "\u{E8AC}",
+            Self::Share => "\u{E72D}",
+            Self::Maximize => "\u{E922}",
+            Self::Restore => "\u{E923}",
+            Self::Preview => "\u{E8FF}",
+            Self::Properties => "\u{E946}",
+            Self::Star => "\u{E734}",
+            Self::StarFilled => "\u{E735}",
+
             Self::App => "\u{E71D}",
             Self::Calculator => "\u{E8EF}",
             Self::History => "\u{E81C}",
@@ -308,6 +376,20 @@ impl ZsIcon {
 
     pub const fn fluent_svg_asset_name(self) -> &'static str {
         match self {
+            Self::Back => "back.svg",
+            Self::Forward => "forward.svg",
+            Self::Up => "up.svg",
+            Self::Sort => "sort.svg",
+            Self::View => "view.svg",
+            Self::Rename => "rename.svg",
+            Self::Share => "share.svg",
+            Self::Maximize => "maximize.svg",
+            Self::Restore => "restore.svg",
+            Self::Preview => "preview.svg",
+            Self::Properties => "properties.svg",
+            Self::Star => "star.svg",
+            Self::StarFilled => "star-filled.svg",
+
             Self::App => "app.svg",
             Self::Calculator => "calculator.svg",
             Self::History => "history.svg",
@@ -366,6 +448,24 @@ impl ZsIcon {
     ))]
     pub const fn fluent_svg_bytes(self) -> &'static [u8] {
         match self {
+            Self::Back => include_bytes!("../assets/fluent-system-icons/regular/back.svg"),
+            Self::Forward => include_bytes!("../assets/fluent-system-icons/regular/forward.svg"),
+            Self::Up => include_bytes!("../assets/fluent-system-icons/regular/up.svg"),
+            Self::Sort => include_bytes!("../assets/fluent-system-icons/regular/sort.svg"),
+            Self::View => include_bytes!("../assets/fluent-system-icons/regular/view.svg"),
+            Self::Rename => include_bytes!("../assets/fluent-system-icons/regular/rename.svg"),
+            Self::Share => include_bytes!("../assets/fluent-system-icons/regular/share.svg"),
+            Self::Maximize => include_bytes!("../assets/fluent-system-icons/regular/maximize.svg"),
+            Self::Restore => include_bytes!("../assets/fluent-system-icons/regular/restore.svg"),
+            Self::Preview => include_bytes!("../assets/fluent-system-icons/regular/preview.svg"),
+            Self::Properties => {
+                include_bytes!("../assets/fluent-system-icons/regular/properties.svg")
+            }
+            Self::Star => include_bytes!("../assets/fluent-system-icons/regular/star.svg"),
+            Self::StarFilled => {
+                include_bytes!("../assets/fluent-system-icons/regular/star-filled.svg")
+            }
+
             Self::App => include_bytes!("../assets/fluent-system-icons/regular/app.svg"),
             Self::Calculator => {
                 include_bytes!("../assets/fluent-system-icons/regular/calculator.svg")
@@ -436,6 +536,20 @@ impl ZsIcon {
 
     pub const fn sf_symbol_name(self) -> &'static str {
         match self {
+            Self::Back => "arrow.left",
+            Self::Forward => "arrow.right",
+            Self::Up => "arrow.up",
+            Self::Sort => "arrow.up.arrow.down",
+            Self::View => "square.grid.2x2",
+            Self::Rename => "pencil.line",
+            Self::Share => "square.and.arrow.up",
+            Self::Maximize => "square",
+            Self::Restore => "square.on.square",
+            Self::Preview => "eye",
+            Self::Properties => "info.circle",
+            Self::Star => "star",
+            Self::StarFilled => "star.fill",
+
             Self::App => "square.grid.2x2",
             Self::Calculator => "plus.forwardslash.minus",
             Self::History => "clock.arrow.circlepath",
@@ -485,6 +599,20 @@ impl ZsIcon {
 
     pub const fn png_24_bytes(self) -> Option<&'static [u8]> {
         match self {
+            Self::Back => None,
+            Self::Forward => None,
+            Self::Up => None,
+            Self::Sort => None,
+            Self::View => None,
+            Self::Rename => None,
+            Self::Share => None,
+            Self::Maximize => None,
+            Self::Restore => None,
+            Self::Preview => None,
+            Self::Properties => None,
+            Self::Star => None,
+            Self::StarFilled => None,
+
             Self::Search => Some(include_bytes!("../assets/icons/search/search_24x24.png")),
             Self::Settings => Some(include_bytes!("../assets/icons/setting/setting_24x24.png")),
             Self::Minimize => Some(include_bytes!("../assets/icons/min/min_24x24.png")),

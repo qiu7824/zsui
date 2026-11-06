@@ -1,5 +1,9 @@
 #[derive(Debug, Clone)]
 pub struct ViewPaintCx {
+    #[cfg(feature = "native-host")]
+    native_overlay_depth: usize,
+    #[cfg(feature = "native-host")]
+    native_clip_stack: Vec<Rect>,
     pub dpi: Dpi,
     plan: NativeDrawPlan,
     paint_depth: usize,
@@ -9,6 +13,10 @@ pub struct ViewPaintCx {
 impl ViewPaintCx {
     pub fn new(dpi: Dpi) -> Self {
         Self {
+            #[cfg(feature = "native-host")]
+            native_overlay_depth: 0,
+            #[cfg(feature = "native-host")]
+            native_clip_stack: Vec::new(),
             dpi,
             plan: NativeDrawPlan::default(),
             paint_depth: 0,
@@ -23,6 +31,57 @@ impl ViewPaintCx {
     }
 
     pub fn draw(&mut self, command: NativeDrawCommand) {
+        #[cfg(feature = "native-host")]
+        if self.native_overlay_depth > 0 {
+            let visible = match &command {
+                NativeDrawCommand::FillRect { fill, .. }
+                | NativeDrawCommand::RoundFill { fill, .. }
+                | NativeDrawCommand::RoundRect { fill, .. }
+                | NativeDrawCommand::FillTriangle { fill, .. } => match fill {
+                    NativeDrawFill::Color(color) => color.a > 0,
+                    NativeDrawFill::Role(_) => true,
+                    NativeDrawFill::RoleWithAlpha { alpha, .. } => *alpha > 0,
+                },
+                NativeDrawCommand::Text(_)
+                | NativeDrawCommand::Icon(_)
+                | NativeDrawCommand::Image(_) => true,
+                _ => false,
+            };
+            if let Some(bounds) = command
+                .paint_bounds()
+                .filter(|_| visible)
+                .and_then(|rect| clipped_rect(rect, self.native_clip_stack.last().copied()))
+            {
+                #[cfg(not(feature = "windows-shell"))]
+                let drops_before = 0;
+                #[cfg(feature = "windows-shell")]
+                let drops_before = self.plan.file_drop_targets.len();
+                self.plan
+                    .native_occlusions
+                    .push(crate::native_host::NativeSurfaceOcclusion {
+                        bounds,
+                        hosts_before: self.plan.native_hosts.len(),
+                        drops_before,
+                    });
+            }
+        }
+        #[cfg(feature = "native-host")]
+        match &command {
+            NativeDrawCommand::PushClip { rect } => {
+                let clipped = clipped_rect(*rect, self.native_clip_stack.last().copied())
+                    .unwrap_or(Rect {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    });
+                self.native_clip_stack.push(clipped);
+            }
+            NativeDrawCommand::PopClip => {
+                self.native_clip_stack.pop();
+            }
+            _ => {}
+        }
         self.plan.push(command);
     }
 
@@ -48,7 +107,10 @@ impl ViewPaintCx {
                 self.draw(NativeDrawCommand::PushClip { rect: bounds });
                 self.draw(NativeDrawCommand::RoundRect {
                     rect: bounds,
-                    fill: NativeDrawFill::RoleWithAlpha { role: ColorRole::Surface, alpha: 0 },
+                    fill: NativeDrawFill::RoleWithAlpha {
+                        role: ColorRole::Surface,
+                        alpha: 0,
+                    },
                     stroke: Some(NativeDrawFill::Role(color_role_for_token(color))),
                     radius: radius_px(_root.style.radius, self.dpi),
                 });
@@ -71,7 +133,15 @@ impl ViewPaintCx {
             feature = "toast"
         ))]
         if self.paint_depth == 0 {
+            #[cfg(feature = "native-host")]
+            {
+                self.native_overlay_depth += 1;
+            }
             _root.paint_overlays(self, None);
+            #[cfg(feature = "native-host")]
+            {
+                self.native_overlay_depth -= 1;
+            }
         }
     }
 }
@@ -680,9 +750,30 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
     }
 
     fn event(&mut self, cx: &mut ViewEventCx<Msg>, event: &ViewEvent) {
+        #[cfg(feature = "windows-shell")]
+        if let ViewEvent::FilesDropped { widget, files } = event {
+            if self.id == Some(*widget) {
+                if let Some((_, handler)) = &self.file_drop_handler {
+                    cx.emit(handler.map(files.clone()));
+                }
+            }
+            for child in &mut self.children {
+                child.event(cx, event);
+            }
+            return;
+        }
+        #[cfg(feature = "native-window-events")]
+        if let ViewEvent::NativeWindow { event } = event {
+            if let Some(message) = self.native_window_message(event) {
+                cx.emit(message);
+            }
+            return;
+        }
         #[cfg(feature = "window-chrome")]
         if let ViewEvent::WindowStateChanged { state } = event {
-            if let Some(message) = self.window_state_message(*state) { cx.emit(message); }
+            if let Some(message) = self.window_state_message(*state) {
+                cx.emit(message);
+            }
             return;
         }
         #[cfg(feature = "shortcuts")]
@@ -1309,8 +1400,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                         let selected_index = selected.and_then(|selected| {
                             tabs.iter().position(|candidate| candidate.id == selected)
                         });
-                        let tab_bounds =
-                            tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+                        let tab_bounds = tab_layout_bounds(
+                            bounds,
+                            self.style.resolved_padding(),
+                            self.layout_dpi,
+                        );
                         return crate::zs_tab_view_render_plan_for_tabs(
                             tab_bounds,
                             tabs,
@@ -2427,9 +2521,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     },
                     ViewEvent::ScrollBy { widget, delta_y },
                 ) if self.id == Some(*widget) => {
-                    let viewport = self
-                        .bounds
-                        .map(|bounds| inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi));
+                    let viewport = self.bounds.map(|bounds| {
+                        inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi)
+                    });
                     let max_offset = scroll_max_offset_y(
                         viewport,
                         Some(self.resolved_scroll_content_height),
@@ -2450,9 +2544,9 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     },
                     ViewEvent::ScrollToRatio { widget, ratio },
                 ) if self.id == Some(*widget) => {
-                    let viewport = self
-                        .bounds
-                        .map(|bounds| inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi));
+                    let viewport = self.bounds.map(|bounds| {
+                        inset_bounds(bounds, self.style.resolved_padding(), self.layout_dpi)
+                    });
                     let max_offset = scroll_max_offset_y(
                         viewport,
                         Some(self.resolved_scroll_content_height),
@@ -2584,6 +2678,34 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
         let Some(bounds) = self.bounds else {
             return;
         };
+        #[cfg(feature = "windows-shell")]
+        if let (Some(widget), Some((effects, _))) = (self.id, &self.file_drop_handler) {
+            if let Some(bounds) = clipped_rect(bounds, cx.native_clip_stack.last().copied()) {
+                cx.plan
+                    .file_drop_targets
+                    .push(crate::shell_integration::FileDropPlacement {
+                        widget,
+                        bounds,
+                        effects: *effects,
+                    });
+            }
+        }
+        #[cfg(feature = "native-host")]
+        if let Some((id, focusable)) = self.native_host {
+            let clip = clipped_rect(bounds, cx.native_clip_stack.last().copied()).unwrap_or(Rect {
+                x: bounds.x,
+                y: bounds.y,
+                width: 0,
+                height: 0,
+            });
+            cx.plan.native_hosts.push(crate::NativeHostPlacement {
+                id,
+                widget: self.id.unwrap_or(WidgetId(id.get())),
+                bounds,
+                clip,
+                focusable,
+            });
+        }
         cx.paint_depth = cx.paint_depth.saturating_add(1);
 
         if let Some(theme_mode) = self.style.theme_mode {
@@ -3041,7 +3163,11 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                                 text_style.horizontal_align = crate::HorizontalAlign::Center;
                                 cx.draw(NativeDrawCommand::Text(NativeDrawTextCommand::new(
                                     label,
-                                    button_content_bounds(bounds, self.style.resolved_padding(), cx.dpi),
+                                    button_content_bounds(
+                                        bounds,
+                                        self.style.resolved_padding(),
+                                        cx.dpi,
+                                    ),
                                     text_style,
                                 )));
                             }
@@ -3354,7 +3480,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     text_style.wrap = *wrap;
                     text_style.ellipsis = false;
                 }
-                let text_bounds = text_input_content_bounds(bounds, self.style.resolved_padding(), cx.dpi);
+                let text_bounds =
+                    text_input_content_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                 if *multiline && *wrap == crate::TextWrap::NoWrap {
                     let line_height = Dp::new(
                         crate::TextRole::Body
@@ -3851,7 +3978,8 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
                     });
                 }
                 if *show_placeholders {
-                    let content_bounds = inset_bounds(bounds, self.style.resolved_padding(), cx.dpi);
+                    let content_bounds =
+                        inset_bounds(bounds, self.style.resolved_padding(), cx.dpi);
                     for index in visible_range.start..visible_range.end {
                         if row_indices.binary_search(&index).is_ok() {
                             continue;

@@ -217,6 +217,8 @@ pub struct WindowsWin32ViewInputDispatchReport {
     pub pointer_visual_change_count: usize,
     pub event_count: usize,
     pub message_count: usize,
+    #[cfg(feature = "windows-shell")]
+    pub drop_response: Option<crate::DropResponse>,
     pub ui_command_count: usize,
     pub ui_command_executed_count: usize,
     pub ui_command_failed_count: usize,
@@ -421,6 +423,10 @@ impl WindowsWin32ViewInputDispatchReport {
     }
 
     fn merge(&mut self, next: WindowsWin32ViewInputDispatchReport) {
+        #[cfg(feature = "windows-shell")]
+        if next.drop_response.is_some() {
+            self.drop_response = next.drop_response;
+        }
         let mut history_truncated = false;
         self.handled |= next.handled;
         self.window_close_request_count += next.window_close_request_count;
@@ -1440,6 +1446,9 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
             if !request.try_begin() {
                 continue;
             }
+            #[cfg(feature = "windows-shell")]
+            let outcome = shell::execute_effect(hwnd, request.effect());
+            #[cfg(not(feature = "windows-shell"))]
             let outcome = crate::app_effect::execute_native_app_effect(request.effect());
             let mut routes = window_view_input_routes()
                 .lock()
@@ -1490,6 +1499,9 @@ fn dispatch_windows_win32_window_view_input_with_quit_policy(
     }
     #[cfg(feature = "window-chrome")]
     post_windows_win32_window_commands(hwnd, &window_commands);
+    if let Some(services) = window_services(hwnd) {
+        services.sync_native_focus();
+    }
     sync_windows_win32_live_view_poll_timer(hwnd, poll_interval_ms);
     Some(report)
 }
@@ -1513,12 +1525,20 @@ fn post_windows_win32_window_commands(hwnd: HWND, commands: &[crate::ZsWindowCom
                 continue;
             }
             crate::ZsWindowCommand::Hide => {
+                #[cfg(feature = "desktop-layer")]
+                if set_desktop_window_visibility(hwnd, false) {
+                    continue;
+                }
                 unsafe {
                     ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE);
                 }
                 continue;
             }
             crate::ZsWindowCommand::Show => {
+                #[cfg(feature = "desktop-layer")]
+                if set_desktop_window_visibility(hwnd, true) {
+                    continue;
+                }
                 unsafe {
                     use windows_sys::Win32::UI::WindowsAndMessaging::{
                         IsIconic, SetForegroundWindow, SW_RESTORE, SW_SHOW,

@@ -198,6 +198,21 @@ const ZSUI_WIN32_VK_SPACE: u32 = 0x20;
 const ZSUI_WIN32_VK_UP: u32 = 0x26;
 const ZSUI_WIN32_LIVE_VIEW_POLL_TIMER_ID: usize = 0x5a51;
 
+#[cfg(feature = "native-host")]
+pub mod interop;
+#[cfg(feature = "windows-shell")]
+pub mod menu_bridge;
+#[cfg(feature = "windows-shell")]
+mod shell;
+include!("integration.rs");
+include!("native_theme.rs");
+#[cfg(feature = "desktop-layer")]
+include!("desktop_layer.rs");
+#[cfg(feature = "windows-direct2d")]
+mod direct2d;
+#[cfg(feature = "window-chrome")]
+include!("chrome.rs");
+
 include!("application.rs");
 include!("services/menu.rs");
 include!("popup.rs");
@@ -217,3 +232,18 @@ include!("text/composition.rs");
 include!("timer.rs");
 include!("dpi.rs");
 include!("tests.rs");
+#[cfg(all(
+    test,
+    feature = "windows-shell",
+    feature = "native-smoke",
+    feature = "window-chrome",
+    feature = "window-surface",
+    feature = "desktop-layer",
+    feature = "hotkey",
+    feature = "clipboard",
+    feature = "icon",
+    feature = "label"
+))]
+mod integration_proof;
+#[cfg(all(test, feature = "native-host"))]
+mod integration_tests;

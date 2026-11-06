@@ -12,6 +12,7 @@ impl WidgetId {
 /// Function-pointer handlers remain allocation-free. Capturing callbacks are
 /// stored only when an application opts into a `*_with` builder.
 #[cfg(any(
+    feature = "native-window-events",
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
@@ -48,6 +49,7 @@ pub struct ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "native-window-events",
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
@@ -84,6 +86,7 @@ enum ViewMessageMapperKind<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "native-window-events",
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
@@ -136,6 +139,7 @@ impl<Input, Msg> ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "native-window-events",
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
@@ -180,6 +184,7 @@ impl<Input, Msg> Clone for ViewMessageMapper<Input, Msg> {
 }
 
 #[cfg(any(
+    feature = "native-window-events",
     feature = "auto-suggest",
     feature = "breadcrumb",
     feature = "command-palette",
@@ -219,6 +224,7 @@ impl<Input, Msg> fmt::Debug for ViewMessageMapper<Input, Msg> {
 const FRAMEWORK_WIDGET_ID_PAYLOAD_MASK: u64 = (1 << 62) - 1;
 const AUTOMATIC_WIDGET_ID_NAMESPACE: u64 = 2 << 62;
 #[cfg(any(
+    feature = "native-window-events",
     feature = "resize",
     all(feature = "dialog", feature = "accessibility"),
     feature = "tabs",
@@ -232,6 +238,7 @@ impl WidgetId {
     /// Builds a deterministic identity for an interactive surface owned by a
     /// composite widget rather than by an application View node.
     #[cfg(any(
+        feature = "native-window-events",
         feature = "resize",
         all(feature = "dialog", feature = "accessibility"),
         feature = "tabs",
@@ -1270,19 +1277,32 @@ impl Default for ViewStyle {
 
 impl ViewStyle {
     fn resolved_padding(&self) -> Option<[Dp; 4]> {
-        self.padding_sides.or_else(|| self.padding.map(|value| [value; 4]))
+        self.padding_sides
+            .or_else(|| self.padding.map(|value| [value; 4]))
     }
 
     fn padding_extent_px(&self, dpi: Dpi, vertical: bool) -> i32 {
         let sides = self.resolved_padding().unwrap_or([Dp::new(0.0); 4]);
         let axis = usize::from(vertical);
-        sides[axis].to_px(dpi).round_i32().max(0)
+        sides[axis]
+            .to_px(dpi)
+            .round_i32()
+            .max(0)
             .saturating_add(sides[axis + 2].to_px(dpi).round_i32().max(0))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ViewNode<Msg> {
+    #[cfg(feature = "windows-shell")]
+    file_drop_handler: Option<(
+        crate::DragEffects,
+        ViewMessageMapper<crate::FilesDropped, Msg>,
+    )>,
+    #[cfg(feature = "native-window-events")]
+    native_window_handler: Option<ViewMessageMapper<crate::NativeWindowEvent, Msg>>,
+    #[cfg(feature = "native-host")]
+    pub(crate) native_host: Option<(crate::NativeHostId, bool)>,
     pub id: Option<WidgetId>,
     pub kind: ViewNodeKind<Msg>,
     pub style: ViewStyle,
@@ -1336,8 +1356,6 @@ pub struct ViewNode<Msg> {
     #[cfg(feature = "scroll")]
     resolved_scroll_content_height: Dp,
 
-
-
     #[cfg(feature = "shortcuts")]
     shortcuts: Vec<(crate::ZsAccelerator, Msg)>,
     #[cfg(feature = "window-chrome")]
@@ -1348,6 +1366,55 @@ pub struct ViewNode<Msg> {
 }
 
 impl<Msg> ViewNode<Msg> {
+    /// Accepts Shell file copies inside this node's clipped layout bounds.
+    #[cfg(feature = "windows-shell")]
+    pub fn on_drop_files(
+        self,
+        handler: impl Fn(crate::FilesDropped) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        self.on_drop_files_with(crate::DragEffects::COPY, handler)
+    }
+
+    /// Accepts explicitly permitted Shell operations. The application performs
+    /// file operations after receiving the typed message.
+    #[cfg(feature = "windows-shell")]
+    pub fn on_drop_files_with(
+        mut self,
+        effects: crate::DragEffects,
+        handler: impl Fn(crate::FilesDropped) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        self.file_drop_handler = Some((effects, ViewMessageMapper::from_shared(handler)));
+        self
+    }
+    /// Maps window integration notifications to the application's typed messages.
+    #[cfg(feature = "native-window-events")]
+    pub fn on_native_window_event(
+        mut self,
+        handler: impl Fn(crate::NativeWindowEvent) -> Msg + Send + Sync + 'static,
+    ) -> Self {
+        self.native_window_handler = Some(ViewMessageMapper::from_shared(handler));
+        self
+    }
+
+    #[cfg(feature = "native-window-events")]
+    pub(crate) fn native_window_message(&self, event: &crate::NativeWindowEvent) -> Option<Msg> {
+        self.native_window_handler
+            .as_ref()
+            .map(|handler| handler.map(event.clone()))
+            .or_else(|| {
+                self.children
+                    .iter()
+                    .find_map(|child| child.native_window_message(event))
+            })
+    }
+    /// Controls keyboard traversal into an embedded native child surface.
+    #[cfg(feature = "native-host")]
+    pub fn native_focusable(mut self, focusable: bool) -> Self {
+        if let Some((_, value)) = self.native_host.as_mut() {
+            *value = focusable;
+        }
+        self
+    }
     /// Binds changes to the native maximize/restore state to the first handler in the View.
     #[cfg(feature = "window-chrome")]
     pub fn on_window_state_change(mut self, message: fn(crate::ZsWindowState) -> Msg) -> Self {
@@ -1357,10 +1424,22 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "window-chrome")]
     pub(crate) fn window_state_message(&self, state: crate::ZsWindowState) -> Option<Msg> {
-        self.window_state_message.map(|message|message(state)).or_else(||self.children.iter().find_map(|child|child.window_state_message(state)))
+        self.window_state_message
+            .map(|message| message(state))
+            .or_else(|| {
+                self.children
+                    .iter()
+                    .find_map(|child| child.window_state_message(state))
+            })
     }
     pub fn new(kind: ViewNodeKind<Msg>) -> Self {
         Self {
+            #[cfg(feature = "windows-shell")]
+            file_drop_handler: None,
+            #[cfg(feature = "native-window-events")]
+            native_window_handler: None,
+            #[cfg(feature = "native-host")]
+            native_host: None,
             id: None,
             kind,
             style: ViewStyle::default(),
@@ -1413,8 +1492,6 @@ impl<Msg> ViewNode<Msg> {
             scroll_offset_controlled: false,
             #[cfg(feature = "scroll")]
             resolved_scroll_content_height: Dp::new(0.0),
-
-
 
             #[cfg(feature = "shortcuts")]
             shortcuts: Vec::new(),
@@ -1661,6 +1738,10 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn accepts_automatic_widget_id(&self) -> bool {
+        #[cfg(feature = "windows-shell")]
+        if self.file_drop_handler.is_some() {
+            return true;
+        }
         #[cfg(feature = "tooltip")]
         if self.tooltip.is_some() {
             return true;
@@ -1830,7 +1911,12 @@ impl<Msg> ViewNode<Msg> {
             style.wrap = wrap;
         }
         #[cfg(feature = "textbox")]
-        if let ViewNodeKind::Textbox { multiline: true, wrap: current, .. } = &mut self.kind {
+        if let ViewNodeKind::Textbox {
+            multiline: true,
+            wrap: current,
+            ..
+        } = &mut self.kind
+        {
             *current = wrap;
         }
         self
@@ -1949,7 +2035,10 @@ impl<Msg> ViewNode<Msg> {
         if same_node && !self.scroll_offset_controlled {
             if let (
                 ViewNodeKind::Scroll { offset_y, .. },
-                ViewNodeKind::Scroll { offset_y: previous_offset, .. },
+                ViewNodeKind::Scroll {
+                    offset_y: previous_offset,
+                    ..
+                },
             ) = (&mut self.kind, &previous.kind)
             {
                 *offset_y = *previous_offset;
@@ -2173,7 +2262,7 @@ impl<Msg: Clone> ViewNode<Msg> {
         self
     }
 
-/// Binds a window keyboard shortcut to a typed message.
+    /// Binds a window keyboard shortcut to a typed message.
     ///
     /// Shortcuts belong to the View, so they follow application state: a
     /// rebuilt View without the binding disables it. The first binding in
@@ -2817,7 +2906,10 @@ impl<Msg: Clone> ViewNode<Msg> {
     /// Pass the local position of a secondary-button Canvas or list press.
     #[cfg(feature = "menu-flyout")]
     pub fn menu_flyout_anchor(mut self, anchor: Option<crate::ZsMenuFlyoutAnchor>) -> Self {
-        if let ViewNodeKind::MenuFlyout { anchor: current, .. } = &mut self.kind {
+        if let ViewNodeKind::MenuFlyout {
+            anchor: current, ..
+        } = &mut self.kind
+        {
             *current = anchor;
         }
         self

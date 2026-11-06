@@ -9,9 +9,31 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if let Some(result) = native_control_color(hwnd, msg, wparam as _) {
+        return result;
+    }
+    #[cfg(feature = "windows-shell")]
+    if let Some(result) = menu_bridge::dispatch_menu_hook(hwnd, msg, wparam, lparam) {
+        return result;
+    }
+    #[cfg(feature = "desktop-layer")]
+    if let Some(result) = desktop_window_message(hwnd, msg, wparam, lparam) {
+        return result;
+    }
+    #[cfg(feature = "window-chrome")]
+    if let Some(result) = integrated_caption_message(hwnd, msg, wparam, lparam) {
+        return result;
+    }
     let taskbar_created_message = windows_win32_taskbar_created_message();
     if taskbar_created_message != 0 && msg == taskbar_created_message {
         restore_windows_win32_status_items(hwnd);
+        #[cfg(feature = "desktop-layer")]
+        if let Some(services) = window_services(hwnd) {
+            if let Some(desktop) = services.desktop_layer() {
+                desktop.refresh(true);
+                services.queue_event(crate::NativeWindowEvent::DesktopRecreated);
+            }
+        }
         return 0;
     }
     if dispatch_windows_win32_status_item_callback(hwnd, msg, wparam, lparam).is_some() {
@@ -21,12 +43,27 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         WM_NCCREATE => {
             let create_params =
                 WindowsWindowCreateParams::from_create_struct(lparam as *const CREATESTRUCTW);
-            let state = Box::into_raw(Box::new(create_params));
+            let state = Box::into_raw(Box::new(WindowsWindowState {
+                params: create_params,
+                services: Rc::new(WindowsWindowServices::new(hwnd)),
+            }));
+            if windows_sys::Win32::UI::WindowsAndMessaging::SetPropW(
+                hwnd,
+                ZSUI_WINDOW_STATE_PROPERTY,
+                state.cast(),
+            ) == 0
+            {
+                drop(Box::from_raw(state));
+                return 0;
+            }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, state as isize);
             let result = DefWindowProcW(hwnd, msg, wparam, lparam);
             if result == 0 {
-                let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0)
-                    as *mut WindowsWindowCreateParams;
+                windows_sys::Win32::UI::WindowsAndMessaging::RemovePropW(
+                    hwnd,
+                    ZSUI_WINDOW_STATE_PROPERTY,
+                );
+                let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0) as *mut WindowsWindowState;
                 if !state.is_null() {
                     drop(Box::from_raw(state));
                 }
@@ -34,11 +71,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             result
         }
         WM_GETMINMAXINFO => {
-            let state = GetWindowLongPtrW(hwnd, GWLP_USERDATA)
-                as *const WindowsWindowCreateParams;
+            let state = windows_sys::Win32::UI::WindowsAndMessaging::GetPropW(
+                hwnd,
+                ZSUI_WINDOW_STATE_PROPERTY,
+            ) as *const WindowsWindowState;
             let minmax = lparam as *mut MINMAXINFO;
             if !state.is_null() && !minmax.is_null() {
-                if let Some(min_size) = (*state).min_size {
+                if let Some(min_size) = (*state).params.min_size {
                     let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
                     let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
                     let (width, height) = windows_win32_outer_size_for_client_at_dpi(
@@ -69,12 +108,20 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_NCDESTROY => {
             clear_windows_win32_status_item_routes_for_owner(hwnd);
-            let state = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0)
-                as *mut WindowsWindowCreateParams;
+            let state = windows_sys::Win32::UI::WindowsAndMessaging::RemovePropW(
+                hwnd,
+                ZSUI_WINDOW_STATE_PROPERTY,
+            ) as *mut WindowsWindowState;
+            let tracked = !state.is_null();
+            if GetWindowLongPtrW(hwnd, GWLP_USERDATA) == state as isize {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            }
             let role = if state.is_null() {
                 WindowsWindowRole::Main
             } else {
-                Box::from_raw(state).role
+                let state = Box::from_raw(state);
+                state.services.shutdown();
+                state.params.role
             };
             #[cfg(feature = "accessibility")]
             crate::windows_semantic_uia::disconnect(hwnd);
@@ -82,7 +129,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             archive_windows_win32_window_view_input_report(hwnd);
             clear_windows_win32_window_shell_input_route(hwnd);
             clear_windows_win32_window_menu_command_table(hwnd);
-            if matches!(role, WindowsWindowRole::Main)
+            if tracked
+                && matches!(role, WindowsWindowRole::Main)
                 && ACTIVE_MAIN_WINDOW_COUNT.fetch_sub(1, Ordering::SeqCst) <= 1
             {
                 PostQuitMessage(0);
@@ -165,7 +213,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_DPICHANGED => {
             #[cfg(feature = "native-smoke")]
-            crate::native::record_native_display_scale("win32","WM_DPICHANGED",(wparam & 0xffff) as f64 / 96.0);
+            crate::native::record_native_display_scale(
+                "win32",
+                "WM_DPICHANGED",
+                (wparam & 0xffff) as f64 / 96.0,
+            );
             let suggested = lparam as *const RECT;
             if !suggested.is_null() {
                 let suggested = *suggested;
@@ -190,9 +242,13 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
         }
         WM_SIZE => {
             #[cfg(feature = "window-chrome")]
+            update_integrated_caption(hwnd);
+            #[cfg(feature = "window-chrome")]
             {
                 let maximized = IsZoomed(hwnd) != 0;
-                dispatch_windows_win32_window_view_input(hwnd, |route|route.dispatch_window_state(maximized));
+                dispatch_windows_win32_window_view_input(hwnd, |route| {
+                    route.dispatch_window_state(maximized)
+                });
             }
             let minimized = wparam == SIZE_MINIMIZED as usize;
             let lifecycle_handled = sync_windows_win32_window_view_visibility(hwnd, !minimized);
@@ -200,11 +256,24 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 !minimized && refresh_windows_win32_window_shell_surface(hwnd).is_some();
             let live_view_handled =
                 !minimized && refresh_windows_win32_window_live_view_surface(hwnd);
+            if !minimized {
+                if let Some(services) = window_services(hwnd) {
+                    if let Err(error) = services.present_layered() {
+                        services.record_error(error);
+                    }
+                }
+            }
             if lifecycle_handled || shell_handled || live_view_handled {
                 0
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
+        }
+        #[cfg(feature = "window-chrome")]
+        windows_sys::Win32::UI::WindowsAndMessaging::WM_DWMCOMPOSITIONCHANGED => {
+            update_integrated_caption(hwnd);
+            InvalidateRect(hwnd, null(), 0);
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_SHOWWINDOW => {
             if sync_windows_win32_window_view_visibility(hwnd, wparam != 0) {
@@ -214,6 +283,9 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             }
         }
         WM_SETTINGCHANGE | WM_SYSCOLORCHANGE | WM_THEMECHANGED => {
+            if let Some(services) = window_services(hwnd) {
+                services.sync_appearance();
+            }
             if let Some(plan) = window_draw_plan(hwnd) {
                 apply_windows_win32_window_theme(hwnd, plan.theme_mode);
                 InvalidateRect(hwnd, null(), 0);
@@ -278,7 +350,7 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 crate::ZsPointerButton::Primary,
                 windows_pointer_modifiers(wparam),
             )
-                .is_some_and(|report| report.handled)
+            .is_some_and(|report| report.handled)
             {
                 SetFocus(hwnd);
                 0
@@ -304,7 +376,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             {
                 SetFocus(hwnd);
                 SetCapture(hwnd);
-                if msg == WM_XBUTTONDOWN { 1 } else { 0 }
+                if msg == WM_XBUTTONDOWN {
+                    1
+                } else {
+                    0
+                }
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -320,7 +396,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             .is_some_and(|report| report.handled)
             {
                 ReleaseCapture();
-                if msg == WM_XBUTTONUP { 1 } else { 0 }
+                if msg == WM_XBUTTONUP {
+                    1
+                } else {
+                    0
+                }
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -350,12 +430,9 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             if (lparam as u32 & GCS_COMPSTR) != 0 {
                 if let Some(text) = windows_ime_composition_text(hwnd, GCS_COMPSTR) {
                     let selection = windows_ime_composition_selection(hwnd, &text);
-                    routed |= dispatch_windows_win32_window_view_ime_preedit(
-                        hwnd,
-                        &text,
-                        selection,
-                    )
-                    .is_some();
+                    routed |=
+                        dispatch_windows_win32_window_view_ime_preedit(hwnd, &text, selection)
+                            .is_some();
                     position_windows_ime_candidate(hwnd);
                 }
             }
@@ -374,6 +451,11 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
+        WM_KILLFOCUS
+            if windows_sys::Win32::UI::WindowsAndMessaging::IsChild(hwnd, wparam as HWND) != 0 =>
+        {
+            0
+        }
         WM_KILLFOCUS => match dispatch_windows_win32_window_view_blur(hwnd) {
             Some(report) if !report.events.is_empty() => 0,
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -390,23 +472,25 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
-        WM_KEYDOWN | WM_SYSKEYDOWN => match dispatch_windows_win32_window_view_key_down_with_modifiers(
-            hwnd,
-            wparam as u32,
-            (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
-            (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
-            msg == WM_SYSKEYDOWN || (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
-            (GetKeyState(VK_LWIN as i32) as u16 & 0x8000) != 0
-                || (GetKeyState(VK_RWIN as i32) as u16 & 0x8000) != 0,
-        ) {
-            Some(report) if report.unhandled_key_count == 0 => {
-                // TranslateMessage still posts WM_SYSCHAR for a handled Alt
-                // chord; swallow it so DefWindowProc does not beep.
-                ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.set(msg == WM_SYSKEYDOWN));
-                0
+        WM_KEYDOWN | WM_SYSKEYDOWN => {
+            match dispatch_windows_win32_window_view_key_down_with_modifiers(
+                hwnd,
+                wparam as u32,
+                (GetKeyState(VK_SHIFT as i32) as u16 & 0x8000) != 0,
+                (GetKeyState(VK_CONTROL as i32) as u16 & 0x8000) != 0,
+                msg == WM_SYSKEYDOWN || (GetKeyState(VK_MENU as i32) as u16 & 0x8000) != 0,
+                (GetKeyState(VK_LWIN as i32) as u16 & 0x8000) != 0
+                    || (GetKeyState(VK_RWIN as i32) as u16 & 0x8000) != 0,
+            ) {
+                Some(report) if report.unhandled_key_count == 0 => {
+                    // TranslateMessage still posts WM_SYSCHAR for a handled Alt
+                    // chord; swallow it so DefWindowProc does not beep.
+                    ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.set(msg == WM_SYSKEYDOWN));
+                    0
+                }
+                _ => DefWindowProcW(hwnd, msg, wparam, lparam),
             }
-            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-        },
+        }
         WM_SYSCHAR if ZSUI_WIN32_SYSCHAR_HANDLED.with(|handled| handled.replace(false)) => 0,
         WM_MOUSEWHEEL => {
             let point = mouse_wheel_point_from_lparam(hwnd, lparam);
@@ -435,6 +519,43 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
         }
+        ZSUI_WIN32_SYNC_NATIVE_HOSTS => {
+            if let Some(services) = window_services(hwnd) {
+                if let Err(error) = services.sync_native_hosts() {
+                    services.record_error(error);
+                }
+                services.sync_appearance();
+            }
+            0
+        }
+        ZSUI_WIN32_NATIVE_EVENTS => {
+            if let Some(services) = window_services(hwnd) {
+                services.dispatch_events();
+            }
+            0
+        }
+        #[cfg(feature = "hotkey")]
+        windows_sys::Win32::UI::WindowsAndMessaging::WM_HOTKEY => {
+            let command = window_services(hwnd).and_then(|services| {
+                services.hotkeys.borrow().as_ref().and_then(|hotkeys| {
+                    hotkeys
+                        .commands
+                        .iter()
+                        .find(|(id, _)| *id == wparam as i32)
+                        .map(|(_, command)| command.clone())
+                })
+            });
+            if let Some(command) = command {
+                #[cfg(feature = "native-window-events")]
+                if let Some(services) = window_services(hwnd) {
+                    services.queue_event(crate::NativeWindowEvent::GlobalHotkey(command.clone()));
+                }
+                dispatch_windows_win32_window_view_input(hwnd, |route| {
+                    route.dispatch_app_command(command)
+                });
+            }
+            0
+        }
         WM_PAINT => paint_no_flicker_background(hwnd),
         WM_PRINTCLIENT => paint_window_client_to_dc(hwnd, wparam as _),
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -443,9 +564,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
 
 #[cfg(feature = "window-chrome")]
 fn windows_win32_window_has_custom_title_bar(hwnd: HWND) -> bool {
-    let state =
-        unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *const WindowsWindowCreateParams;
-    !state.is_null() && unsafe { (*state).custom_title_bar }
+    let state = unsafe {
+        windows_sys::Win32::UI::WindowsAndMessaging::GetPropW(hwnd, ZSUI_WINDOW_STATE_PROPERTY)
+    } as *const WindowsWindowState;
+    !state.is_null() && unsafe { (*state).params.custom_title_bar }
 }
 
 #[cfg(feature = "window-chrome")]

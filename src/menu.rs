@@ -155,6 +155,85 @@ impl fmt::Display for ZsAccelerator {
     }
 }
 
+impl std::str::FromStr for ZsAccelerator {
+    type Err = crate::ZsuiError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let invalid =
+            || crate::ZsuiError::invalid_spec("accelerator", format!("invalid shortcut '{value}'"));
+        let parts: Vec<_> = value.split('+').map(str::trim).collect();
+        if parts.is_empty() || parts.iter().any(|part| part.is_empty()) {
+            return Err(invalid());
+        }
+        let key_text = parts[parts.len() - 1].to_ascii_lowercase();
+        let key = match key_text.as_str() {
+            "enter" | "return" => ZsAcceleratorKey::Enter,
+            "tab" => ZsAcceleratorKey::Tab,
+            "esc" | "escape" => ZsAcceleratorKey::Escape,
+            "space" => ZsAcceleratorKey::Space,
+            "backspace" => ZsAcceleratorKey::Backspace,
+            "delete" | "del" => ZsAcceleratorKey::Delete,
+            "up" => ZsAcceleratorKey::Up,
+            "down" => ZsAcceleratorKey::Down,
+            "left" => ZsAcceleratorKey::Left,
+            "right" => ZsAcceleratorKey::Right,
+            "home" => ZsAcceleratorKey::Home,
+            "end" => ZsAcceleratorKey::End,
+            "pageup" => ZsAcceleratorKey::PageUp,
+            "pagedown" => ZsAcceleratorKey::PageDown,
+            _ if key_text.len() == 1 => ZsAcceleratorKey::Character(
+                key_text
+                    .chars()
+                    .next()
+                    .ok_or_else(invalid)?
+                    .to_ascii_uppercase(),
+            ),
+            _ if key_text.starts_with('f') => {
+                ZsAcceleratorKey::Function(key_text[1..].parse().map_err(|_| invalid())?)
+            }
+            _ => return Err(invalid()),
+        };
+        let mut result = Self::new(key);
+        for modifier in &parts[..parts.len() - 1] {
+            let field = match modifier.to_ascii_lowercase().as_str() {
+                "ctrl" | "control" | "primary" | "cmd" | "command" => &mut result.primary,
+                "shift" => &mut result.shift,
+                "alt" | "option" => &mut result.alt,
+                "win" | "windows" | "super" | "meta" => &mut result.super_key,
+                _ => return Err(invalid()),
+            };
+            if *field {
+                return Err(invalid());
+            }
+            *field = true;
+        }
+        result.validate()?;
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod accelerator_parsing_tests {
+    use super::*;
+    #[test]
+    fn shortcuts_preserve_control_and_system_modifier_identity() {
+        let parsed: ZsAccelerator = " ctrl + shift + f24 ".parse().unwrap();
+        assert!(parsed.uses_primary() && parsed.uses_shift() && !parsed.uses_super());
+        assert_eq!(parsed.key(), ZsAcceleratorKey::Function(24));
+        assert!("Win+P".parse::<ZsAccelerator>().unwrap().uses_super());
+        for invalid in [
+            "",
+            "Ctrl++",
+            "Ctrl+Ctrl+P",
+            "Ctrl+F25",
+            "Hyper+P",
+            "Ctrl+Something",
+        ] {
+            assert!(invalid.parse::<ZsAccelerator>().is_err(), "{invalid}");
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MenuSpec {
     pub id: Option<String>,

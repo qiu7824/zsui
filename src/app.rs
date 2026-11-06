@@ -337,6 +337,16 @@ fn validate_windows(windows: &[WindowSpec], issues: &mut Vec<ZsuiDeclarationIssu
 }
 
 fn validate_window(window: &WindowSpec, path: &str, issues: &mut Vec<ZsuiDeclarationIssue>) {
+    if let Err(error) = window
+        .integration
+        .validate(window.decorations, window.always_on_top)
+    {
+        issues.push(ZsuiDeclarationIssue::error(
+            format!("{path}.integration"),
+            error.to_string(),
+        ));
+    }
+    validate_hotkeys(&window.global_hotkeys, issues);
     if window.title.trim().is_empty() {
         issues.push(ZsuiDeclarationIssue::error(
             format!("{path}.title"),

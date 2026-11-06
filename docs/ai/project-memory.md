@@ -1569,8 +1569,10 @@ history remain authoritative for implementation status.
   GTK compatibility paths share the same image boundary; the native-proof
   workflow runs a 2x2 write/read/restore round trip on Windows, macOS and Linux.
   The Linux implementation retains one thread-owned `arboard` connection so
-  X11 selection ownership survives across separate service calls. Clipboard
-  file lists remain explicitly unsupported.
+  X11 selection ownership survives across separate service calls. Windows file
+  lists are opt-in through `clipboard-files`, sharing an STA-owned Shell
+  `IDataObject` adapter with OLE drag/drop. Text/image requests retain their
+  existing path; other platform file-list services remain unsupported.
 - A control counts only after layout, state, events, themed paint and tests are
   connected. Platform completion additionally needs target evidence.
 - For each vertical slice, run focused checks, the required full gates, real
@@ -1695,6 +1697,29 @@ history remain authoritative for implementation status.
   the basic input hint as a description rather than inventing a value.
 
 ## Desktop interaction contracts
+
+- `native-host` declares stable child slots in ordinary View layout; native
+  providers are window-owned and UI-thread confined. Geometry includes ancestor
+  clipping and popup occlusion, while compatible rebuilds retain native state.
+  Window properties and lifetime identities own backend resources; no new global
+  control registry is introduced. Built-in ZSUI input controls remain self-drawn.
+- `window-chrome` supports integrated DWM captions, actual caption-reservation
+  events and an optional Mica backdrop with an opaque fallback. Per-pixel alpha
+  surfaces use explicit layered presentation and require undecorated windows.
+  Native child slots require opaque parents. The optional Direct2D path uses the
+  existing draw protocol and shared text/icon shaping; software targets are the
+  default for alpha surfaces and opaque windows keep the buffered GDI default.
+- Desktop windows keep independent HWND ownership, remain below normal apps,
+  follow desktop foreground changes and re-establish their layer after
+  `TaskbarCreated`. Explicit application hiding takes precedence over recovery.
+  Shell menus and drag loops execute outside View/route locks. Native menu
+  insertion guards remove only their own rows and preserve external ownership.
+- OLE file targets default to copy. Move/link acknowledgement is synchronous and
+  explicit through `AppCx::accept_drop`; an unacknowledged move is rejected.
+  The application owns file operations. Global hotkeys use window-owned native
+  registrations and explicit conflict errors. Command bindings that must restore
+  a released hidden View belong in `stateful_with_commands`, independently of
+  View notification handlers.
 
 - Icon roles and user-adjustable NavigationView, SplitView and DataGrid extents
   are priorities alongside the original desktop-hardening slice A. Preserve A's
