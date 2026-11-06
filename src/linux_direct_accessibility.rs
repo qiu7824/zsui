@@ -833,6 +833,10 @@ fn role_label(kind: ViewHitTargetKind) -> &'static str {
 
 fn accesskit_role(kind: ViewHitTargetKind) -> Role {
     match kind {
+        #[cfg(feature = "native-host")]
+        ViewHitTargetKind::NativeHost(_) => Role::GenericContainer,
+        #[cfg(feature = "windows-shell")]
+        ViewHitTargetKind::FileDropRegion => Role::GenericContainer,
         #[cfg(feature = "resize")]
         ViewHitTargetKind::ResizeHandle(_) => Role::Splitter,
         #[cfg(feature = "canvas")]

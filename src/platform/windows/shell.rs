@@ -741,12 +741,20 @@ mod tests {
                 std::fs::write(path, b"native transfer fixture").unwrap();
             }
             let object = data_object(&fixture.paths).unwrap();
-            assert_eq!(object_files(&object).unwrap(), Some(fixture.paths.clone()));
             let canonical: Vec<_> = fixture
                 .paths
                 .iter()
                 .map(|path| path.canonicalize().unwrap())
                 .collect();
+            // Shell transfer expands 8.3 aliases (including runner TEMP paths).
+            // Compare filesystem identity while retaining order and every item.
+            let returned: Vec<_> = object_files(&object)
+                .unwrap()
+                .unwrap()
+                .into_iter()
+                .map(|path| path.canonicalize().unwrap())
+                .collect();
+            assert_eq!(returned, canonical);
             let object = data_object(&canonical).unwrap();
             let returned: Vec<_> = object_files(&object)
                 .unwrap()
