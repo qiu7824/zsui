@@ -5,6 +5,11 @@ code points, platform object pointers or file paths. The selected desktop host
 resolves each value through `IconService` and keeps platform-specific lookup in
 the backend.
 
+Windows glyph identifiers follow Microsoft's
+[Segoe Fluent Icons catalog](https://learn.microsoft.com/en-us/windows/apps/design/iconography/segoe-fluent-icons-font).
+`Window` uses the application-window symbol; `Volume` and `Volume2` use distinct
+one-wave and two-wave symbols, matching the portable vector variants.
+
 ## Resolution order
 
 | Platform | Primary source | Secondary source | Portable fallback |
@@ -100,7 +105,7 @@ All native renderers have the complete built-in vector fallback.
 
 ## Runtime evidence
 
-The Windows fallback paint test checks all 58 semantic icons for nonempty GDI+
+The Windows fallback paint test checks all 73 semantic icons for nonempty GDI+
 pixels; the native layout example exercises light, dark and high-contrast
 rendering, including differently tinted instances of one icon. Native target
 captures cover all 45 icons in light, dark and high-contrast scenes on

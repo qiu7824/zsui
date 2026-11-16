@@ -541,6 +541,37 @@ impl NativeDrawCommandSink for LinuxLiteDrawSink<'_> {
                     self.stroke_path_color(&path, self.palette.resolve_source_fill(*stroke), 1.0);
                 }
             }
+            NativeDrawCommand::StyledRoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+                width,
+            } => {
+                let inset = (*width).max(1) / 2;
+                let rect = &Rect {
+                    x: rect.x + inset,
+                    y: rect.y + inset,
+                    width: rect.width.saturating_sub(inset * 2),
+                    height: rect.height.saturating_sub(inset * 2),
+                };
+                let radius = &radius.saturating_sub(inset);
+                let stroke = &Some(*stroke);
+
+                self.fill_round_color(
+                    *rect,
+                    *radius as f32,
+                    self.palette.resolve_source_fill(*fill),
+                );
+                if let (Some(stroke), Some(path)) = (stroke, self.round_path(*rect, *radius as f32))
+                {
+                    self.stroke_path_color(
+                        &path,
+                        self.palette.resolve_source_fill(*stroke),
+                        (*width).max(1) as f32,
+                    );
+                }
+            }
             NativeDrawCommand::RoundFill { rect, fill, radius } => self.fill_round_color(
                 *rect,
                 *radius as f32,
@@ -550,11 +581,27 @@ impl NativeDrawCommandSink for LinuxLiteDrawSink<'_> {
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(command) => {
                 let rendered = command.rendered_text();
-                self.draw_text_command(&NativeDrawTextCommand::new(
-                    rendered.as_str(),
-                    command.bounds,
-                    command.style,
-                ));
+                self.draw_text_command(
+                    &NativeDrawTextCommand::new(rendered.as_str(), command.bounds, command.style)
+                        .with_font_override(command.font.clone()),
+                );
+            }
+            #[cfg(feature = "custom-icons")]
+            NativeDrawCommand::VectorIcon(command) => {
+                match command.image(
+                    self.palette.resolve(command.color),
+                    self.palette.high_contrast,
+                ) {
+                    Ok(image) => self.draw_image(&image),
+                    Err(error) => {
+                        eprintln!("ZSUI icon resource: {error}");
+                        self.draw_icon(&crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Error,
+                            command.bounds,
+                            crate::NativeIconColorMode::ThemeAware,
+                        ));
+                    }
+                }
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::Image(command) => self.draw_image(command),
@@ -756,6 +803,7 @@ pub(crate) fn linux_lite_typography_profile(
     .with_configured_ui_font(crate::linux_direct::linux_direct_configured_font_name());
     let body = profile.body_metrics;
     let style = TextStyle {
+        fallback_families: Vec::new(),
         font_family: profile.ui_font_family.clone(),
         size: body.size,
         line_height: body.line_height,
@@ -792,6 +840,15 @@ pub(crate) fn shape_linux_lite_text_line_at_scale(
     text: &str,
     typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_lite_text_line_with_font(text_system, text, typography_scale, None)
+}
+#[cfg(feature = "text-input-core")]
+pub(crate) fn shape_linux_lite_text_line_with_font(
+    text_system: &LinuxLiteTextSystem,
+    text: &str,
+    typography_scale: f32,
+    font: Option<&crate::FontSpec>,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     if text.is_empty() {
         return None;
     }
@@ -804,6 +861,9 @@ pub(crate) fn shape_linux_lite_text_line_at_scale(
     style.line_height = body.line_height * typography_scale;
     style.ellipsis = false;
     style.semantic_role = Some(crate::TextRole::Body);
+    if let Some(font) = font {
+        font.apply(&mut style);
+    }
     let mut engine = text_system.inner.lock().ok()?;
     let layout = engine.layout(text, &style, 0, 0, 1.0);
     crate::rust_text_renderer::native_shaped_line_from_layout(text, &layout, style.size)

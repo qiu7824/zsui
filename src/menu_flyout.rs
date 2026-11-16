@@ -427,8 +427,35 @@ pub fn zs_menu_flyout_native_draw_plan(
                 label,
                 checked,
                 accelerator,
+                command,
                 ..
             } => {
+                #[cfg(feature = "custom-icons")]
+                if !checked {
+                    if let Some(source) = menu.icon_for_command(command) {
+                        match source {
+                            crate::IconSource::Semantic(icon) => {
+                                output.push(NativeDrawCommand::Icon(
+                                    NativeDrawIconCommand::new(
+                                        *icon,
+                                        row.indicator_bounds,
+                                        NativeIconColorMode::ThemeAware,
+                                    )
+                                    .with_color(text_color),
+                                ))
+                            }
+                            crate::IconSource::Vector(asset) => output.push(
+                                NativeDrawCommand::VectorIcon(crate::NativeDrawVectorIcon {
+                                    asset: asset.clone(),
+                                    bounds: row.indicator_bounds,
+                                    color: text_color,
+                                    custom_color: None,
+                                    color_mode: NativeIconColorMode::ThemeAware,
+                                }),
+                            ),
+                        }
+                    }
+                }
                 if *checked {
                     output.push(NativeDrawCommand::Icon(
                         NativeDrawIconCommand::new(

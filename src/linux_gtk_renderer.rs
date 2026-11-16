@@ -415,7 +415,7 @@ pub(crate) fn install_linux_gtk_draw_plan(
                     | gtk::gdk::ModifierType::META_MASK,
             );
             #[cfg(feature = "text-input-core")]
-            let text_edit_shortcut = control && !shift && !alt && !super_or_meta;
+            let text_edit_shortcut = control && !alt && !super_or_meta;
             let mut runtime_state = runtime.borrow_mut();
             let report = match key {
                 gtk::gdk::Key::Tab => runtime_state.dispatch_key_with_modifiers(
@@ -485,7 +485,9 @@ pub(crate) fn install_linux_gtk_draw_plan(
                 #[cfg(feature = "text-input-core")]
                 _ if text_edit_shortcut => key
                     .to_unicode()
-                    .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                    .and_then(|character| {
+                        crate::native_text_edit::text_edit_command_for_shortcut(character, shift)
+                    })
                     .map(|command| runtime_state.dispatch_text_edit_shortcut(command))
                     .unwrap_or_default(),
                 _ if !command_or_control => key
@@ -1579,6 +1581,14 @@ struct LinuxGtkPangoTextShaper {
 
 #[cfg(feature = "text-input-core")]
 impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_linux_gtk_text_line_with_font(&self.context, text, self.typography_scale(), font)
+    }
+
     fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
         *self
             .scale
@@ -1613,6 +1623,26 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxGtkPangoTextShaper {
         Some(LinuxGtkTextLayout::new(self.context.clone()).measure(text, &style, max_width))
     }
 
+    fn measure_with_font(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            linux_gtk_native_typography_profile(typography_scale, Some(&self.context)),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let mut style = resolver.resolve_text_style(semantic);
+        if let Some(font) = font {
+            font.apply(&mut style);
+        }
+        Some(LinuxGtkTextLayout::new(self.context.clone()).measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_linux_gtk_text_line_at_scale(&self.context, text, self.typography_scale())
     }
@@ -1631,6 +1661,15 @@ fn shape_linux_gtk_text_line_at_scale(
     text: &str,
     typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_gtk_text_line_with_font(context, text, typography_scale, None)
+}
+#[cfg(feature = "text-input-core")]
+fn shape_linux_gtk_text_line_with_font(
+    context: &gtk::pango::Context,
+    text: &str,
+    typography_scale: f32,
+    font: Option<&crate::FontSpec>,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
     };
@@ -1646,6 +1685,9 @@ fn shape_linux_gtk_text_line_at_scale(
     );
     style.line_height = body.line_height * typography_scale;
     style.semantic_role = Some(crate::TextRole::Body);
+    if let Some(font) = font {
+        font.apply(&mut style);
+    }
     let layout = gtk::pango::Layout::new(context);
     configure_pango_layout(&layout, text, &style, None);
     let boundaries = crate::native_text_edit::grapheme_boundaries(text);
@@ -2082,6 +2124,36 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
                     let _ = self.context.stroke();
                 }
             }
+            NativeDrawCommand::StyledRoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+                width,
+            } => {
+                let inset = (*width).max(1) / 2;
+                let rect = &Rect {
+                    x: rect.x + inset,
+                    y: rect.y + inset,
+                    width: rect.width.saturating_sub(inset * 2),
+                    height: rect.height.saturating_sub(inset * 2),
+                };
+                let radius = &radius.saturating_sub(inset);
+                let stroke = &Some(*stroke);
+
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                if stroke.is_some() {
+                    let _ = self.context.fill_preserve();
+                } else {
+                    let _ = self.context.fill();
+                }
+                if let Some(stroke) = stroke {
+                    self.set_source(self.palette.resolve_source_fill(*stroke));
+                    self.context.set_line_width(f64::from((*width).max(1)));
+                    let _ = self.context.stroke();
+                }
+            }
             NativeDrawCommand::RoundFill { rect, fill, radius } => {
                 self.add_round_rect(*rect, *radius);
                 self.set_source(self.palette.resolve_source_fill(*fill));
@@ -2091,11 +2163,27 @@ impl NativeDrawCommandSink for LinuxGtkDrawSink<'_> {
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(command) => {
                 let rendered = command.rendered_text();
-                self.draw_text(&NativeDrawTextCommand::new(
-                    rendered.as_str(),
-                    command.bounds,
-                    command.style,
-                ));
+                self.draw_text(
+                    &NativeDrawTextCommand::new(rendered.as_str(), command.bounds, command.style)
+                        .with_font_override(command.font.clone()),
+                );
+            }
+            #[cfg(feature = "custom-icons")]
+            NativeDrawCommand::VectorIcon(command) => {
+                match command.image(
+                    self.palette.resolve(command.color),
+                    self.palette.high_contrast,
+                ) {
+                    Ok(image) => self.draw_image(&image),
+                    Err(error) => {
+                        eprintln!("ZSUI icon resource: {error}");
+                        self.draw_icon(&crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Error,
+                            command.bounds,
+                            crate::NativeIconColorMode::ThemeAware,
+                        ));
+                    }
+                }
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::Image(command) => self.draw_image(command),
@@ -2181,7 +2269,7 @@ fn configure_pango_layout(
 ) {
     layout.set_text(text);
     let mut font = gtk::pango::FontDescription::new();
-    font.set_family(&style.font_family);
+    font.set_family(&style.family_list());
     font.set_absolute_size(f64::from(style.size) * f64::from(gtk::pango::SCALE));
     font.set_weight(match style.weight {
         TextWeight::Automatic => gtk::pango::Weight::Normal,

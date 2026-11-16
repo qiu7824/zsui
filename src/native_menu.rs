@@ -251,6 +251,8 @@ mod tests {
     #[test]
     fn invalid_typed_accelerators_fail_before_reaching_a_backend() {
         let menu = MenuSpec {
+            #[cfg(feature = "custom-icons")]
+            command_icons: Vec::new(),
             id: None,
             title: None,
             items: vec![MenuItemSpec::command("Invalid", Command::Quit)

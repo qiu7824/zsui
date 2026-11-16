@@ -60,6 +60,21 @@ pub enum ZsIcon {
     Properties,
     Star,
     StarFilled,
+    Monitor,
+    Window,
+    Camera,
+    Mic,
+    MicOff,
+    Volume,
+    Volume2,
+    VolumeOff,
+    Play,
+    Pause,
+    Record,
+    Message,
+    User,
+    Users,
+    Video,
 }
 
 /// Semantic standalone-icon size resolved through the active desktop profile.
@@ -121,7 +136,7 @@ impl ZsIconRole {
 }
 
 impl ZsIcon {
-    pub const ALL: [Self; 58] = [
+    pub const ALL: [Self; 73] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -180,10 +195,41 @@ impl ZsIcon {
         Self::Properties,
         Self::Star,
         Self::StarFilled,
+        Self::Monitor,
+        Self::Window,
+        Self::Camera,
+        Self::Mic,
+        Self::MicOff,
+        Self::Volume,
+        Self::Volume2,
+        Self::VolumeOff,
+        Self::Play,
+        Self::Pause,
+        Self::Record,
+        Self::Message,
+        Self::User,
+        Self::Users,
+        Self::Video,
     ];
 
     pub const fn asset_name(self) -> &'static str {
         match self {
+            Self::Monitor => "monitor",
+            Self::Window => "window",
+            Self::Camera => "camera",
+            Self::Mic => "mic",
+            Self::MicOff => "mic-off",
+            Self::Volume => "volume",
+            Self::Volume2 => "volume-2",
+            Self::VolumeOff => "volume-off",
+            Self::Play => "play",
+            Self::Pause => "pause",
+            Self::Record => "record",
+            Self::Message => "message",
+            Self::User => "user",
+            Self::Users => "users",
+            Self::Video => "video",
+
             Self::Back => "back",
             Self::Forward => "forward",
             Self::Up => "up",
@@ -246,6 +292,22 @@ impl ZsIcon {
 
     pub const fn gtk_symbolic_name(self) -> &'static str {
         match self {
+            Self::Monitor => "video-display-symbolic",
+            Self::Window => "window-new-symbolic",
+            Self::Camera => "camera-photo-symbolic",
+            Self::Mic => "audio-input-microphone-symbolic",
+            Self::MicOff => "microphone-sensitivity-muted-symbolic",
+            Self::Volume => "audio-volume-low-symbolic",
+            Self::Volume2 => "audio-volume-high-symbolic",
+            Self::VolumeOff => "audio-volume-muted-symbolic",
+            Self::Play => "media-playback-start-symbolic",
+            Self::Pause => "media-playback-pause-symbolic",
+            Self::Record => "media-record-symbolic",
+            Self::Message => "mail-message-new-symbolic",
+            Self::User => "avatar-default-symbolic",
+            Self::Users => "system-users-symbolic",
+            Self::Video => "camera-video-symbolic",
+
             Self::Back => "go-previous-symbolic",
             Self::Forward => "go-next-symbolic",
             Self::Up => "go-up-symbolic",
@@ -308,6 +370,22 @@ impl ZsIcon {
 
     pub const fn windows_fluent_glyph(self) -> &'static str {
         match self {
+            Self::Monitor => "\u{E7F4}",
+            Self::Window => "\u{ECAA}",
+            Self::Camera => "\u{E722}",
+            Self::Mic => "\u{E720}",
+            Self::MicOff => "\u{EC54}",
+            Self::Volume => "\u{E993}",
+            Self::Volume2 => "\u{E994}",
+            Self::VolumeOff => "\u{E74F}",
+            Self::Play => "\u{E768}",
+            Self::Pause => "\u{E769}",
+            Self::Record => "\u{E7C8}",
+            Self::Message => "\u{E8BD}",
+            Self::User => "\u{E77B}",
+            Self::Users => "\u{E902}",
+            Self::Video => "\u{E714}",
+
             Self::Back => "\u{E72B}",
             Self::Forward => "\u{E72A}",
             Self::Up => "\u{E74A}",
@@ -376,6 +454,22 @@ impl ZsIcon {
 
     pub const fn fluent_svg_asset_name(self) -> &'static str {
         match self {
+            Self::Monitor => "monitor.svg",
+            Self::Window => "window.svg",
+            Self::Camera => "camera.svg",
+            Self::Mic => "mic.svg",
+            Self::MicOff => "mic-off.svg",
+            Self::Volume => "volume.svg",
+            Self::Volume2 => "volume-2.svg",
+            Self::VolumeOff => "volume-off.svg",
+            Self::Play => "play.svg",
+            Self::Pause => "pause.svg",
+            Self::Record => "record.svg",
+            Self::Message => "message.svg",
+            Self::User => "user.svg",
+            Self::Users => "users.svg",
+            Self::Video => "video.svg",
+
             Self::Back => "back.svg",
             Self::Forward => "forward.svg",
             Self::Up => "up.svg",
@@ -448,6 +542,24 @@ impl ZsIcon {
     ))]
     pub const fn fluent_svg_bytes(self) -> &'static [u8] {
         match self {
+            Self::Monitor => include_bytes!("../assets/fluent-system-icons/regular/monitor.svg"),
+            Self::Window => include_bytes!("../assets/fluent-system-icons/regular/window.svg"),
+            Self::Camera => include_bytes!("../assets/fluent-system-icons/regular/camera.svg"),
+            Self::Mic => include_bytes!("../assets/fluent-system-icons/regular/mic.svg"),
+            Self::MicOff => include_bytes!("../assets/fluent-system-icons/regular/mic-off.svg"),
+            Self::Volume => include_bytes!("../assets/fluent-system-icons/regular/volume.svg"),
+            Self::Volume2 => include_bytes!("../assets/fluent-system-icons/regular/volume-2.svg"),
+            Self::VolumeOff => {
+                include_bytes!("../assets/fluent-system-icons/regular/volume-off.svg")
+            }
+            Self::Play => include_bytes!("../assets/fluent-system-icons/regular/play.svg"),
+            Self::Pause => include_bytes!("../assets/fluent-system-icons/regular/pause.svg"),
+            Self::Record => include_bytes!("../assets/fluent-system-icons/regular/record.svg"),
+            Self::Message => include_bytes!("../assets/fluent-system-icons/regular/message.svg"),
+            Self::User => include_bytes!("../assets/fluent-system-icons/regular/user.svg"),
+            Self::Users => include_bytes!("../assets/fluent-system-icons/regular/users.svg"),
+            Self::Video => include_bytes!("../assets/fluent-system-icons/regular/video.svg"),
+
             Self::Back => include_bytes!("../assets/fluent-system-icons/regular/back.svg"),
             Self::Forward => include_bytes!("../assets/fluent-system-icons/regular/forward.svg"),
             Self::Up => include_bytes!("../assets/fluent-system-icons/regular/up.svg"),
@@ -536,6 +648,22 @@ impl ZsIcon {
 
     pub const fn sf_symbol_name(self) -> &'static str {
         match self {
+            Self::Monitor => "display",
+            Self::Window => "macwindow",
+            Self::Camera => "camera",
+            Self::Mic => "mic",
+            Self::MicOff => "mic.slash",
+            Self::Volume => "speaker.wave.1",
+            Self::Volume2 => "speaker.wave.2",
+            Self::VolumeOff => "speaker.slash",
+            Self::Play => "play",
+            Self::Pause => "pause",
+            Self::Record => "record.circle",
+            Self::Message => "message",
+            Self::User => "person",
+            Self::Users => "person.2",
+            Self::Video => "video",
+
             Self::Back => "arrow.left",
             Self::Forward => "arrow.right",
             Self::Up => "arrow.up",
@@ -599,6 +727,22 @@ impl ZsIcon {
 
     pub const fn png_24_bytes(self) -> Option<&'static [u8]> {
         match self {
+            Self::Monitor => None,
+            Self::Window => None,
+            Self::Camera => None,
+            Self::Mic => None,
+            Self::MicOff => None,
+            Self::Volume => None,
+            Self::Volume2 => None,
+            Self::VolumeOff => None,
+            Self::Play => None,
+            Self::Pause => None,
+            Self::Record => None,
+            Self::Message => None,
+            Self::User => None,
+            Self::Users => None,
+            Self::Video => None,
+
             Self::Back => None,
             Self::Forward => None,
             Self::Up => None,

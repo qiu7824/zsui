@@ -9,8 +9,13 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
 };
 
+#[cfg(feature = "native-smoke")]
+#[path = "windows_offscreen.rs"]
+mod offscreen;
 #[path = "windows_symbolic_icons.rs"]
 mod symbolic_icons;
+#[cfg(feature = "native-smoke")]
+pub use offscreen::{render_windows_offscreen, WindowsOffscreenFrame};
 
 use crate::{
     native_icons::{WINDOWS_FLUENT_ICON_FONT_FAMILY, WINDOWS_MDL2_ICON_FONT_FAMILY},
@@ -849,6 +854,17 @@ unsafe fn draw_round_rect_antialiased(
     stroke: Option<Color>,
     radius: i32,
 ) -> bool {
+    draw_round_rect_antialiased_width(hdc, rect, fill, stroke, radius, 1.0)
+}
+
+unsafe fn draw_round_rect_antialiased_width(
+    hdc: HDC,
+    rect: RECT,
+    fill: Color,
+    stroke: Option<Color>,
+    radius: i32,
+    stroke_width: f32,
+) -> bool {
     if ensure_gdiplus_startup().is_none() {
         return false;
     }
@@ -878,7 +894,12 @@ unsafe fn draw_round_rect_antialiased(
     }
     if let Some(stroke) = stroke.filter(|stroke| *stroke != fill) {
         let mut pen = std::ptr::null_mut();
-        if GdipCreatePen1(color_to_argb(stroke), 1.0, GDIP_UNIT_PIXEL, &mut pen) == 0
+        if GdipCreatePen1(
+            color_to_argb(stroke),
+            stroke_width,
+            GDIP_UNIT_PIXEL,
+            &mut pen,
+        ) == 0
             && !pen.is_null()
         {
             ok &= GdipDrawPath(graphics, pen, path) == 0;
@@ -1659,6 +1680,31 @@ impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
         Some(layout.measure(text, &style, max_width))
     }
 
+    fn measure_with_font(
+        &self,
+        text: &str,
+        semantic: SemanticTextStyle,
+        max_width: i32,
+        dpi: Dpi,
+        typography_scale: f32,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<Size> {
+        let dc = WindowsGdiOwnedMemoryDc::new()?;
+        let mut style = self.resolver.resolve_text_style(semantic);
+        let typography_scale = typography_scale.max(0.5);
+        style.size *= typography_scale;
+        style.line_height *= typography_scale;
+        if let Some(font) = font {
+            font.apply(&mut style);
+        }
+        let layout = WindowsGdiTextLayout::with_dpi_scale_and_resources(
+            dc.0,
+            dpi.scale_factor(),
+            self.resources.clone(),
+        );
+        Some(layout.measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         #[cfg(feature = "windows-rust-text")]
         {
@@ -1667,6 +1713,32 @@ impl crate::native_input_visuals::NativeTextShaper for WindowsGdiTextShaper {
                 WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle::body());
             style.size *= typography_scale;
             style.line_height *= typography_scale;
+            style.wrap = crate::TextWrap::NoWrap;
+            style.ellipsis = false;
+            return self.resources.entries.lock().ok()?.rust_text.shape_line(
+                text,
+                &style,
+                dpi.scale_factor(),
+            );
+        }
+        #[cfg(not(feature = "windows-rust-text"))]
+        shape_windows_gdi_text_line(text)
+    }
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        #[cfg(feature = "windows-rust-text")]
+        {
+            let (dpi, typography_scale) = *self.context.lock().ok()?;
+            let mut style =
+                WindowsGdiStyleResolver::default().resolve_text_style(SemanticTextStyle::body());
+            style.size *= typography_scale;
+            style.line_height *= typography_scale;
+            if let Some(font) = font {
+                font.apply(&mut style);
+            }
             style.wrap = crate::TextWrap::NoWrap;
             style.ellipsis = false;
             return self.resources.entries.lock().ok()?.rust_text.shape_line(
@@ -1888,6 +1960,15 @@ impl WindowsGdiPalette {
     ) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
+            NativeDrawFill::RoleOverride { role, color, alpha } => {
+                let source = crate::appearance::override_color(
+                    color,
+                    self.resolve(role),
+                    alpha,
+                    high_contrast,
+                );
+                blend_color(source, self.surface, source.a)
+            }
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
                 let alpha = if high_contrast {
@@ -1907,6 +1988,9 @@ impl WindowsGdiPalette {
     ) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
+            NativeDrawFill::RoleOverride { role, color, alpha } => {
+                crate::appearance::override_color(color, self.resolve(role), alpha, high_contrast)
+            }
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
                 let alpha = if high_contrast {
@@ -2331,28 +2415,35 @@ impl WindowsGdiDrawSink {
     }
 
     fn draw_icon_command(&mut self, command: &NativeDrawIconCommand) {
+        self.draw_icon_command_source(command);
+    }
+
+    fn draw_icon_command_source(&mut self, command: &NativeDrawIconCommand) -> &'static str {
         if self.renderer.hdc().is_null() || command.bounds.width <= 0 || command.bounds.height <= 0
         {
-            return;
+            return "empty";
         }
         if command.color_mode == NativeIconColorMode::Original && self.draw_original_icon(command) {
-            return;
+            return "bitmap";
         }
         if self.draw_system_icon(command, self.system_icon_font) {
-            return;
+            return self.system_icon_font.font_family().unwrap_or("system-font");
         }
         if self.system_icon_font == WindowsSystemIconFont::SegoeFluentIcons
             && self.draw_system_icon(command, WindowsSystemIconFont::SegoeMdl2Assets)
         {
-            return;
+            return WINDOWS_MDL2_ICON_FONT_FAMILY;
         }
         if !symbolic_icons::draw(
             self.renderer.hdc(),
             command,
-            self.palette.resolve(command.color),
+            command
+                .color_override(self.high_contrast)
+                .unwrap_or_else(|| self.palette.resolve(command.color)),
         ) {
             eprintln!("ZSUI could not draw semantic icon {:?}", command.icon);
         }
+        "builtin-symbolic"
     }
 
     fn draw_original_icon(&mut self, command: &NativeDrawIconCommand) -> bool {
@@ -2402,6 +2493,7 @@ impl WindowsGdiDrawSink {
         };
         let size = command.bounds.width.min(command.bounds.height).max(1) as f32;
         let style = TextStyle {
+            fallback_families: Vec::new(),
             font_family: font_family.to_string(),
             size: size / self.renderer.dpi_scale.max(f32::EPSILON),
             line_height: size / self.renderer.dpi_scale.max(f32::EPSILON),
@@ -2648,6 +2740,7 @@ pub(crate) fn windows_native_typography_profile() -> crate::NativeTypographyProf
     .with_configured_ui_font(ui_fonts.text)
     .with_role_families(ui_fonts.small, ui_fonts.display);
     let style = TextStyle {
+        fallback_families: Vec::new(),
         font_family: ui_fonts.text.to_string(),
         size: profile.body_metrics.size,
         line_height: profile.body_metrics.line_height,
@@ -2727,7 +2820,8 @@ impl NativeDrawCommandSink for WindowsBufferedDrawSink<'_, '_> {
                 self.sink.operation_log.push(command.operation());
                 let rendered = text.rendered_text();
                 self.sink.draw_text_command_buffered(
-                    &NativeDrawTextCommand::new(rendered.as_str(), text.bounds, text.style),
+                    &NativeDrawTextCommand::new(rendered.as_str(), text.bounds, text.style)
+                        .with_font_override(text.font.clone()),
                     &mut self.surface,
                 );
             }
@@ -2819,6 +2913,37 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
                 stroke,
                 radius,
             } => self.draw_round_rect(*rect, *fill, *stroke, *radius),
+            NativeDrawCommand::StyledRoundRect {
+                rect,
+                fill,
+                stroke,
+                width,
+                radius,
+            } => {
+                let inset = (*width).max(1) / 2;
+                let inner = Rect {
+                    x: rect.x + inset,
+                    y: rect.y + inset,
+                    width: rect.width.saturating_sub(inset * 2),
+                    height: rect.height.saturating_sub(inset * 2),
+                };
+                let fill = self
+                    .palette
+                    .resolve_source_fill_with_contrast(*fill, self.high_contrast);
+                let stroke = self
+                    .palette
+                    .resolve_source_fill_with_contrast(*stroke, self.high_contrast);
+                unsafe {
+                    draw_round_rect_antialiased_width(
+                        self.renderer.hdc(),
+                        to_win_rect(inner),
+                        fill,
+                        Some(stroke),
+                        radius.saturating_sub(inset),
+                        (*width).max(1) as f32,
+                    );
+                }
+            }
             NativeDrawCommand::RoundFill { rect, fill, radius } => {
                 self.draw_round_rect(*rect, *fill, None, *radius);
             }
@@ -2826,11 +2951,24 @@ impl NativeDrawCommandSink for WindowsGdiDrawSink {
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(command) => {
                 let rendered = command.rendered_text();
-                self.draw_text_command(&NativeDrawTextCommand::new(
-                    rendered.as_str(),
-                    command.bounds,
-                    command.style,
-                ));
+                self.draw_text_command(
+                    &NativeDrawTextCommand::new(rendered.as_str(), command.bounds, command.style)
+                        .with_font_override(command.font.clone()),
+                );
+            }
+            #[cfg(feature = "custom-icons")]
+            NativeDrawCommand::VectorIcon(command) => {
+                match command.image(self.palette.resolve(command.color), self.high_contrast) {
+                    Ok(image) => self.draw_image_command(&image),
+                    Err(error) => {
+                        eprintln!("ZSUI icon resource: {error}");
+                        self.draw_icon_command(&crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Error,
+                            command.bounds,
+                            crate::NativeIconColorMode::ThemeAware,
+                        ));
+                    }
+                }
             }
             NativeDrawCommand::Icon(command) => self.draw_icon_command(command),
             NativeDrawCommand::Image(command) => self.draw_image_command(command),

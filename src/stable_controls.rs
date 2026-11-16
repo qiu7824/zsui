@@ -132,11 +132,41 @@ pub enum Icon {
     Star,
     /// StarFilled action or content.
     StarFilled,
+    /// Monitor action or source.
+    Monitor,
+    /// Window action or source.
+    Window,
+    /// Camera action or source.
+    Camera,
+    /// Mic action or source.
+    Mic,
+    /// MicOff action or source.
+    MicOff,
+    /// Volume action or source.
+    Volume,
+    /// Volume2 action or source.
+    Volume2,
+    /// VolumeOff action or source.
+    VolumeOff,
+    /// Play action or source.
+    Play,
+    /// Pause action or source.
+    Pause,
+    /// Record action or source.
+    Record,
+    /// Message action or source.
+    Message,
+    /// User action or source.
+    User,
+    /// Users action or source.
+    Users,
+    /// Video action or source.
+    Video,
 }
 
 impl Icon {
     /// All stable semantic icons, in catalog order.
-    pub const ALL: [Self; 58] = [
+    pub const ALL: [Self; 73] = [
         Self::App,
         Self::Calculator,
         Self::History,
@@ -195,8 +225,23 @@ impl Icon {
         Self::Properties,
         Self::Star,
         Self::StarFilled,
+        Self::Monitor,
+        Self::Window,
+        Self::Camera,
+        Self::Mic,
+        Self::MicOff,
+        Self::Volume,
+        Self::Volume2,
+        Self::VolumeOff,
+        Self::Play,
+        Self::Pause,
+        Self::Record,
+        Self::Message,
+        Self::User,
+        Self::Users,
+        Self::Video,
     ];
-    #[cfg(any(feature = "icon", feature = "button"))]
+    #[cfg(any(feature = "icon", feature = "button", feature = "tabs"))]
     const fn into_raw(self) -> crate::ZsIcon {
         match self {
             Self::App => crate::ZsIcon::App,
@@ -257,7 +302,89 @@ impl Icon {
             Self::Properties => crate::ZsIcon::Properties,
             Self::Star => crate::ZsIcon::Star,
             Self::StarFilled => crate::ZsIcon::StarFilled,
+            Self::Monitor => crate::ZsIcon::Monitor,
+            Self::Window => crate::ZsIcon::Window,
+            Self::Camera => crate::ZsIcon::Camera,
+            Self::Mic => crate::ZsIcon::Mic,
+            Self::MicOff => crate::ZsIcon::MicOff,
+            Self::Volume => crate::ZsIcon::Volume,
+            Self::Volume2 => crate::ZsIcon::Volume2,
+            Self::VolumeOff => crate::ZsIcon::VolumeOff,
+            Self::Play => crate::ZsIcon::Play,
+            Self::Pause => crate::ZsIcon::Pause,
+            Self::Record => crate::ZsIcon::Record,
+            Self::Message => crate::ZsIcon::Message,
+            Self::User => crate::ZsIcon::User,
+            Self::Users => crate::ZsIcon::Users,
+            Self::Video => crate::ZsIcon::Video,
         }
+    }
+}
+
+#[cfg(feature = "custom-icons")]
+impl From<Icon> for crate::IconSource {
+    fn from(icon: Icon) -> Self {
+        Self::Semantic(icon.into_raw())
+    }
+}
+
+/// Stable identity of an application tab.
+#[cfg(feature = "tabs")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TabId(u64);
+#[cfg(feature = "tabs")]
+impl TabId {
+    /// Creates an application-owned tab identity.
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+    /// Returns the scalar identity.
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+/// A labelled tab and its retained content subtree.
+#[cfg(feature = "tabs")]
+#[derive(Debug, Clone)]
+pub struct Tab<Message>(crate::ZsTabItem<Message>);
+#[cfg(feature = "tabs")]
+impl<Message> Tab<Message> {
+    /// Creates a tab from standard elements.
+    pub fn new(id: TabId, label: impl Into<String>, content: super::Element<Message>) -> Self {
+        Self(crate::ZsTabItem::new(
+            crate::ZsTabId::new(id.0),
+            label,
+            content.into_raw(),
+        ))
+    }
+    /// Assigns a semantic header icon.
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.0 = self.0.icon(icon.into_raw());
+        self
+    }
+}
+/// Creates controlled tabs using the same keyboard and accessibility model in every style.
+#[cfg(feature = "tabs")]
+pub fn tabs<Message>(
+    items: impl IntoIterator<Item = Tab<Message>>,
+    selected: Option<TabId>,
+) -> super::Element<Message> {
+    super::Element::from_raw(crate::tab_view(
+        items.into_iter().map(|item| item.0),
+        selected.map(|id| crate::ZsTabId::new(id.0)),
+    ))
+}
+#[cfg(feature = "tabs")]
+impl<Message: Clone> super::Element<Message> {
+    /// Maps controlled tab selection into the application message type.
+    pub fn on_tab_select(
+        mut self,
+        handler: impl Fn(TabId) -> Message + Send + Sync + 'static,
+    ) -> Self {
+        self.inner = self
+            .inner
+            .on_tab_select_with(move |id| handler(TabId(id.0)));
+        self
     }
 }
 

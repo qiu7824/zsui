@@ -63,9 +63,24 @@ controls.
 - All visible product copy belongs to application state or its localizer.
 - Derive initial and minimum window sizes from intrinsic content and platform
   control metrics. A demonstration's `1280 x 800` window is not a default.
-- Let ZSUI's platform experience profiles resolve native fonts, spacing,
-  control geometry and icons. Application code does not select WinUI, AppKit
-  or GTK styling enums.
+- Platform profiles provide initial fonts, spacing, geometry and icons. Visual
+  design may choose a different palette, typography, density, tab treatment or
+  focus treatment through `AppTheme`, `Appearance` and `FontSpec`; application
+  code does not select WinUI, AppKit or GTK backend enums.
+
+## Visual freedom within functional scope
+
+Functionality and appearance have separate boundaries. Do not invent workflows,
+data or actions; freely compose the requested controls into a considered visual
+design. The native preset is one supported starting point, not the only valid
+application style. Standard buttons, inputs and tabs retain their interaction,
+keyboard and accessibility behavior when customized.
+
+Use an application/subtree `AppTheme` for inherited tokens and typography, and
+an element `Appearance` for instance and state overrides. Use accurate semantic
+icons or typed `IconAsset` resources with attribution. Ordinary branded controls
+do not require a Canvas reconstruction. Keep source-content, layout/ink metrics,
+text fallback and raster differences distinct when diagnosing a visual problem.
 
 ## Feature selection
 

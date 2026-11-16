@@ -1826,6 +1826,8 @@ fn document_menu_flyout(
                         label,
                         enabled,
                         menu: crate::MenuSpec {
+                            #[cfg(feature = "custom-icons")]
+                            command_icons: Vec::new(),
                             id: Some(id),
                             title: None,
                             items: compile(items),
@@ -1846,6 +1848,8 @@ fn document_menu_flyout(
             )
         })?;
     Ok(crate::MenuSpec {
+        #[cfg(feature = "custom-icons")]
+        command_icons: Vec::new(),
         id: Some(node.id.as_str().to_owned()),
         title: None,
         items: compile(items),

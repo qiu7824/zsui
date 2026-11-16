@@ -138,37 +138,66 @@ impl NativeTextHistoryValue {
             Self::Secure(value) => value.as_str(),
         }
     }
+}
 
-    fn is_secure(&self) -> bool {
-        match self {
-            Self::Plain(_) => false,
-            #[cfg(feature = "password-box")]
-            Self::Secure(_) => true,
-        }
-    }
-
-    fn into_string(self) -> String {
-        match self {
-            Self::Plain(value) => value,
-            #[cfg(feature = "password-box")]
-            Self::Secure(mut value) => std::mem::take(&mut *value),
-        }
-    }
+/// One host edit transaction; strings contain only the changed grapheme span.
+#[cfg(feature = "text-input-core")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NativeTextDelta {
+    start: usize,
+    removed: Box<str>,
+    inserted: Box<str>,
+    before_selection: NativeTextSelection,
+    after_selection: NativeTextSelection,
 }
 
 #[cfg(feature = "text-input-core")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct NativeTextSnapshot {
-    value: NativeTextHistoryValue,
-    selection: NativeTextSelection,
+impl NativeTextDelta {
+    fn bytes(&self) -> usize {
+        std::mem::size_of::<Self>() + self.removed.len() + self.inserted.len()
+    }
+    fn between(
+        before: &str,
+        after: &str,
+        old: NativeTextSelection,
+        new: NativeTextSelection,
+    ) -> Self {
+        let prefix = before
+            .graphemes(true)
+            .zip(after.graphemes(true))
+            .take_while(|(left, right)| left == right)
+            .map(|(part, _)| part.len())
+            .sum::<usize>();
+        let suffix = before[prefix..]
+            .graphemes(true)
+            .rev()
+            .zip(after[prefix..].graphemes(true).rev())
+            .take_while(|(left, right)| left == right)
+            .map(|(part, _)| part.len())
+            .sum::<usize>();
+        Self {
+            start: prefix,
+            removed: before[prefix..before.len() - suffix].into(),
+            inserted: after[prefix..after.len() - suffix].into(),
+            before_selection: old.clamp(before),
+            after_selection: new.clamp(after),
+        }
+    }
 }
+
+/// The journal is bounded independently of one current-value mirror used to
+/// detect externally replaced controlled values without probabilistic hashes.
+#[cfg(feature = "text-input-core")]
+const NATIVE_TEXT_HISTORY_BYTES: usize = 1024 * 1024;
 
 #[cfg(feature = "text-input-core")]
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct NativeTextHistory {
     widget: Option<WidgetId>,
-    tracked_value: Option<NativeTextHistoryValue>,
-    undo: Vec<NativeTextSnapshot>,
+    tracked_value: Option<String>,
+    undo: Vec<NativeTextDelta>,
+    redo: Vec<NativeTextDelta>,
+    journal_bytes: usize,
 }
 
 #[cfg(feature = "text-input-core")]
@@ -179,33 +208,88 @@ impl NativeTextHistory {
         before_value: &str,
         before_selection: NativeTextSelection,
         after_value: &str,
+        after_selection: NativeTextSelection,
         secure: bool,
     ) {
-        self.synchronize(widget, before_value, secure);
+        if secure {
+            *self = Self::default();
+            return;
+        }
+        self.synchronize(widget, before_value, false);
         if before_value == after_value {
             return;
         }
-        if self.undo.len() == NATIVE_TEXT_UNDO_LIMIT {
-            self.undo.remove(0);
+        self.journal_bytes = self
+            .journal_bytes
+            .saturating_sub(self.redo.iter().map(NativeTextDelta::bytes).sum());
+        self.redo.clear();
+        let delta =
+            NativeTextDelta::between(before_value, after_value, before_selection, after_selection);
+        let bytes = delta.bytes();
+        if bytes > NATIVE_TEXT_HISTORY_BYTES {
+            self.undo.clear();
+            self.journal_bytes = 0;
+        } else {
+            while self.undo.len() >= NATIVE_TEXT_UNDO_LIMIT
+                || self.journal_bytes + bytes > NATIVE_TEXT_HISTORY_BYTES
+            {
+                self.journal_bytes -= self.undo.remove(0).bytes();
+            }
+            self.journal_bytes += bytes;
+            self.undo.push(delta);
         }
-        self.undo.push(NativeTextSnapshot {
-            value: NativeTextHistoryValue::new(before_value, secure),
-            selection: before_selection.clamp(before_value),
-        });
-        self.tracked_value = Some(NativeTextHistoryValue::new(after_value, secure));
+        self.tracked_value = Some(after_value.to_owned());
     }
 
     fn synchronize(&mut self, widget: WidgetId, value: &str, secure: bool) {
-        let synchronized = self.widget == Some(widget)
-            && self
-                .tracked_value
-                .as_ref()
-                .is_some_and(|tracked| tracked.as_str() == value && tracked.is_secure() == secure);
-        if !synchronized {
-            self.widget = Some(widget);
-            self.tracked_value = Some(NativeTextHistoryValue::new(value, secure));
-            self.undo.clear();
+        if secure {
+            *self = Self::default();
+            return;
         }
+        if self.widget != Some(widget) || self.tracked_value.as_deref() != Some(value) {
+            self.widget = Some(widget);
+            self.tracked_value = Some(value.to_owned());
+            self.undo.clear();
+            self.redo.clear();
+            self.journal_bytes = 0;
+        }
+    }
+
+    fn travel(
+        &mut self,
+        widget: WidgetId,
+        value: &str,
+        secure: bool,
+        forward: bool,
+    ) -> Option<(String, NativeTextSelection)> {
+        self.synchronize(widget, value, secure);
+        if secure {
+            return None;
+        }
+        let delta = if forward {
+            self.redo.pop()?
+        } else {
+            self.undo.pop()?
+        };
+        let (expected, replacement, selection) = if forward {
+            (&*delta.removed, &*delta.inserted, delta.after_selection)
+        } else {
+            (&*delta.inserted, &*delta.removed, delta.before_selection)
+        };
+        let end = delta.start.checked_add(expected.len())?;
+        if value.get(delta.start..end) != Some(expected) {
+            *self = Self::default();
+            return None;
+        }
+        let mut next = value.to_owned();
+        next.replace_range(delta.start..end, replacement);
+        self.tracked_value = Some(next.clone());
+        if forward {
+            self.undo.push(delta);
+        } else {
+            self.redo.push(delta);
+        }
+        Some((next, selection))
     }
 
     fn undo(
@@ -214,10 +298,28 @@ impl NativeTextHistory {
         value: &str,
         secure: bool,
     ) -> Option<(String, NativeTextSelection)> {
-        self.synchronize(widget, value, secure);
-        let snapshot = self.undo.pop()?;
-        self.tracked_value = Some(snapshot.value.clone());
-        Some((snapshot.value.into_string(), snapshot.selection))
+        self.travel(widget, value, secure, false)
+    }
+    fn redo(
+        &mut self,
+        widget: WidgetId,
+        value: &str,
+        secure: bool,
+    ) -> Option<(String, NativeTextSelection)> {
+        self.travel(widget, value, secure, true)
+    }
+
+    #[cfg(test)]
+    fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + self.tracked_value.as_ref().map_or(0, String::capacity)
+            + (self.undo.capacity() + self.redo.capacity()) * std::mem::size_of::<NativeTextDelta>()
+            + self
+                .undo
+                .iter()
+                .chain(&self.redo)
+                .map(|delta| delta.removed.len() + delta.inserted.len())
+                .sum::<usize>()
     }
 }
 
@@ -230,6 +332,7 @@ pub(crate) struct NativeTextCommandResult {
     pub clipboard_read: bool,
     pub clipboard_write: bool,
     pub undo_applied: bool,
+    pub redo_applied: bool,
 }
 
 #[cfg(all(
@@ -252,7 +355,32 @@ pub(crate) fn text_edit_command_for_shortcut_character(
         'v' => Some(ZsTextEditCommand::Paste),
         'x' => Some(ZsTextEditCommand::Cut),
         'z' => Some(ZsTextEditCommand::Undo),
+        'y' => Some(ZsTextEditCommand::Redo),
         _ => None,
+    }
+}
+
+#[cfg(all(
+    feature = "text-input-core",
+    any(
+        all(windows, feature = "windows-win32"),
+        all(target_os = "macos", feature = "macos-appkit"),
+        all(
+            target_os = "linux",
+            any(feature = "linux-direct-host", feature = "linux-gtk")
+        )
+    )
+))]
+pub(crate) fn text_edit_command_for_shortcut(
+    character: char,
+    shift: bool,
+) -> Option<ZsTextEditCommand> {
+    if shift {
+        character
+            .eq_ignore_ascii_case(&'z')
+            .then_some(ZsTextEditCommand::Redo)
+    } else {
+        text_edit_command_for_shortcut_character(character)
     }
 }
 
@@ -267,6 +395,9 @@ pub(crate) fn apply_text_edit_command(
     history: &mut NativeTextHistory,
     clipboard: &mut impl ClipboardService,
 ) -> ZsuiResult<NativeTextCommandResult> {
+    if secure {
+        *history = NativeTextHistory::default();
+    }
     *selection = selection.clamp(value);
     let mut result = NativeTextCommandResult {
         handled: true,
@@ -279,11 +410,17 @@ pub(crate) fn apply_text_edit_command(
     let before_selection = *selection;
 
     match command {
-        ZsTextEditCommand::Undo => {
-            if let Some((next_value, next_selection)) = history.undo(widget, value, secure) {
+        ZsTextEditCommand::Undo | ZsTextEditCommand::Redo => {
+            let change = if command == ZsTextEditCommand::Redo {
+                history.redo(widget, value, secure)
+            } else {
+                history.undo(widget, value, secure)
+            };
+            if let Some((next_value, next_selection)) = change {
                 *value = next_value;
                 *selection = next_selection.clamp(value);
-                result.undo_applied = true;
+                result.undo_applied = command == ZsTextEditCommand::Undo;
+                result.redo_applied = command == ZsTextEditCommand::Redo;
             }
         }
         ZsTextEditCommand::Cut => {
@@ -296,6 +433,7 @@ pub(crate) fn apply_text_edit_command(
                     before_value.as_str(),
                     before_selection,
                     value,
+                    *selection,
                     secure,
                 );
             }
@@ -318,6 +456,7 @@ pub(crate) fn apply_text_edit_command(
                         before_value.as_str(),
                         before_selection,
                         value,
+                        *selection,
                         secure,
                     );
                 }
@@ -849,7 +988,10 @@ mod tests {
             text_edit_command_for_shortcut_character('Z'),
             Some(ZsTextEditCommand::Undo)
         );
-        assert_eq!(text_edit_command_for_shortcut_character('y'), None);
+        assert_eq!(
+            text_edit_command_for_shortcut_character('y'),
+            Some(ZsTextEditCommand::Redo)
+        );
         assert_eq!(text_edit_command_for_shortcut_character('中'), None);
     }
 
@@ -910,6 +1052,33 @@ mod tests {
         assert_eq!(selection.anchor, 1);
         assert_eq!(selection.caret, 3);
 
+        let redone = apply_text_edit_command(
+            ZsTextEditCommand::Redo,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+        assert!(redone.redo_applied);
+        assert!(!redone.undo_applied);
+        assert_eq!(value, "AZ");
+        assert_eq!(selection, NativeTextSelection::collapsed(1));
+        apply_text_edit_command(
+            ZsTextEditCommand::Undo,
+            crate::view::ViewTextEditCapabilities::PLAIN,
+            false,
+            widget,
+            &mut value,
+            &mut selection,
+            &mut history,
+            &mut clipboard,
+        )
+        .unwrap();
+
         clipboard.value = Some(ClipboardData::text("🙂"));
         let pasted = apply_text_edit_command(
             ZsTextEditCommand::Paste,
@@ -942,7 +1111,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "password-box")]
-    fn protected_edit_policy_pastes_and_undoes_without_copying_or_plain_history() {
+    fn protected_edit_policy_pastes_without_retaining_sensitive_history() {
         let widget = WidgetId::new(10);
         let mut value = "vault中".to_string();
         let mut selection = NativeTextSelection {
@@ -983,14 +1152,8 @@ mod tests {
         .unwrap();
         assert!(pasted.text_changed);
         assert_eq!(value, "next🙂");
-        assert!(matches!(
-            history.tracked_value,
-            Some(NativeTextHistoryValue::Secure(_))
-        ));
-        assert!(history
-            .undo
-            .iter()
-            .all(|snapshot| matches!(snapshot.value, NativeTextHistoryValue::Secure(_))));
+        assert!(history.tracked_value.is_none());
+        assert!(history.undo.is_empty() && history.redo.is_empty());
 
         let undone = apply_text_edit_command(
             ZsTextEditCommand::Undo,
@@ -1003,7 +1166,58 @@ mod tests {
             &mut clipboard,
         )
         .unwrap();
-        assert!(undone.undo_applied);
-        assert_eq!(value, "vault中");
+        assert!(!undone.undo_applied);
+        assert_eq!(value, "next🙂");
+    }
+
+    #[test]
+    #[cfg(feature = "text-input-core")]
+    fn delta_undo_redo_restores_unicode_transactions_and_selection() {
+        let widget = WidgetId::new(19);
+        let mut history = NativeTextHistory::default();
+        let before = "a\u{301}中文👨‍👩‍👧‍👦\nend";
+        let after = "a\u{301}日文🙂\nend";
+        let old = NativeTextSelection {
+            anchor: 2,
+            caret: 11,
+        }
+        .clamp(before);
+        let new = NativeTextSelection::collapsed(5).clamp(after);
+        history.record_text_change(widget, before, old, after, new, false);
+        assert_eq!(
+            history.undo(widget, after, false),
+            Some((before.into(), old))
+        );
+        assert_eq!(
+            history.redo(widget, before, false),
+            Some((after.into(), new))
+        );
+        assert!(history
+            .undo(widget, "external replacement", false)
+            .is_none());
+        assert!(history.redo.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "text-input-core")]
+    fn large_document_history_stores_changed_spans_with_a_byte_budget() {
+        let widget = WidgetId::new(20);
+        let mut history = NativeTextHistory::default();
+        let mut value = "x".repeat(256 * 1024);
+        for _ in 0..140 {
+            let next = format!("{value}中");
+            let selection = NativeTextSelection::collapsed(value.chars().count());
+            let after = NativeTextSelection::collapsed(selection.caret + 1);
+            history.record_text_change(widget, &value, selection, &next, after, false);
+            value = next;
+        }
+        assert_eq!(history.undo.len(), NATIVE_TEXT_UNDO_LIMIT);
+        assert!(history.journal_bytes <= NATIVE_TEXT_HISTORY_BYTES);
+        assert!(history.retained_bytes() < value.len() + 64 * 1024);
+        for _ in 0..NATIVE_TEXT_UNDO_LIMIT {
+            value = history.undo(widget, &value, false).unwrap().0;
+        }
+        assert!(history.undo(widget, &value, false).is_none());
+        assert!(history.retained_bytes() < value.len() + 64 * 1024);
     }
 }

@@ -662,7 +662,7 @@ define_class!(
             let command_or_control = modifiers
                 .intersects(NSEventModifierFlags::Command | NSEventModifierFlags::Control);
             #[cfg(feature = "text-input-core")]
-            let text_edit_shortcut = command && !shift && !control && !option;
+            let text_edit_shortcut = command && !control && !option;
             let unmodified = event
                 .charactersIgnoringModifiers()
                 .map(|text| text.to_string())
@@ -744,7 +744,7 @@ define_class!(
                 _ if text_edit_shortcut => unmodified
                     .chars()
                     .next()
-                    .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                    .and_then(|character|crate::native_text_edit::text_edit_command_for_shortcut(character,shift))
                     .map(|command| runtime.dispatch_text_edit_shortcut(command))
                     .unwrap_or_default(),
                 _ if !command_or_control => event
@@ -2601,6 +2601,14 @@ struct MacosAppKitTextShaper {
 
 #[cfg(feature = "text-input-core")]
 impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_macos_appkit_text_line_with_font(text, self.typography_scale(), font)
+    }
+
     fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
         *self
             .scale
@@ -2635,6 +2643,26 @@ impl crate::native_input_visuals::NativeTextShaper for MacosAppKitTextShaper {
         Some(MacosAppKitTextLayout.measure(text, &style, max_width))
     }
 
+    fn measure_with_font(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            appkit_native_typography_profile(typography_scale),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let mut style = resolver.resolve_text_style(semantic);
+        if let Some(font) = font {
+            font.apply(&mut style);
+        }
+        Some(MacosAppKitTextLayout.measure(text, &style, max_width))
+    }
+
     fn shape_line(&self, text: &str) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
         shape_macos_appkit_text_line_at_scale(text, self.typography_scale())
     }
@@ -2651,6 +2679,14 @@ fn shape_macos_appkit_text_line_at_scale(
     text: &str,
     typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_macos_appkit_text_line_with_font(text, typography_scale, None)
+}
+#[cfg(feature = "text-input-core")]
+fn shape_macos_appkit_text_line_with_font(
+    text: &str,
+    typography_scale: f32,
+    font: Option<&crate::FontSpec>,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
     };
@@ -2666,6 +2702,9 @@ fn shape_macos_appkit_text_line_at_scale(
     );
     style.line_height = body.line_height * typography_scale;
     style.semantic_role = Some(crate::TextRole::Body);
+    if let Some(font) = font {
+        font.apply(&mut style);
+    }
     let attributes = appkit_text_attributes(&style);
     let dictionary: &NSDictionary<NSAttributedStringKey, AnyObject> = &attributes;
     let string = NSString::from_str(text);
@@ -3096,6 +3135,37 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
                     path.stroke();
                 }
             }
+            NativeDrawCommand::StyledRoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+                width,
+            } => {
+                let inset = (*width).max(1) / 2;
+                let rect = &Rect {
+                    x: rect.x + inset,
+                    y: rect.y + inset,
+                    width: rect.width.saturating_sub(inset * 2),
+                    height: rect.height.saturating_sub(inset * 2),
+                };
+                let radius = &radius.saturating_sub(inset);
+                let stroke = &Some(*stroke);
+
+                let radius = f64::from((*radius).max(0));
+                let path = NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
+                    appkit_rect(*rect),
+                    radius,
+                    radius,
+                );
+                appkit_color(self.palette.resolve_source_fill(*fill)).setFill();
+                path.fill();
+                if let Some(stroke) = stroke {
+                    appkit_color(self.palette.resolve_source_fill(*stroke)).setStroke();
+                    path.setLineWidth(f64::from((*width).max(1)));
+                    path.stroke();
+                }
+            }
             NativeDrawCommand::RoundFill { rect, fill, radius } => {
                 let radius = f64::from((*radius).max(0));
                 let path = NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
@@ -3110,11 +3180,27 @@ impl NativeDrawCommandSink for MacosAppKitDrawSink {
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(command) => {
                 let rendered = command.rendered_text();
-                self.draw_text(&NativeDrawTextCommand::new(
-                    rendered.as_str(),
-                    command.bounds,
-                    command.style,
-                ));
+                self.draw_text(
+                    &NativeDrawTextCommand::new(rendered.as_str(), command.bounds, command.style)
+                        .with_font_override(command.font.clone()),
+                );
+            }
+            #[cfg(feature = "custom-icons")]
+            NativeDrawCommand::VectorIcon(command) => {
+                match command.image(
+                    self.palette.resolve(command.color),
+                    self.palette.high_contrast,
+                ) {
+                    Ok(image) => self.draw_image(&image),
+                    Err(error) => {
+                        eprintln!("ZSUI icon resource: {error}");
+                        self.draw_icon(&crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Error,
+                            command.bounds,
+                            crate::NativeIconColorMode::ThemeAware,
+                        ));
+                    }
+                }
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::Image(command) => self.draw_image(command),
@@ -3174,7 +3260,18 @@ fn appkit_text_attributes(
             TextWeight::Bold => NSFontWeightBold,
         }
     };
-    let font = if style.semantic_role == Some(crate::TextRole::Monospace)
+    let explicit_font = if style.semantic_role.is_none() {
+        std::iter::once(&style.font_family)
+            .chain(&style.fallback_families)
+            .find_map(|family| {
+                NSFont::fontWithName_size(&NSString::from_str(family), f64::from(style.size))
+            })
+    } else {
+        None
+    };
+    let font = if let Some(font) = explicit_font {
+        font
+    } else if style.semantic_role == Some(crate::TextRole::Monospace)
         || style.font_family == "Menlo"
     {
         NSFont::monospacedSystemFontOfSize_weight(f64::from(style.size), weight)
@@ -3204,6 +3301,59 @@ fn appkit_text_attributes(
         }
     } else {
         NSFont::systemFontOfSize_weight(f64::from(style.size), weight)
+    };
+    let font = if style.semantic_role.is_none() {
+        use objc2_app_kit::{
+            NSFontDescriptorAttributeName, NSFontDescriptorTraitKey, NSFontTraitsAttribute,
+            NSFontWeightTrait,
+        };
+        let traits = NSMutableDictionary::<NSFontDescriptorTraitKey, AnyObject>::new();
+        let value = objc2_foundation::NSNumber::new_f64(weight);
+        let attributes = NSMutableDictionary::<NSFontDescriptorAttributeName, AnyObject>::new();
+        unsafe {
+            traits.setObject_forKey(value.as_ref(), ProtocolObject::from_ref(NSFontWeightTrait));
+            attributes.setObject_forKey(
+                traits.as_ref(),
+                ProtocolObject::from_ref(NSFontTraitsAttribute),
+            );
+        }
+        let descriptor = unsafe {
+            font.fontDescriptor()
+                .fontDescriptorByAddingAttributes(&attributes)
+        };
+        NSFont::fontWithDescriptor_size(&descriptor, f64::from(style.size)).unwrap_or(font)
+    } else {
+        font
+    };
+    let font = if !style.fallback_families.is_empty() {
+        use objc2_app_kit::{
+            NSFontCascadeListAttribute, NSFontDescriptor, NSFontDescriptorAttributeName,
+        };
+        let fallback: Vec<_> = style
+            .fallback_families
+            .iter()
+            .map(|family| {
+                NSFontDescriptor::fontDescriptorWithName_size(
+                    &NSString::from_str(family),
+                    f64::from(style.size),
+                )
+            })
+            .collect();
+        let list = NSArray::from_retained_slice(&fallback);
+        let attributes = NSMutableDictionary::<NSFontDescriptorAttributeName, AnyObject>::new();
+        unsafe {
+            attributes.setObject_forKey(
+                list.as_ref(),
+                ProtocolObject::from_ref(NSFontCascadeListAttribute),
+            );
+        }
+        let descriptor = unsafe {
+            font.fontDescriptor()
+                .fontDescriptorByAddingAttributes(&attributes)
+        };
+        NSFont::fontWithDescriptor_size(&descriptor, f64::from(style.size)).unwrap_or(font)
+    } else {
+        font
     };
     let color = appkit_color(style.color);
     let paragraph = NSMutableParagraphStyle::new();

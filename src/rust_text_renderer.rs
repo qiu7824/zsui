@@ -44,6 +44,7 @@ use swash::{
 };
 
 use crate::{Color, HorizontalAlign, Size, TextStyle, TextWeight, TextWrap, VerticalAlign};
+include!("rust_text_ellipsis.rs");
 
 #[cfg(windows)]
 #[path = "rust_text_font_files.rs"]
@@ -625,11 +626,13 @@ pub struct ZsTextCacheStats {
 struct ZsTextLayoutCacheKey {
     text: Box<str>,
     font_family: Box<str>,
+    fallback_families: Vec<String>,
     shape: ZsTextLayoutShapeKey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct ZsTextLayoutShapeKey {
+    ellipsis: bool,
     size_bits: u32,
     line_height_bits: u32,
     weight: u8,
@@ -646,6 +649,7 @@ struct ZsTextLayoutShapeKey {
 struct ZsTextLayoutQuery<'a> {
     text: &'a str,
     font_family: &'a str,
+    fallback_families: &'a [String],
     shape: ZsTextLayoutShapeKey,
 }
 
@@ -661,7 +665,9 @@ impl<'a> ZsTextLayoutQuery<'a> {
         Self {
             text,
             font_family: &style.font_family,
+            fallback_families: &style.fallback_families,
             shape: ZsTextLayoutShapeKey {
+                ellipsis: style.ellipsis,
                 size_bits: style.size.to_bits(),
                 line_height_bits: style.line_height.to_bits(),
                 weight: text_weight_key(style.weight),
@@ -680,6 +686,7 @@ impl<'a> ZsTextLayoutQuery<'a> {
         ZsTextLayoutCacheKey {
             text: self.text.into(),
             font_family: self.font_family.into(),
+            fallback_families: self.fallback_families.to_vec(),
             shape: self.shape,
         }
     }
@@ -696,6 +703,7 @@ impl ZsTextLayoutLookup for ZsTextLayoutCacheKey {
         ZsTextLayoutQuery {
             text: &self.text,
             font_family: &self.font_family,
+            fallback_families: &self.fallback_families,
             shape: self.shape,
         }
     }
@@ -738,6 +746,12 @@ impl ZsTextLayoutCacheKey {
         size_of::<Self>()
             .saturating_add(self.text.len())
             .saturating_add(self.font_family.len())
+            .saturating_add(
+                self.fallback_families
+                    .iter()
+                    .map(|family| std::mem::size_of::<String>() + family.len())
+                    .sum::<usize>(),
+            )
     }
 }
 
@@ -924,6 +938,17 @@ impl ZsRustTextEngine {
         if let Some(layout) = self.cached_layout(&cache_key) {
             return layout;
         }
+        if style.ellipsis && style.wrap == TextWrap::NoWrap && width_px > 0 {
+            let mut plain = style.clone();
+            plain.ellipsis = false;
+            let full = self.layout(text, &plain, width_px, height_px, dpi_scale);
+            if full.overflows_horizontally() {
+                let result = self.ellipsized_layout(text, &plain, width_px, height_px, dpi_scale);
+                self.insert_layout(cache_key.into_owned(), Arc::clone(&result));
+                return result;
+            }
+            return full;
+        }
         if text.is_empty() {
             let layout = Arc::new(empty_layout(style, width_px, height_px, dpi_scale));
             self.insert_layout(cache_key.into_owned(), Arc::clone(&layout));
@@ -970,7 +995,73 @@ impl ZsRustTextEngine {
             HorizontalAlign::Center => Some(Align::Center),
             HorizontalAlign::End => Some(Align::Right),
         };
-        buffer.set_text(text, &attrs, Shaping::Advanced, alignment);
+        if style.fallback_families.is_empty() {
+            buffer.set_text(text, &attrs, Shaping::Advanced, alignment);
+        } else {
+            use unicode_segmentation::UnicodeSegmentation;
+            let families = std::iter::once(&style.font_family)
+                .chain(&style.fallback_families)
+                .collect::<Vec<_>>();
+            let mut spans: Vec<(usize, usize, usize)> = Vec::new();
+            for (offset, cluster) in text.grapheme_indices(true) {
+                let chosen = families
+                    .iter()
+                    .position(|name| {
+                        let weight = resolve_primary_family_weight(
+                            &self.font_system,
+                            Family::Name(name),
+                            requested_weight,
+                        );
+                        let query = fontdb::Query {
+                            families: &[Family::Name(name)],
+                            weight,
+                            ..Default::default()
+                        };
+                        self.font_system
+                            .db()
+                            .query(&query)
+                            .and_then(|id| {
+                                self.font_system.db().with_face_data(id, |data, index| {
+                                    ttf_parser::Face::parse(data, index).is_ok_and(|face| {
+                                        cluster.chars().all(|ch| {
+                                            ch.is_control()
+                                                || matches!(
+                                                    ch,
+                                                    '\u{200d}' | '\u{fe0e}' | '\u{fe0f}'
+                                                )
+                                                || face.glyph_index(ch).is_some()
+                                        })
+                                    })
+                                })
+                            })
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(0);
+                if let Some(last) = spans.last_mut().filter(|last| last.2 == chosen) {
+                    last.1 = offset + cluster.len();
+                } else {
+                    spans.push((offset, offset + cluster.len(), chosen));
+                }
+            }
+            buffer.set_rich_text(
+                spans.iter().map(|&(start, end, index)| {
+                    let family = Family::Name(families[index]);
+                    (
+                        &text[start..end],
+                        Attrs::new()
+                            .family(family)
+                            .weight(resolve_primary_family_weight(
+                                &self.font_system,
+                                family,
+                                requested_weight,
+                            )),
+                    )
+                }),
+                &attrs,
+                Shaping::Advanced,
+                alignment,
+            );
+        }
         buffer.shape_until_scroll(&mut self.font_system, true);
         let trailing_space_template = (self.line_metric_policy
             == ZsTextLineMetricPolicy::WindowsDirectWrite
@@ -1300,6 +1391,19 @@ impl ZsRustTextEngine {
             entry.last_used = clock;
             self.cache_stats.layout_hits = self.cache_stats.layout_hits.saturating_add(1);
             return Some(Arc::clone(&entry.layout));
+        }
+        // A fitting line has identical geometry with ellipsis enabled. Reuse
+        // its plain entry without retaining a duplicate key or byte charge.
+        if key.shape.ellipsis {
+            let mut plain = *key;
+            plain.shape.ellipsis = false;
+            if let Some(entry) = self.layout_cache.get_mut(&plain as &dyn ZsTextLayoutLookup) {
+                if !entry.layout.overflows_horizontally() {
+                    entry.last_used = clock;
+                    self.cache_stats.layout_hits = self.cache_stats.layout_hits.saturating_add(1);
+                    return Some(Arc::clone(&entry.layout));
+                }
+            }
         }
         self.cache_stats.layout_misses = self.cache_stats.layout_misses.saturating_add(1);
         None
@@ -2698,6 +2802,7 @@ mod tests {
         let mut engine = ZsRustTextEngine::new();
         let text = "计划 0/2";
         let style = |weight| TextStyle {
+            fallback_families: Vec::new(),
             font_family: "Segoe UI".to_string(),
             size: 14.0,
             line_height: 20.0,
@@ -3299,4 +3404,4 @@ pub(crate) fn native_shaped_line_from_layout(
 
 #[cfg(test)]
 #[path = "rust_text_allocation_tests.rs"]
-mod allocation_tests;
+pub(crate) mod allocation_tests;

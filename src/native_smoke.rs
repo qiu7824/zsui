@@ -1528,6 +1528,7 @@ mod tests {
             native_view_text_clipboard_read_count: 0,
             native_view_text_clipboard_write_count: 0,
             native_view_text_undo_count: 0,
+            native_view_text_redo_count: 0,
             native_view_text_edit_command_errors: Vec::new(),
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,

@@ -206,15 +206,16 @@ The Rust candidate is experimental until the complete matrix is stable. A
 single passing UI font, script, size or DPI is only path evidence and must not
 be reported as renderer parity.
 
-The current 66-case Windows run passes geometry tolerance in 61 cases and has
-exact resolved faces and glyph IDs in 61 cases. All Latin, Chinese, Japanese,
+The 2026-11-16 66-case Windows run passes geometry tolerance in 61 cases and has
+exact resolved faces and glyph IDs in 62 cases. All Latin, Chinese, Japanese,
 Korean, Arabic, Hebrew, Devanagari, Thai and Consolas cases pass. The retained
 rules now cover mixed-script Kana GPOS pairs, DirectWrite-compatible RTL pair
 placement, visible-glyph synthetic bold, wrap-separating spaces and paragraph
-baseline phase. The remaining five failures are weighted emoji and mixed
-semibold cases where DirectWrite and fontdb choose different CJK/fallback
-physical faces; matched advances differ by at most 0.001 px. Maximum pixel
-difference is 9.17%, and the largest matched-origin delta is 5.342 px after the
+baseline phase. Four remaining weighted emoji and mixed semibold cases select
+different CJK/fallback physical faces. A fifth, bold emoji case matches the
+faces and glyph IDs but retains an origin difference of 1.116 px. Matched
+advances differ by at most 0.0011 px. Maximum pixel
+difference is 8.47%, and the largest matched-origin delta is 5.342 px after the
 different fallback face changes earlier advances. These numbers are development
 evidence, not production telemetry or a completion claim. Windows currently
 selects the Rust backend by default; DirectWrite remains the independent proof

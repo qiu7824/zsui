@@ -1413,13 +1413,18 @@ impl<Msg> ViewNode<Msg> {
 
         let mut semantic_parent = parent;
         let implicit_accessibility = self.implicit_accessibility_spec();
-        let resolved_accessibility = self.accessibility.clone().or(implicit_accessibility);
+        let resolved_accessibility = self
+            .metadata()
+            .accessibility
+            .clone()
+            .or(implicit_accessibility);
         #[cfg(feature = "tooltip")]
         let mut resolved_accessibility = resolved_accessibility;
         #[cfg(feature = "tooltip")]
-        if let (Some(accessibility), Some(tooltip)) =
-            (resolved_accessibility.as_mut(), self.tooltip.as_ref())
-        {
+        if let (Some(accessibility), Some(tooltip)) = (
+            resolved_accessibility.as_mut(),
+            self.metadata().tooltip.as_ref(),
+        ) {
             if accessibility.description.is_none() && !tooltip.is_empty() {
                 accessibility.description = Some(tooltip.text.trim().to_owned());
             }
@@ -1441,8 +1446,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds =
-                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -1519,7 +1523,9 @@ impl<Msg> ViewNode<Msg> {
             #[cfg(not(feature = "virtual-list"))]
             let _ = child_position;
             #[cfg(feature = "virtual-list")]
-            if child.accessibility.is_none() && child.implicit_accessibility_spec().is_none() {
+            if child.metadata().accessibility.is_none()
+                && child.implicit_accessibility_spec().is_none()
+            {
                 if let (Some(parent), Some(widget), Some(bounds)) = (
                     list_parent,
                     child.id,
@@ -1929,8 +1935,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds =
-                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -2311,7 +2316,9 @@ impl<Msg> ViewNode<Msg> {
         tooltip_targets: &mut Vec<ViewTooltipTarget>,
         clip: Option<Rect>,
     ) {
-        if let (Some(widget), Some(bounds), Some(spec)) = (self.id, self.bounds, &self.tooltip) {
+        if let (Some(widget), Some(bounds), Some(spec)) =
+            (self.id, self.bounds, &self.metadata().tooltip)
+        {
             if !spec.is_empty() {
                 if let Some(bounds) = clipped_rect(bounds, clip) {
                     tooltip_targets.push(ViewTooltipTarget {
@@ -2328,8 +2335,7 @@ impl<Msg> ViewNode<Msg> {
         {
             let selected_index = selected
                 .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-            let tab_bounds =
-                tab_layout_bounds(bounds, self.style.resolved_padding(), self.layout_dpi);
+            let tab_bounds = tab_layout_bounds(bounds, self.resolved_padding(), self.layout_dpi);
             let plan = crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
                 tabs,
@@ -3031,6 +3037,29 @@ impl<Msg> ViewNode<Msg> {
         feature = "toast"
     ))]
     fn paint_overlays(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>)
+    where
+        Msg: Clone,
+    {
+        cx.begin_appearance(self);
+        self.paint_overlays_inner(cx, viewport);
+        cx.end_appearance();
+    }
+
+    #[cfg(any(
+        feature = "auto-suggest",
+        feature = "breadcrumb",
+        feature = "color-picker",
+        feature = "command-palette",
+        feature = "combo",
+        feature = "date-picker",
+        feature = "dialog",
+        feature = "flyout",
+        feature = "menu-flyout",
+        feature = "teaching-tip",
+        feature = "time-picker",
+        feature = "toast"
+    ))]
+    fn paint_overlays_inner(&self, cx: &mut ViewPaintCx, viewport: Option<Rect>)
     where
         Msg: Clone,
     {

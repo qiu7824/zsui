@@ -1150,7 +1150,7 @@ impl LinuxDirectWindow {
         let command_modifier = control || self.modifiers.super_key() || self.modifiers.alt_key();
         #[cfg(feature = "text-input-core")]
         let text_edit_shortcut =
-            control && !shift && !self.modifiers.alt_key() && !self.modifiers.super_key();
+            control && !self.modifiers.alt_key() && !self.modifiers.super_key();
         let named = match logical_key {
             Key::Named(NamedKey::Tab) => Some(crate::NativeViewKey::Tab),
             Key::Named(NamedKey::Enter) => Some(crate::NativeViewKey::Enter),
@@ -1188,7 +1188,9 @@ impl LinuxDirectWindow {
             Key::Character(text) if text_edit_shortcut => text
                 .chars()
                 .next()
-                .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+                .and_then(|character| {
+                    crate::native_text_edit::text_edit_command_for_shortcut(character, shift)
+                })
                 .map(|command| self.runtime.dispatch_text_edit_shortcut(command))
                 .unwrap_or_default(),
             _ if !command_modifier => event_text
@@ -2376,6 +2378,36 @@ impl NativeDrawCommandSink for LinuxDirectDrawSink<'_> {
                     let _ = self.context.stroke();
                 }
             }
+            NativeDrawCommand::StyledRoundRect {
+                rect,
+                fill,
+                stroke,
+                radius,
+                width,
+            } => {
+                let inset = (*width).max(1) / 2;
+                let rect = &Rect {
+                    x: rect.x + inset,
+                    y: rect.y + inset,
+                    width: rect.width.saturating_sub(inset * 2),
+                    height: rect.height.saturating_sub(inset * 2),
+                };
+                let radius = &radius.saturating_sub(inset);
+                let stroke = &Some(*stroke);
+
+                self.add_round_rect(*rect, *radius);
+                self.set_source(self.palette.resolve_source_fill(*fill));
+                if stroke.is_some() {
+                    let _ = self.context.fill_preserve();
+                } else {
+                    let _ = self.context.fill();
+                }
+                if let Some(stroke) = stroke {
+                    self.set_source(self.palette.resolve_source_fill(*stroke));
+                    self.context.set_line_width(f64::from((*width).max(1)));
+                    let _ = self.context.stroke();
+                }
+            }
             NativeDrawCommand::RoundFill { rect, fill, radius } => {
                 self.add_round_rect(*rect, *radius);
                 self.set_source(self.palette.resolve_source_fill(*fill));
@@ -2385,11 +2417,27 @@ impl NativeDrawCommandSink for LinuxDirectDrawSink<'_> {
             #[cfg(feature = "password-box")]
             NativeDrawCommand::SecureText(command) => {
                 let rendered = command.rendered_text();
-                self.draw_text(&NativeDrawTextCommand::new(
-                    rendered.as_str(),
-                    command.bounds,
-                    command.style,
-                ));
+                self.draw_text(
+                    &NativeDrawTextCommand::new(rendered.as_str(), command.bounds, command.style)
+                        .with_font_override(command.font.clone()),
+                );
+            }
+            #[cfg(feature = "custom-icons")]
+            NativeDrawCommand::VectorIcon(command) => {
+                match command.image(
+                    self.palette.resolve(command.color),
+                    self.palette.high_contrast,
+                ) {
+                    Ok(image) => self.draw_image(&image),
+                    Err(error) => {
+                        eprintln!("ZSUI icon resource: {error}");
+                        self.draw_icon(&crate::NativeDrawIconCommand::new(
+                            crate::ZsIcon::Error,
+                            command.bounds,
+                            crate::NativeIconColorMode::ThemeAware,
+                        ));
+                    }
+                }
             }
             NativeDrawCommand::Icon(command) => self.draw_icon(command),
             NativeDrawCommand::Image(command) => self.draw_image(command),
@@ -2572,6 +2620,14 @@ struct LinuxDirectPangoTextShaper {
 
 #[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
 impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShaper {
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        shape_linux_direct_text_line_with_font(&self.context, text, self.typography_scale(), font)
+    }
+
     fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
         *self
             .scale
@@ -2603,6 +2659,26 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectPangoTextShape
             NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
         );
         let style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
+        Some(LinuxDirectTextLayout::new(self.context.clone()).measure(text, &style, max_width))
+    }
+
+    fn measure_with_font(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            linux_direct_native_typography_profile(typography_scale, Some(&self.context)),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let mut style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
+        if let Some(font) = font {
+            font.apply(&mut style);
+        }
         Some(LinuxDirectTextLayout::new(self.context.clone()).measure(text, &style, max_width))
     }
 
@@ -2646,6 +2722,19 @@ struct LinuxDirectLiteTextShaper {
     not(feature = "linux-direct")
 ))]
 impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper {
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+        crate::linux_direct_lite::shape_linux_lite_text_line_with_font(
+            &self.system,
+            text,
+            self.typography_scale(),
+            font,
+        )
+    }
+
     fn set_context(&self, _dpi: crate::Dpi, scale: f32) {
         *self
             .scale
@@ -2677,6 +2766,29 @@ impl crate::native_input_visuals::NativeTextShaper for LinuxDirectLiteTextShaper
             NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
         );
         let style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
+        Some(
+            self.system
+                .measure(text, &style, (max_width > 0).then_some(max_width as f32)),
+        )
+    }
+
+    fn measure_with_font(
+        &self,
+        text: &str,
+        semantic: crate::SemanticTextStyle,
+        max_width: i32,
+        _dpi: crate::Dpi,
+        typography_scale: f32,
+        font: Option<&crate::FontSpec>,
+    ) -> Option<crate::Size> {
+        let resolver = NativeDrawTextStyleResolver::from_profile(
+            crate::linux_direct_lite::linux_lite_typography_profile(typography_scale, &self.system),
+            NativeDrawPalette::for_mode(crate::ZsuiThemeMode::Light, false),
+        );
+        let mut style = crate::NativeStyleResolver::resolve_text_style(&resolver, semantic);
+        if let Some(font) = font {
+            font.apply(&mut style);
+        }
         Some(
             self.system
                 .measure(text, &style, (max_width > 0).then_some(max_width as f32)),
@@ -2734,6 +2846,15 @@ fn shape_linux_direct_text_line_at_scale(
     text: &str,
     typography_scale: f32,
 ) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
+    shape_linux_direct_text_line_with_font(context, text, typography_scale, None)
+}
+#[cfg(all(feature = "text-input-core", feature = "linux-direct"))]
+fn shape_linux_direct_text_line_with_font(
+    context: &pango::Context,
+    text: &str,
+    typography_scale: f32,
+    font: Option<&crate::FontSpec>,
+) -> Option<crate::native_input_visuals::NativeShapedTextLine> {
     use crate::native_input_visuals::{
         NativeShapedTextCaret, NativeShapedTextCluster, NativeShapedTextLine,
     };
@@ -2749,6 +2870,9 @@ fn shape_linux_direct_text_line_at_scale(
     );
     style.line_height = body.line_height * typography_scale;
     style.semantic_role = Some(crate::TextRole::Body);
+    if let Some(font) = font {
+        font.apply(&mut style);
+    }
     let layout = pango::Layout::new(context);
     configure_linux_pango_layout(&layout, text, &style, None);
     let boundaries = crate::native_text_edit::grapheme_boundaries(text);
@@ -2804,7 +2928,7 @@ fn configure_linux_pango_layout(
 ) {
     layout.set_text(text);
     let mut font = pango::FontDescription::new();
-    font.set_family(&style.font_family);
+    font.set_family(&style.family_list());
     font.set_absolute_size(f64::from(style.size) * f64::from(pango::SCALE));
     font.set_weight(match style.weight {
         TextWeight::Automatic | TextWeight::Regular => pango::Weight::Normal,

@@ -1970,6 +1970,11 @@ mod tests {
         assert_eq!(command_for('V'), Some(crate::ZsTextEditCommand::Paste));
         assert_eq!(command_for('X'), Some(crate::ZsTextEditCommand::Cut));
         assert_eq!(command_for('Z'), Some(crate::ZsTextEditCommand::Undo));
+        assert_eq!(command_for('Y'), Some(crate::ZsTextEditCommand::Redo));
+        assert_eq!(
+            windows_text_edit_shortcut('Z' as u32, true, true, false, false),
+            Some(crate::ZsTextEditCommand::Redo)
+        );
         assert_eq!(
             windows_text_edit_shortcut('A' as u32, true, true, false, false),
             None

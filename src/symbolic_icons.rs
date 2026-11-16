@@ -99,6 +99,118 @@ pub(crate) fn draw_symbolic_icon(
 
 pub(crate) fn draw_normalized_icon(context: &mut impl SymbolicIconCanvas, icon: ZsIcon) {
     match icon {
+        ZsIcon::Monitor => {
+            rounded_rect(context, RectF::new(1.5, 2.0, 13.0, 9.0), 1.0);
+            path(context, &[(8.0, 11.0), (8.0, 14.0)]);
+            path(context, &[(4.5, 14.0), (11.5, 14.0)]);
+            stroke(context);
+        }
+        ZsIcon::Window => {
+            rounded_rect(context, RectF::new(1.5, 2.0, 13.0, 12.0), 1.0);
+            path(context, &[(1.5, 5.5), (14.5, 5.5)]);
+            stroke(context);
+        }
+        ZsIcon::Camera => {
+            rounded_rect(context, RectF::new(1.5, 4.0, 13.0, 9.5), 1.0);
+            path(context, &[(4.0, 4.0), (5.0, 2.0), (10.5, 2.0), (11.5, 4.0)]);
+            context.arc(8.0, 8.5, 3.0, 0.0, std::f64::consts::TAU);
+            stroke(context);
+        }
+        ZsIcon::Mic | ZsIcon::MicOff => {
+            rounded_rect(context, RectF::new(5.5, 1.5, 5.0, 8.0), 2.5);
+            stroke(context);
+            path(
+                context,
+                &[
+                    (3.5, 7.0),
+                    (3.5, 9.0),
+                    (5.0, 11.0),
+                    (8.0, 12.0),
+                    (11.0, 11.0),
+                    (12.5, 9.0),
+                    (12.5, 7.0),
+                ],
+            );
+            path(context, &[(8.0, 12.0), (8.0, 14.5)]);
+            path(context, &[(5.0, 14.5), (11.0, 14.5)]);
+            if icon == ZsIcon::MicOff {
+                path(context, &[(2.0, 2.0), (14.0, 14.0)]);
+            }
+            stroke(context);
+        }
+        ZsIcon::Volume | ZsIcon::Volume2 | ZsIcon::VolumeOff => {
+            polygon(
+                context,
+                &[
+                    (2.0, 6.0),
+                    (5.0, 6.0),
+                    (8.0, 3.0),
+                    (8.0, 13.0),
+                    (5.0, 10.0),
+                    (2.0, 10.0),
+                ],
+            );
+            stroke(context);
+            if icon == ZsIcon::VolumeOff {
+                path(context, &[(10.0, 6.0), (14.0, 10.0)]);
+                path(context, &[(14.0, 6.0), (10.0, 10.0)]);
+            } else {
+                context.arc(8.0, 8.0, 3.0, -0.85, 0.85);
+                if icon == ZsIcon::Volume2 {
+                    context.arc(8.0, 8.0, 6.0, -0.85, 0.85);
+                }
+            }
+            stroke(context);
+        }
+        ZsIcon::Play => {
+            polygon(context, &[(4.0, 2.0), (13.0, 8.0), (4.0, 14.0)]);
+            stroke(context);
+        }
+        ZsIcon::Pause => {
+            context.rectangle(3.5, 2.0, 3.0, 12.0);
+            context.rectangle(9.5, 2.0, 3.0, 12.0);
+            stroke(context);
+        }
+        ZsIcon::Record => {
+            context.arc(8.0, 8.0, 5.5, 0.0, std::f64::consts::TAU);
+            stroke(context);
+            context.arc(8.0, 8.0, 3.0, 0.0, std::f64::consts::TAU);
+            fill(context);
+        }
+        ZsIcon::Message => {
+            polygon(
+                context,
+                &[
+                    (2.0, 2.5),
+                    (14.0, 2.5),
+                    (14.0, 11.0),
+                    (7.0, 11.0),
+                    (3.5, 14.0),
+                    (3.5, 11.0),
+                    (2.0, 11.0),
+                ],
+            );
+            stroke(context);
+            path(context, &[(5.0, 6.0), (11.0, 6.0)]);
+            path(context, &[(5.0, 8.5), (9.0, 8.5)]);
+            stroke(context);
+        }
+        ZsIcon::User => {
+            context.arc(8.0, 5.0, 3.0, 0.0, std::f64::consts::TAU);
+            stroke(context);
+            context.arc(8.0, 15.0, 5.5, std::f64::consts::PI, std::f64::consts::TAU);
+            stroke(context);
+        }
+        ZsIcon::Users => draw_normalized_icon(context, ZsIcon::Group),
+        ZsIcon::Video => {
+            rounded_rect(context, RectF::new(1.5, 4.0, 8.5, 8.0), 1.0);
+            stroke(context);
+            polygon(
+                context,
+                &[(10.0, 6.0), (14.0, 3.5), (14.0, 12.5), (10.0, 10.0)],
+            );
+            stroke(context);
+        }
         ZsIcon::App => {
             for (x, y) in [(2.0, 2.0), (9.0, 2.0), (2.0, 9.0), (9.0, 9.0)] {
                 rounded_rect(context, RectF::new(x, y, 5.0, 5.0), 1.0);

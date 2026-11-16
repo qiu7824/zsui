@@ -88,6 +88,9 @@ absent from the product brief. The full decision contract is
 - Keep every heavy dependency optional and every new public feature in
   `scripts/check-feature-matrix.ps1`.
 - Use `Dp`/`Px`/`Dpi`, theme tokens and semantic `ZsIcon` values in built-in UI.
+- Keep functionality faithful to the brief while allowing visual customization
+  through shared themes, typography, state styles and typed icon resources.
+  Platform appearance is a default preset, not an exclusive application design.
 - Do not place private icon-font code points or local palettes in components.
 - Preserve buffered no-flicker Windows painting and background-erase
   suppression when changing self-drawn surfaces.

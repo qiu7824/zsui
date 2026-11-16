@@ -45,10 +45,8 @@ impl WindowsWin32ViewInputRoute {
         {
             let target = self.shared_focused_target();
             let report = self.shared_runtime.dispatch_text_edit_shortcut(command);
-            return self.adapt_shared_report(
-                report,
-                WindowsSharedInputKind::TextEditShortcut { target },
-            );
+            return self
+                .adapt_shared_report(report, WindowsSharedInputKind::TextEditShortcut { target });
         }
         if alt {
             // Alt chords that are not application shortcuts keep their system
@@ -86,11 +84,12 @@ fn windows_text_edit_shortcut(
     alt: bool,
     super_key: bool,
 ) -> Option<crate::ZsTextEditCommand> {
-    if shift || !control || alt || super_key {
+    if !control || alt || super_key {
         return None;
     }
-    char::from_u32(virtual_key)
-        .and_then(crate::native_text_edit::text_edit_command_for_shortcut_character)
+    char::from_u32(virtual_key).and_then(|character| {
+        crate::native_text_edit::text_edit_command_for_shortcut(character, shift)
+    })
 }
 
 #[cfg(feature = "shortcuts")]

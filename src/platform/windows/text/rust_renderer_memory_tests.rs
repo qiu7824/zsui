@@ -27,6 +27,7 @@ fn assert_same_pixels(actual: &[u8], expected: &[u8]) {
 
 fn scene_style() -> TextStyle {
     TextStyle {
+        fallback_families: Vec::new(),
         font_family: "Segoe UI".into(),
         size: 17.0,
         line_height: 23.0,

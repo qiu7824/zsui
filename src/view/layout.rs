@@ -255,7 +255,7 @@ fn scroll_viewport_bounds<Msg>(node: &ViewNode<Msg>) -> Option<Rect> {
     if let ViewNodeKind::Tabs { tabs, selected, .. } = &node.kind {
         let selected_index = selected
             .and_then(|selected| tabs.iter().position(|candidate| candidate.id == selected));
-        let tab_bounds = tab_layout_bounds(bounds, node.style.resolved_padding(), node.layout_dpi);
+        let tab_bounds = tab_layout_bounds(bounds, node.resolved_padding(), node.layout_dpi);
         return Some(
             crate::zs_tab_view_render_plan_for_tabs(
                 tab_bounds,
@@ -267,7 +267,11 @@ fn scroll_viewport_bounds<Msg>(node: &ViewNode<Msg>) -> Option<Rect> {
             .content_bounds,
         );
     }
-    Some(inset_bounds(bounds, node.style.resolved_padding(), node.layout_dpi))
+    Some(inset_bounds(
+        bounds,
+        node.resolved_padding(),
+        node.layout_dpi,
+    ))
 }
 
 #[cfg(feature = "scroll")]
@@ -351,7 +355,7 @@ fn items_repeater_scrollbar_layout<Msg>(
     else {
         return None;
     };
-    let content_bounds = inset_bounds(bounds, node.style.resolved_padding(), node.layout_dpi);
+    let content_bounds = inset_bounds(bounds, node.resolved_padding(), node.layout_dpi);
     let content_height = items_repeater_content_height(*total_count, *row_height, item_metrics);
     let viewport_height = Dp::new(
         content_bounds.height.max(0) as f32 / node.layout_dpi.scale_factor().max(f32::EPSILON),
@@ -652,22 +656,20 @@ fn grid_track_minimums<Msg>(
         };
         let fixed = fixed
             .map(|value| {
-                typography_aware_length_px(
-                    value,
-                    dpi,
-                    vertical && child.typography_scaled_height,
-                    typography_scale,
-                )
+                if vertical {
+                    child.native_height_px(value, dpi, typography_scale)
+                } else {
+                    value.to_px(dpi).round_i32().max(0)
+                }
             })
             .unwrap_or(0);
         let minimum = minimum
             .map(|value| {
-                typography_aware_length_px(
-                    value,
-                    dpi,
-                    vertical && child.typography_scaled_height,
-                    typography_scale,
-                )
+                if vertical {
+                    child.native_height_px(value, dpi, typography_scale)
+                } else {
+                    value.to_px(dpi).round_i32().max(0)
+                }
             })
             .unwrap_or(0);
         let intrinsic = if vertical {
@@ -970,12 +972,11 @@ fn constrained_child_axis_length<Msg>(
         child.style.min_width
     }
     .map(|value| {
-        typography_aware_length_px(
-            value,
-            dpi,
-            vertical && child.typography_scaled_height,
-            typography_scale,
-        )
+        if vertical {
+            child.native_height_px(value, dpi, typography_scale)
+        } else {
+            value.to_px(dpi).round_i32().max(0)
+        }
     })
     .unwrap_or(0);
     let minimum = minimum.max(if vertical {
@@ -991,12 +992,11 @@ fn constrained_child_axis_length<Msg>(
     });
     fixed
         .map(|value| {
-            typography_aware_length_px(
-                value,
-                dpi,
-                vertical && child.typography_scaled_height,
-                typography_scale,
-            )
+            if vertical {
+                child.native_height_px(value, dpi, typography_scale)
+            } else {
+                value.to_px(dpi).round_i32().max(0)
+            }
             .max(minimum)
         })
         .unwrap_or_else(|| available.max(minimum))
@@ -1169,18 +1169,19 @@ fn navigation_intrinsic_height_px<Msg>(
     dpi: Dpi,
     typography_scale: f32,
 ) -> i32 {
-    let explicit = node.style.height.or(node.style.min_height).map(|height| {
-        typography_aware_length_px(height, dpi, node.typography_scaled_height, typography_scale)
-    });
+    let explicit = node
+        .style
+        .height
+        .or(node.style.min_height)
+        .map(|height| node.native_height_px(height, dpi, typography_scale));
     if let Some(explicit) = explicit {
         return explicit.max(1);
     }
     let gap = node
-        .style
-        .gap
+        .resolved_gap()
         .map(|gap| gap.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
-    let padding = node.style.padding_extent_px(dpi, true);
+    let padding = node.padding_extent_px(dpi, true);
     let content = match &node.kind {
         ViewNodeKind::Text { style, .. } => Dp::new(
             style
@@ -1247,12 +1248,11 @@ fn allocate_axis_lengths<Msg>(
         .iter()
         .map(|child| {
             fixed(&child.style).map(|value| {
-                typography_aware_length_px(
-                    value,
-                    dpi,
-                    vertical && child.typography_scaled_height,
-                    typography_scale,
-                )
+                if vertical {
+                    child.native_height_px(value, dpi, typography_scale)
+                } else {
+                    value.to_px(dpi).round_i32().max(0)
+                }
             })
         })
         .collect::<Vec<_>>();
@@ -1261,12 +1261,11 @@ fn allocate_axis_lengths<Msg>(
     for child in children {
         let declared = minimum(&child.style)
             .map(|value| {
-                typography_aware_length_px(
-                    value,
-                    dpi,
-                    vertical && child.typography_scaled_height,
-                    typography_scale,
-                )
+                if vertical {
+                    child.native_height_px(value, dpi, typography_scale)
+                } else {
+                    value.to_px(dpi).round_i32().max(0)
+                }
             })
             .unwrap_or(0);
         let (intrinsic_minimum, intrinsic_preferred) = if vertical {
@@ -1396,12 +1395,11 @@ fn cross_axis_length<Msg>(
     };
     let declared_minimum = declared_minimum
         .map(|value| {
-            typography_aware_length_px(
-                value,
-                dpi,
-                vertical && child.typography_scaled_height,
-                typography_scale,
-            )
+            if vertical {
+                child.native_height_px(value, dpi, typography_scale)
+            } else {
+                value.to_px(dpi).round_i32().max(0)
+            }
         })
         .unwrap_or(0);
     let intrinsic = if vertical {
@@ -1441,16 +1439,15 @@ fn cross_axis_length<Msg>(
     // Padding alone is not content. A surface without an intrinsic size, such
     // as a Canvas or image preview inside a padded boxed-list row, fills the
     // cell rather than shrinking to twice its padding.
-    let padding = child.style.padding_extent_px(dpi, vertical);
+    let padding = child.padding_extent_px(dpi, vertical);
     let stretches_cross_axis = owns_cross_axis(child) || text_stretches_width;
     fixed
         .map(|value| {
-            typography_aware_length_px(
-                value,
-                dpi,
-                vertical && child.typography_scaled_height,
-                typography_scale,
-            )
+            if vertical {
+                child.native_height_px(value, dpi, typography_scale)
+            } else {
+                value.to_px(dpi).round_i32().max(0)
+            }
             .max(minimum)
         })
         .unwrap_or_else(|| match align {
@@ -1553,6 +1550,8 @@ fn intrinsic_width_px<Msg>(
     text_measurements: &ViewTextMeasurements,
     measurement: WidthMeasurement,
 ) -> i32 {
+    let scoped = text_measurements.with_font(node.effective_font());
+    let text_measurements = &scoped;
     let declared = node
         .style
         .width
@@ -1564,10 +1563,9 @@ fn intrinsic_width_px<Msg>(
                 .map(|value| value.to_px(dpi).round_i32().max(0))
                 .unwrap_or(0),
         );
-    let padding = node.style.padding_extent_px(dpi, false);
+    let padding = node.padding_extent_px(dpi, false);
     let gap = node
-        .style
-        .gap
+        .resolved_gap()
         .map(|value| value.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
 
@@ -1593,7 +1591,7 @@ fn intrinsic_width_px<Msg>(
         #[cfg(feature = "button")]
         ViewNodeKind::Button {
             label,
-            presentation: ZsButtonPresentation::Standard,
+            presentation: ZsButtonPresentation::Standard | ZsButtonPresentation::Primary,
             enabled,
             ..
         } => {
@@ -1614,7 +1612,7 @@ fn intrinsic_width_px<Msg>(
                 typography_scale,
                 text_measurements,
             );
-            let native_padding = if node.style.resolved_padding().is_some() {
+            let native_padding = if node.resolved_padding().is_some() {
                 0
             } else {
                 let metrics =
@@ -1626,7 +1624,19 @@ fn intrinsic_width_px<Msg>(
                     .max(0)
                     .saturating_add(metrics.button_padding_right.to_px(dpi).round_i32().max(0))
             };
-            label_width.saturating_add(native_padding)
+            let icon_width = if node.button_leading_icon().is_some() {
+                let gap = ZsToolbarMetrics::for_platform(node.resolved_platform_style())
+                    .content_gap
+                    .to_px(dpi)
+                    .round_i32()
+                    .max(0);
+                node.button_art_size_px(dpi).saturating_add(gap)
+            } else {
+                0
+            };
+            label_width
+                .saturating_add(native_padding)
+                .saturating_add(icon_width)
         }
         #[cfg(feature = "icon")]
         ViewNodeKind::Icon { size, .. } => standalone_icon_size_px(node, *size, dpi),
@@ -1726,22 +1736,21 @@ fn measured_height_px<Msg>(
     text_measurements: &ViewTextMeasurements,
     measurement: HeightMeasurement,
 ) -> i32 {
-    let declared_height = |value| {
-        typography_aware_length_px(value, dpi, node.typography_scaled_height, typography_scale)
-    };
+    let scoped = text_measurements.with_font(node.effective_font());
+    let text_measurements = &scoped;
+    let declared_height = |value| node.native_height_px(value, dpi, typography_scale);
     let declared = node
         .style
         .height
         .map(declared_height)
         .unwrap_or(0)
         .max(node.style.min_height.map(declared_height).unwrap_or(0));
-    let padding = node.style.padding_extent_px(dpi, true);
+    let padding = node.padding_extent_px(dpi, true);
     let gap = node
-        .style
-        .gap
+        .resolved_gap()
         .map(|value| value.to_px(dpi).round_i32().max(0))
         .unwrap_or(0);
-    let content_width = available_width.saturating_sub(node.style.padding_extent_px(dpi, false));
+    let content_width = available_width.saturating_sub(node.padding_extent_px(dpi, false));
 
     #[cfg(feature = "canvas")]
     if let ViewNodeKind::Canvas {
@@ -1987,6 +1996,19 @@ fn measured_text_natural_width_px(
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
 ) -> i32 {
+    let typography_scale = text_measurements
+        .font
+        .as_ref()
+        .and_then(|font| font.size)
+        .map(|size| {
+            size.dip().max(1.0)
+                / style
+                    .role
+                    .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                    .size
+                    .max(1.0)
+        })
+        .unwrap_or(typography_scale);
     if style.wrap != crate::TextWrap::Word {
         if let Some(measured) = text_measurements.measure(text, style, 0) {
             return measured.width.max(0);
@@ -2015,6 +2037,19 @@ fn measured_text_min_width_px(
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
 ) -> i32 {
+    let typography_scale = text_measurements
+        .font
+        .as_ref()
+        .and_then(|font| font.size)
+        .map(|size| {
+            size.dip().max(1.0)
+                / style
+                    .role
+                    .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                    .size
+                    .max(1.0)
+        })
+        .unwrap_or(typography_scale);
     if style.wrap == crate::TextWrap::Word || !style.ellipsis {
         return measured_text_natural_width_px(
             text,
@@ -2044,6 +2079,19 @@ fn measured_text_min_height_px(
     typography_scale: f32,
     text_measurements: &ViewTextMeasurements,
 ) -> i32 {
+    let typography_scale = text_measurements
+        .font
+        .as_ref()
+        .and_then(|font| font.size)
+        .map(|size| {
+            size.dip().max(1.0)
+                / style
+                    .role
+                    .metrics_for(crate::ZsTypographyPlatformStyle::current())
+                    .size
+                    .max(1.0)
+        })
+        .unwrap_or(typography_scale);
     if let Some(measured) = text_measurements.measure(text, style, available_width) {
         return measured.height.max(1);
     }
@@ -2062,6 +2110,20 @@ fn measured_text_min_height_px(
     .to_px(dpi)
     .round_i32()
     .max(1);
+    let line_height = text_measurements
+        .font
+        .as_ref()
+        .map(|font| {
+            let metrics = style
+                .role
+                .metrics_for(crate::ZsTypographyPlatformStyle::current());
+            let (_, height) = font.resolved_metrics(
+                metrics.size * typography_scale,
+                metrics.line_height * typography_scale,
+            );
+            Dp::new(height).to_px(dpi).round_i32().max(1)
+        })
+        .unwrap_or(line_height);
     let rows = text
         .lines()
         .map(|line| {
@@ -2122,20 +2184,6 @@ fn estimated_wrapping_segment_units(line: &str) -> i32 {
         }
     }
     longest.max(current_ascii_word)
-}
-
-fn typography_aware_length_px(
-    value: Dp,
-    dpi: Dpi,
-    typography_scaled: bool,
-    typography_scale: f32,
-) -> i32 {
-    let scale = if typography_scaled {
-        typography_scale.max(0.0)
-    } else {
-        1.0
-    };
-    Dp::new(value.0 * scale).to_px(dpi).round_i32().max(0)
 }
 
 #[cfg(feature = "date-picker")]
@@ -2302,18 +2350,20 @@ struct ViewTextMeasurementValue {
 
 #[derive(Clone)]
 pub(crate) struct ViewTextMeasurements {
+    font: Option<Arc<crate::FontSpec>>,
     fingerprint_a: std::collections::hash_map::RandomState,
     fingerprint_b: std::collections::hash_map::RandomState,
-    entries: std::collections::BTreeMap<ViewTextMeasurementKey, ViewTextMeasurementValue>,
+    entries: Arc<std::collections::BTreeMap<ViewTextMeasurementKey, ViewTextMeasurementValue>>,
     next_use: u64,
 }
 
 impl Default for ViewTextMeasurements {
     fn default() -> Self {
         Self {
+            font: None,
             fingerprint_a: std::collections::hash_map::RandomState::new(),
             fingerprint_b: std::collections::hash_map::RandomState::new(),
-            entries: std::collections::BTreeMap::new(),
+            entries: Arc::new(std::collections::BTreeMap::new()),
             next_use: 0,
         }
     }
@@ -2342,6 +2392,25 @@ impl PartialEq for ViewTextMeasurements {
 impl Eq for ViewTextMeasurements {}
 
 impl ViewTextMeasurements {
+    pub(crate) fn with_font(&self, font: Option<Arc<crate::FontSpec>>) -> Self {
+        Self {
+            font,
+            ..self.clone()
+        }
+    }
+    pub(crate) fn insert_with_font(
+        &mut self,
+        text: &str,
+        style: crate::SemanticTextStyle,
+        max_width: i32,
+        size: crate::Size,
+        font: Option<Arc<crate::FontSpec>>,
+    ) {
+        let old = self.font.take();
+        self.font = font;
+        self.insert(text, style, max_width, size);
+        self.font = old;
+    }
     pub(crate) fn insert(
         &mut self,
         text: impl AsRef<str>,
@@ -2352,7 +2421,7 @@ impl ViewTextMeasurements {
         let key = self.key(text.as_ref(), style, max_width);
         let size = size.clamp_non_negative();
         self.next_use = self.next_use.saturating_add(1);
-        self.entries.insert(
+        Arc::make_mut(&mut self.entries).insert(
             key,
             ViewTextMeasurementValue {
                 size,
@@ -2368,7 +2437,7 @@ impl ViewTextMeasurements {
             let Some(oldest) = oldest else {
                 break;
             };
-            self.entries.remove(&oldest);
+            Arc::make_mut(&mut self.entries).remove(&oldest);
         }
     }
 
@@ -2399,7 +2468,13 @@ impl ViewTextMeasurements {
             text_fingerprint_a: fingerprint_a.finish(),
             text_fingerprint_b: fingerprint_b.finish(),
             text_utf8_len: text.len(),
-            style_fingerprint: semantic_text_style_fingerprint(style),
+            style_fingerprint: {
+                use std::hash::Hash;
+                let mut hasher = self.fingerprint_a.build_hasher();
+                hasher.write_u64(semantic_text_style_fingerprint(style));
+                self.font.hash(&mut hasher);
+                hasher.finish()
+            },
             max_width: max_width.max(0),
         }
     }
@@ -2936,8 +3011,7 @@ mod ellipsis_layout_tests {
                 height: 20,
             },
         );
-        let mut view: ViewNode<()> =
-            column([button("打开").id(action).padding(Dp::new(12.0))]);
+        let mut view: ViewNode<()> = column([button("打开").id(action).padding(Dp::new(12.0))]);
 
         let output = measured_layout(&mut view, 400, measurements);
 

@@ -26,6 +26,10 @@
 - Keep public APIs safe and raw platform handles inside backend modules.
 - Keep optional dependencies and advanced capabilities behind Cargo features.
 - Use shared typed units, theme tokens and semantic icons in built-in UI.
+- Keep requested functionality bounded while allowing deliberate visual design;
+  platform appearance is the default preset, not a mandatory application skin.
+  Prefer application themes, typography and per-control state styles over
+  reimplementing standard controls on Canvas.
 - Preserve the buffered no-flicker Windows paint path.
 - Do not introduce an unrelated reactive runtime layer.
 - Do not add global mutable widget/control registries.

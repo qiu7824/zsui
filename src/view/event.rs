@@ -38,6 +38,7 @@ impl ZsTextSelection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ZsTextEditCommand {
     Undo,
+    Redo,
     Cut,
     Copy,
     Paste,
@@ -95,12 +96,12 @@ impl ViewTextEditCapabilities {
         copy: false,
         cut: false,
         paste: true,
-        undo: true,
+        undo: false,
     };
 
     pub(crate) const fn allows(self, command: ZsTextEditCommand) -> bool {
         match command {
-            ZsTextEditCommand::Undo => self.undo,
+            ZsTextEditCommand::Undo | ZsTextEditCommand::Redo => self.undo,
             ZsTextEditCommand::Cut => self.cut,
             ZsTextEditCommand::Copy => self.copy,
             ZsTextEditCommand::Paste => self.paste,
@@ -1255,6 +1256,7 @@ impl ViewHitTargetKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewLayoutCx {
+    work: LayoutWork,
     pub bounds: Rect,
     pub dpi: Dpi,
     pub(crate) typography_scale_per_mille: u16,
@@ -1265,6 +1267,7 @@ pub struct ViewLayoutCx {
 impl ViewLayoutCx {
     pub fn new(bounds: Rect, dpi: Dpi) -> Self {
         Self {
+            work: LayoutWork::default(),
             bounds,
             dpi,
             typography_scale_per_mille: crate::render_protocol::default_typography_scale_per_mille(
@@ -1276,6 +1279,7 @@ impl ViewLayoutCx {
 
     pub(crate) fn child(&self, bounds: Rect) -> Self {
         Self {
+            work: self.work.clone(),
             bounds,
             dpi: self.dpi,
             typography_scale_per_mille: self.typography_scale_per_mille,
@@ -1340,6 +1344,7 @@ impl<Msg> Default for ViewEventCx<Msg> {
 
 #[derive(Debug, Clone, Default)]
 pub struct AppCx {
+    invalidated_subtrees: BTreeSet<WidgetId>,
     #[cfg(feature = "windows-shell")]
     drop_response: Option<crate::DropResponse>,
     allowance: crate::dispatch_queue::DispatchAllowance,
@@ -1356,6 +1361,10 @@ pub struct AppCx {
 }
 
 impl AppCx {
+    /// Invalidates a memoized subtree even if its application revision is unchanged.
+    pub fn invalidate_subtree(&mut self, widget: WidgetId) {
+        self.invalidated_subtrees.insert(widget);
+    }
     /// Acknowledges a completed native drop. Move and link targets must call
     /// this before their drop update returns; queued asynchronous work should
     /// use the non-destructive copy contract instead.

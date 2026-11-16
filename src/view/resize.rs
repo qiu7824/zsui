@@ -68,6 +68,7 @@ impl<Msg> ViewNode<Msg> {
                     .map(|column| column.header().to_owned());
             }
             return self
+                .metadata()
                 .accessibility
                 .as_ref()
                 .and_then(|spec| spec.label.clone());

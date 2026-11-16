@@ -1099,6 +1099,8 @@ mod declaration_tests {
             .item("End", Command::Quit)
             .separator();
         let tray = TraySpec::new().menu(MenuSpec {
+            #[cfg(feature = "custom-icons")]
+            command_icons: Vec::new(),
             id: None,
             title: None,
             items: vec![

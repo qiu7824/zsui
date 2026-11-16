@@ -34,6 +34,7 @@ $singleFeatures = @(
     "label",
     "grid",
     "icon",
+    "custom-icons",
     "grid-view",
     "widgets-base",
     "widgets-input",

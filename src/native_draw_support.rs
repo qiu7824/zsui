@@ -117,6 +117,15 @@ impl NativeDrawPalette {
     pub(crate) const fn resolve_fill(self, fill: NativeDrawFill) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
+            NativeDrawFill::RoleOverride { role, color, alpha } => {
+                let source = crate::appearance::override_color(
+                    color,
+                    self.resolve(role),
+                    alpha,
+                    self.high_contrast,
+                );
+                blend_color(source, self.surface, source.a)
+            }
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
                 let alpha = if self.high_contrast {
@@ -137,6 +146,14 @@ impl NativeDrawPalette {
     pub(crate) const fn resolve_source_fill(self, fill: NativeDrawFill) -> Color {
         match fill {
             NativeDrawFill::Color(color) => color,
+            NativeDrawFill::RoleOverride { role, color, alpha } => {
+                crate::appearance::override_color(
+                    color,
+                    self.resolve(role),
+                    alpha,
+                    self.high_contrast,
+                )
+            }
             NativeDrawFill::Role(role) => self.resolve(role),
             NativeDrawFill::RoleWithAlpha { role, alpha } => {
                 let alpha = if self.high_contrast {

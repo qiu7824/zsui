@@ -156,6 +156,14 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "standalone semantic icon surface with platform-owned metrics and native icon sources",
         ),
         ZsuiCargoFeature::new(
+            "custom-icons",
+            Widget,
+            false,
+            vec!["resvg", "roxmltree", "tiny-skia"],
+            vec!["icon"],
+            "typed application-owned SVG and vector resources with validated input and bounded raster caches",
+        ),
+        ZsuiCargoFeature::new(
             "flyout",
             Widget,
             false,
@@ -739,7 +747,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             "rust-text",
             Backend,
             false,
-            vec!["cosmic-text", "skrifa", "swash", "ttf-parser"],
+            vec!["cosmic-text", "skrifa", "swash", "ttf-parser", "unicode-segmentation"],
             Vec::new(),
             "ZSUI-owned Rust shaping, retained layout and hinted rasterization pipeline used by the Win32 host",
         ),
@@ -897,6 +905,7 @@ pub fn zsui_feature_manifest() -> Vec<ZsuiCargoFeature> {
             false,
             Vec::new(),
             vec![
+                "custom-icons",
                 "accessibility",
                 "all-widgets",
                 "clipboard",

@@ -5,8 +5,18 @@
 //! [`stable`] or [`prelude`] when source compatibility across 0.2 patch releases
 //! is required.
 
+pub mod appearance;
+#[cfg(feature = "custom-icons")]
+pub mod icon_asset;
 /// Semver-stable application-authoring surface for the ZSUI 0.2 release line.
 pub mod stable;
+pub use appearance::{
+    AppTheme, Appearance, ControlDensity, ControlState, ControlStyle, FocusAppearance, FontSpec,
+    StateStyles, TabAppearance,
+};
+#[cfg(feature = "custom-icons")]
+pub use icon_asset::{IconAsset, IconAssetId, IconPathSegment, IconSource, NativeDrawVectorIcon};
+pub use view::{memoized, ViewWorkStats};
 
 pub mod platform_palette;
 #[cfg(feature = "windows-shell")]

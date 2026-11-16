@@ -1,0 +1,81 @@
+{
+  "license": "MIT",
+  "commit": "67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44",
+  "assets": [
+    {
+      "file": "monitor.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Desktop/SVG/ic_fluent_desktop_20_regular.svg",
+      "sha256": "07c553f0bc7c79deec787f4c8eda5276873f80241a7970e38cba88620ba9f046"
+    },
+    {
+      "file": "window.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Window/SVG/ic_fluent_window_20_regular.svg",
+      "sha256": "98b90c9451284d6037e27f1c4c6f97589eb29a6521856dfd03d225f0b399b4f5"
+    },
+    {
+      "file": "camera.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Camera/SVG/ic_fluent_camera_20_regular.svg",
+      "sha256": "950376e33dbf494c11adb3c13776ae620959c720a071ff6358ba4e7260a0a7ff"
+    },
+    {
+      "file": "mic.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Mic/SVG/ic_fluent_mic_20_regular.svg",
+      "sha256": "bffda34bba304cfd360e204440e96d4672ddc07d310ec67d87a81fc03fce7748"
+    },
+    {
+      "file": "mic-off.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Mic%20Off/SVG/ic_fluent_mic_off_20_regular.svg",
+      "sha256": "f95890819572f2cec08673c42aef41dc938b4de2e2203261c927bd3b221e0441"
+    },
+    {
+      "file": "volume.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Speaker%201/SVG/ic_fluent_speaker_1_20_regular.svg",
+      "sha256": "9b8bc9965fc7c71fa04c82df280e34402b3e5243b906dade9b5d4ef3d6fb7caf"
+    },
+    {
+      "file": "volume-2.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Speaker%202/SVG/ic_fluent_speaker_2_20_regular.svg",
+      "sha256": "42e7c3f32201be44f3252e263fedc2abf8c43da81c8b95ab7878795e3f3d53da"
+    },
+    {
+      "file": "volume-off.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Speaker%20Off/SVG/ic_fluent_speaker_off_20_regular.svg",
+      "sha256": "e2d4063399eea6af558ffb395123101e420cf3e0f7c1fd10aa6275b6b9ca25a3"
+    },
+    {
+      "file": "play.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Play/SVG/ic_fluent_play_20_regular.svg",
+      "sha256": "0666c1378f63d4d5c32f91b4107086bc14799dff306027976be591da8843ae45"
+    },
+    {
+      "file": "pause.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Pause/SVG/ic_fluent_pause_20_regular.svg",
+      "sha256": "cad333d70ced0f6f63d0c17689df6d269b6e0698bfca2fcae994aa30c677dd61"
+    },
+    {
+      "file": "record.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Record/SVG/ic_fluent_record_20_regular.svg",
+      "sha256": "9f3cf8c8738f55c9705435028e10c89cfc893213904878c776b3bbe6d959394b"
+    },
+    {
+      "file": "message.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Chat/SVG/ic_fluent_chat_20_regular.svg",
+      "sha256": "887ddc4469df53b75d350965d7f0d3cb5e0468bf1acc13b76a55c593fd8fe7a7"
+    },
+    {
+      "file": "user.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Person/SVG/ic_fluent_person_20_regular.svg",
+      "sha256": "c75bdf7e4c02437f3ad35c305253f4eaf4e2dfb2cc11e30d5a31af02a391e7ad"
+    },
+    {
+      "file": "users.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/People/SVG/ic_fluent_people_20_regular.svg",
+      "sha256": "340ede55a19346e8e4e36d1bddae83addbf78a6936c86e78bae23ba682260498"
+    },
+    {
+      "file": "video.svg",
+      "url": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/67e6dec1ee956af3ab4c746a2b3bb6a2e5520a44/assets/Video/SVG/ic_fluent_video_20_regular.svg",
+      "sha256": "1d74113628b7c836425ad0888b31ee3c543942fd8035d1970366deb717c7b26f"
+    }
+  ]
+}

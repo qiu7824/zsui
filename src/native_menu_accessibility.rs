@@ -222,6 +222,7 @@ mod tests {
         );
         let plan = NativeDrawPlan::new([
             NativeDrawCommand::Text(NativeDrawTextCommand {
+                font: None,
                 color: None,
                 size: None,
                 text: "自动保存 / Auto save".to_string(),
@@ -229,6 +230,7 @@ mod tests {
                 style: SemanticTextStyle::body(),
             }),
             NativeDrawCommand::Text(NativeDrawTextCommand {
+                font: None,
                 color: None,
                 size: None,
                 text: "更多 / More".to_string(),

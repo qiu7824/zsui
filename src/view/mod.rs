@@ -41,6 +41,8 @@ use crate::{ZsVideoFit, ZsVideoPlaybackState, ZsVideoSource};
 use serde::{Deserialize, Serialize};
 
 include!("node.rs");
+include!("appearance.rs");
+include!("memo.rs");
 #[cfg(feature = "resize")]
 include!("resize.rs");
 include!("widgets/mod.rs");
@@ -50,5 +52,25 @@ include!("paint.rs");
 include!("overlay.rs");
 include!("layout.rs");
 include!("tests.rs");
+#[cfg(all(
+    test,
+    any(
+        feature = "button",
+        feature = "label",
+        feature = "textbox",
+        feature = "tabs"
+    )
+))]
+mod appearance_tests;
 #[cfg(test)]
 mod application_tests;
+#[cfg(all(test, feature = "label"))]
+mod memo_tests;
+#[cfg(all(
+    test,
+    feature = "rust-text",
+    feature = "label",
+    feature = "tooltip",
+    feature = "accessibility"
+))]
+mod memory_tests;

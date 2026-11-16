@@ -338,6 +338,7 @@ mod label_tests {
 
     fn style() -> TextStyle {
         TextStyle {
+            fallback_families: Vec::new(),
             font_family: "Test".to_string(),
             size: 14.0,
             line_height: 20.0,

@@ -21,6 +21,8 @@ const NATIVE_TEXT_SHAPING_CACHE_CAPACITY: usize = 256;
 #[allow(dead_code)]
 #[derive(Clone, Default)]
 pub(crate) struct NativeTextShapingCache {
+    text_bounds: Arc<Mutex<Option<(Rect, bool)>>>,
+    font: Arc<Mutex<Option<Arc<crate::FontSpec>>>>,
     entries: Arc<Mutex<VecDeque<(String, NativeShapedTextLine)>>>,
 }
 
@@ -76,6 +78,24 @@ pub(crate) trait NativeTextShaper {
     }
 
     fn shape_line(&self, text: &str) -> Option<NativeShapedTextLine>;
+    fn shape_line_with_font(
+        &self,
+        text: &str,
+        _font: Option<&crate::FontSpec>,
+    ) -> Option<NativeShapedTextLine> {
+        self.shape_line(text)
+    }
+    fn measure_with_font(
+        &self,
+        text: &str,
+        style: crate::SemanticTextStyle,
+        max_width: i32,
+        dpi: Dpi,
+        scale: f32,
+        _font: Option<&crate::FontSpec>,
+    ) -> Option<crate::Size> {
+        self.measure(text, style, max_width, dpi, scale)
+    }
 }
 
 #[allow(dead_code)]
@@ -103,6 +123,37 @@ impl std::fmt::Debug for NativeTextShapingBackend {
 }
 
 impl NativeTextShapingBackend {
+    pub(crate) fn set_text_bounds(&self, bounds: Option<(Rect, bool)>) {
+        if let Self::Platform(_, cache) = self {
+            if let Ok(mut current) = cache.text_bounds.lock() {
+                *current = bounds;
+            }
+        }
+    }
+    fn text_bounds(&self) -> Option<(Rect, bool)> {
+        if let Self::Platform(_, cache) = self {
+            cache.text_bounds.lock().ok().and_then(|bounds| *bounds)
+        } else {
+            None
+        }
+    }
+    pub(crate) fn set_font(&self, font: Option<Arc<crate::FontSpec>>) {
+        if let Self::Platform(_, cache) = self {
+            if let Ok(mut current) = cache.font.lock() {
+                if *current != font {
+                    *current = font;
+                    cache.release_idle_memory();
+                }
+            }
+        }
+    }
+    fn active_font(&self) -> Option<Arc<crate::FontSpec>> {
+        if let Self::Platform(_, cache) = self {
+            cache.font.lock().ok().and_then(|font| font.clone())
+        } else {
+            None
+        }
+    }
     #[allow(dead_code)]
     pub(crate) fn platform(
         shaper: impl crate::platform_text_shaper::NativePlatformTextShaper + 'static,
@@ -135,7 +186,10 @@ impl NativeTextShapingBackend {
     fn shape_line(&self, text: &str, fallback_width: i32) -> NativeShapedTextLine {
         let shaped = match self {
             Self::LogicalCells => None,
-            Self::Platform(shaper, cache) => cache.shape(text, || shaper.shape_line(text)),
+            Self::Platform(shaper, cache) => {
+                let font = self.active_font();
+                cache.shape(text, || shaper.shape_line_with_font(text, font.as_deref()))
+            }
             #[cfg(test)]
             Self::Test(shape) => shape(text, fallback_width),
         };
@@ -161,26 +215,44 @@ impl NativeTextShapingBackend {
             let NativeDrawCommand::Text(command) = command else {
                 continue;
             };
+            let font = command.effective_font_override();
+            let previous = previous.with_font(font.clone());
             if let Some(size) = previous
                 .measure(&command.text, command.style, 0)
-                .or_else(|| shaper.measure(&command.text, command.style, 0, dpi, typography_scale))
+                .or_else(|| {
+                    shaper.measure_with_font(
+                        &command.text,
+                        command.style,
+                        0,
+                        dpi,
+                        typography_scale,
+                        font.as_deref(),
+                    )
+                })
             {
-                measurements.insert(&command.text, command.style, 0, size);
+                measurements.insert_with_font(&command.text, command.style, 0, size, font.clone());
             }
             if command.style.wrap == crate::TextWrap::Word && command.bounds.width > 0 {
                 if let Some(size) = previous
                     .measure(&command.text, command.style, command.bounds.width)
                     .or_else(|| {
-                        shaper.measure(
+                        shaper.measure_with_font(
                             &command.text,
                             command.style,
                             command.bounds.width,
                             dpi,
                             typography_scale,
+                            font.as_deref(),
                         )
                     })
                 {
-                    measurements.insert(&command.text, command.style, command.bounds.width, size);
+                    measurements.insert_with_font(
+                        &command.text,
+                        command.style,
+                        command.bounds.width,
+                        size,
+                        font.clone(),
+                    );
                 }
             }
         }
@@ -467,7 +539,7 @@ pub(crate) fn native_text_visual_geometry_in_viewport_with_backend(
     backend: &NativeTextShapingBackend,
 ) -> NativeTextVisualGeometry {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let text_bounds = metrics.text_bounds;
     let line_height = metrics.line_height;
     let lines = text_lines_with_backend(
@@ -648,7 +720,7 @@ pub(crate) fn native_text_index_for_point_in_viewport_with_backend(
     backend: &NativeTextShapingBackend,
 ) -> usize {
     let multiline = target.kind == ViewHitTargetKind::TextEditor;
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         multiline,
@@ -821,7 +893,7 @@ pub(crate) fn native_text_index_for_horizontal_move_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> usize {
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -967,7 +1039,7 @@ fn native_text_index_for_vertical_row_delta_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> (usize, i32) {
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -1055,7 +1127,7 @@ pub(crate) fn native_text_horizontal_scroll_for_caret_with_backend(
     if !native_text_target_uses_horizontal_scroll(target, wrap) {
         return 0;
     }
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -1159,7 +1231,7 @@ pub(crate) fn native_text_drag_viewport_for_point_with_backend(
             scrolled: false,
         };
     }
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let mut adjusted = point;
     let mut row = first_visible_row;
     let mut scroll = if horizontal { horizontal_scroll_px } else { 0 };
@@ -1238,7 +1310,7 @@ fn native_text_scroll_horizontal_pixels(
     if !native_text_target_uses_horizontal_scroll(target, wrap) {
         return 0;
     }
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -1323,6 +1395,8 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> NativeTextVisualGeometry {
+    let accent_fill = plan.scoped_fill(target.widget, ColorRole::Accent, 255);
+    let selection_fill = plan.scoped_fill(target.widget, ColorRole::Accent, 64);
     let geometry = native_text_visual_geometry_in_viewport_with_backend(
         target,
         value,
@@ -1403,17 +1477,14 @@ pub(crate) fn decorate_native_text_edit_visuals_in_viewport_with_backend(
                 insertion_index + offset,
                 NativeDrawCommand::FillRect {
                     rect,
-                    fill: NativeDrawFill::RoleWithAlpha {
-                        role: ColorRole::Accent,
-                        alpha: 64,
-                    },
+                    fill: selection_fill,
                 },
             );
         }
     }
     plan.push(NativeDrawCommand::FillRect {
         rect: geometry.caret,
-        fill: NativeDrawFill::Role(ColorRole::Accent),
+        fill: accent_fill,
     });
     geometry
 }
@@ -1429,12 +1500,16 @@ fn decorate_native_text_editor_viewport_with_backend(
     geometry: &NativeTextVisualGeometry,
     backend: &NativeTextShapingBackend,
 ) {
+    let accent_fill = plan.scoped_fill(target.widget, ColorRole::Accent, 255);
+    let selection_fill = plan.scoped_fill(target.widget, ColorRole::Accent, 64);
     let original_text = plan.commands.iter().find_map(|command| match command {
         NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds) => {
             Some(text.clone())
         }
         _ => None,
     });
+    let font = original_text.as_ref().and_then(|text| text.font.clone());
+    let explicit_color = original_text.as_ref().and_then(|text| text.color);
     let text_index = plan.commands.iter().position(|command| {
         matches!(command, NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds))
     });
@@ -1453,7 +1528,7 @@ fn decorate_native_text_editor_viewport_with_backend(
         !matches!(command, NativeDrawCommand::Text(text) if rect_contains(target.bounds, text.bounds))
     });
 
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let (lines, visible_rows) =
         native_text_viewport_lines_with_backend(target, value, wrap, dpi, backend);
     let maximum_first = lines.len().saturating_sub(visible_rows);
@@ -1478,10 +1553,7 @@ fn decorate_native_text_editor_viewport_with_backend(
             .copied()
             .map(|rect| NativeDrawCommand::FillRect {
                 rect,
-                fill: NativeDrawFill::RoleWithAlpha {
-                    role: ColorRole::Accent,
-                    alpha: 64,
-                },
+                fill: selection_fill,
             }),
     );
     if value.is_empty() {
@@ -1495,7 +1567,7 @@ fn decorate_native_text_editor_viewport_with_backend(
             .skip(first_visible_row)
             .take(visible_rows)
         {
-            commands.push(NativeDrawCommand::Text(crate::NativeDrawTextCommand::new(
+            let mut command = crate::NativeDrawTextCommand::new(
                 char_slice(value, line.start, line.end),
                 Rect {
                     x: metrics.text_bounds.x.saturating_sub(horizontal_scroll_px),
@@ -1509,12 +1581,15 @@ fn decorate_native_text_editor_viewport_with_backend(
                     height: metrics.line_height,
                 },
                 style,
-            )));
+            )
+            .with_font_override(font.clone());
+            command.color = explicit_color;
+            commands.push(NativeDrawCommand::Text(command));
         }
     }
     commands.push(NativeDrawCommand::FillRect {
         rect: geometry.caret,
-        fill: NativeDrawFill::Role(ColorRole::Accent),
+        fill: accent_fill,
     });
     commands.push(NativeDrawCommand::PopClip);
     plan.commands.splice(text_index..text_index, commands);
@@ -1529,6 +1604,53 @@ pub(crate) fn decorate_native_focus_ring(
 ) -> Option<Rect> {
     #[allow(unused_mut)]
     let mut target = interaction_plan.focus_target_for_widget(focused_widget?)?;
+    let accent_fill = plan.scoped_fill(target.widget, ColorRole::Accent, 255);
+    if let Some(mode) = plan.custom_focus_style(target.widget) {
+        if mode == crate::FocusAppearance::None || !show_outline {
+            return None;
+        }
+        let record = plan
+            .appearance
+            .iter()
+            .rev()
+            .find(|record| record.widget == Some(target.widget))?;
+        let style = record.style.states.resolve(crate::ControlState {
+            focus_visible: true,
+            ..record.state
+        });
+        let stroke = style
+            .border
+            .or_else(|| record.style.color_for(ColorRole::Accent))
+            .map_or(accent_fill, |color| NativeDrawFill::RoleOverride {
+                role: ColorRole::Accent,
+                color,
+                alpha: 255,
+            });
+        let width = style
+            .border_width
+            .map(|v| Dp::new(v.dip()).to_px(dpi).round_i32())
+            .unwrap_or(2)
+            .max(1);
+        let rect = target.bounds;
+        if mode == crate::FocusAppearance::Underline {
+            plan.push(NativeDrawCommand::FillRect {
+                rect: Rect {
+                    x: rect.x,
+                    y: rect.y + rect.height - width,
+                    width: rect.width,
+                    height: width,
+                },
+                fill: stroke,
+            });
+        } else {
+            plan.push(NativeDrawCommand::StrokeRect {
+                rect,
+                stroke,
+                width,
+            });
+        }
+        return Some(rect);
+    }
     #[cfg(feature = "grid-view")]
     if target.kind == ViewHitTargetKind::GridView {
         target = interaction_plan
@@ -1628,7 +1750,7 @@ pub(crate) fn decorate_native_focus_ring(
             };
             plan.push(NativeDrawCommand::FillRect {
                 rect: indicator,
-                fill: NativeDrawFill::Role(ColorRole::Accent),
+                fill: accent_fill,
             });
             return Some(indicator);
         }
@@ -1648,7 +1770,7 @@ pub(crate) fn decorate_native_focus_ring(
     let width = focus_profile.outline_width.to_px(dpi).round_i32().max(1);
     plan.push(NativeDrawCommand::StrokeRect {
         rect: ring,
-        stroke: NativeDrawFill::Role(ColorRole::Accent),
+        stroke: accent_fill,
         width,
     });
     Some(ring)
@@ -1813,46 +1935,57 @@ pub(crate) fn decorate_native_pointer_visuals(
     pressed: Option<NativePointerVisualKey>,
     dpi: Dpi,
 ) -> usize {
-    let active = match pressed {
-        Some(pressed) if hovered == Some(pressed) => Some((pressed, true)),
-        Some(_) => None,
-        None => hovered.map(|hovered| (hovered, false)),
-    };
-    let Some(((widget, kind), is_pressed)) = active else {
-        return 0;
-    };
-    let Some(target) = interaction_plan
-        .hit_targets
-        .iter()
-        .copied()
-        .find(|target| target.widget == widget && target.kind == kind)
-    else {
-        return 0;
-    };
-
-    #[cfg(feature = "toggle-button")]
-    if kind == ViewHitTargetKind::ToggleButton {
-        if let Some(NativeDrawCommand::RoundRect { fill, stroke, .. }) =
-            plan.commands.iter_mut().rfind(|command| {
-                matches!(command, NativeDrawCommand::RoundRect { rect, .. }
-                    if rect_contains(*rect, target.bounds))
-            })
-        {
-            let checked = *fill == NativeDrawFill::Role(ColorRole::Accent);
-            *stroke = Some(NativeDrawFill::Role(if checked {
-                ColorRole::AccentText
-            } else if is_pressed {
-                ColorRole::Accent
-            } else {
-                ColorRole::PrimaryText
-            }));
-            return 1;
+    let result = (|| {
+        let active = match pressed {
+            Some(pressed) if hovered == Some(pressed) => Some((pressed, true)),
+            Some(_) => None,
+            None => hovered.map(|hovered| (hovered, false)),
+        };
+        let Some(((widget, kind), is_pressed)) = active else {
+            return 0;
+        };
+        if plan.custom_pointer_style(widget) {
+            return 0;
         }
-    }
+        let Some(target) = interaction_plan
+            .hit_targets
+            .iter()
+            .copied()
+            .find(|target| target.widget == widget && target.kind == kind)
+        else {
+            return 0;
+        };
 
-    #[cfg(feature = "date-picker")]
-    if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
-        if let Some(command) = plan.commands.iter_mut().find(|command| {
+        #[cfg(feature = "toggle-button")]
+        if kind == ViewHitTargetKind::ToggleButton {
+            if let Some(NativeDrawCommand::RoundRect { fill, stroke, .. }) =
+                plan.commands.iter_mut().rfind(|command| {
+                    matches!(command, NativeDrawCommand::RoundRect { rect, .. }
+                    if rect_contains(*rect, target.bounds))
+                })
+            {
+                let checked = matches!(
+                    *fill,
+                    NativeDrawFill::Role(ColorRole::Accent)
+                        | NativeDrawFill::RoleOverride {
+                            role: ColorRole::Accent,
+                            ..
+                        }
+                );
+                *stroke = Some(NativeDrawFill::Role(if checked {
+                    ColorRole::AccentText
+                } else if is_pressed {
+                    ColorRole::Accent
+                } else {
+                    ColorRole::PrimaryText
+                }));
+                return 1;
+            }
+        }
+
+        #[cfg(feature = "date-picker")]
+        if matches!(kind, ViewHitTargetKind::DatePickerDay { .. }) {
+            if let Some(command) = plan.commands.iter_mut().find(|command| {
             matches!(command, NativeDrawCommand::RoundRect { rect, fill: NativeDrawFill::Role(ColorRole::Accent), .. }
                 if rect_contains(target.bounds, *rect))
         }) {
@@ -1866,66 +1999,110 @@ pub(crate) fn decorate_native_pointer_visuals(
             }));
             return 1;
         }
-    }
+        }
 
-    let backdrop_index = plan.commands.iter().rposition(|command| {
-        matches!(command, NativeDrawCommand::RoundRect { rect, .. }
+        let backdrop_index = plan.commands.iter().rposition(|command| {
+            matches!(command, NativeDrawCommand::RoundRect { rect, .. }
             if rect_contains(*rect, target.bounds))
-    });
-    let content_index = plan.commands.iter().position(|command| match command {
-        NativeDrawCommand::Text(text) => rect_contains(target.bounds, text.bounds),
-        #[cfg(feature = "password-box")]
-        NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
-        NativeDrawCommand::Icon(icon) => rect_contains(target.bounds, icon.bounds),
-        _ => false,
-    });
-    let Some(insertion_index) = backdrop_index
-        .map(|index| index.saturating_add(1))
-        .or(content_index)
-    else {
-        return 0;
-    };
-    #[cfg(feature = "date-picker")]
-    let rect = match kind {
-        ViewHitTargetKind::DatePickerDay { .. } => {
-            let diameter = Dp::new(32.0)
-                .to_px(dpi)
-                .round_i32()
-                .min(target.bounds.width)
-                .min(target.bounds.height)
-                .max(1);
-            Rect {
-                x: target.bounds.x + (target.bounds.width - diameter) / 2,
-                y: target.bounds.y + (target.bounds.height - diameter) / 2,
-                width: diameter,
-                height: diameter,
+        });
+        let content_index = plan.commands.iter().position(|command| match command {
+            NativeDrawCommand::Text(text) => rect_contains(target.bounds, text.bounds),
+            #[cfg(feature = "password-box")]
+            NativeDrawCommand::SecureText(text) => rect_contains(target.bounds, text.bounds),
+            NativeDrawCommand::Icon(icon) => rect_contains(target.bounds, icon.bounds),
+            _ => false,
+        });
+        let Some(insertion_index) = backdrop_index
+            .map(|index| index.saturating_add(1))
+            .or(content_index)
+        else {
+            return 0;
+        };
+        #[cfg(feature = "date-picker")]
+        let rect = match kind {
+            ViewHitTargetKind::DatePickerDay { .. } => {
+                let diameter = Dp::new(32.0)
+                    .to_px(dpi)
+                    .round_i32()
+                    .min(target.bounds.width)
+                    .min(target.bounds.height)
+                    .max(1);
+                Rect {
+                    x: target.bounds.x + (target.bounds.width - diameter) / 2,
+                    y: target.bounds.y + (target.bounds.height - diameter) / 2,
+                    width: diameter,
+                    height: diameter,
+                }
+            }
+            _ => target.bounds,
+        };
+        #[cfg(not(feature = "date-picker"))]
+        let rect = target.bounds;
+        #[cfg(feature = "date-picker")]
+        let is_date_cell = matches!(kind, ViewHitTargetKind::DatePickerDay { .. });
+        #[cfg(not(feature = "date-picker"))]
+        let is_date_cell = false;
+        let radius = if is_date_cell {
+            rect.width.min(rect.height) / 2
+        } else {
+            Dp::new(4.0).to_px(dpi).round_i32().max(1)
+        };
+        plan.commands.insert(
+            insertion_index,
+            NativeDrawCommand::RoundFill {
+                rect,
+                fill: NativeDrawFill::RoleWithAlpha {
+                    role: ColorRole::PrimaryText,
+                    alpha: if is_pressed { 28 } else { 14 },
+                },
+                radius,
+            },
+        );
+        1
+    })();
+
+    let owner = pressed
+        .filter(|pressed| Some(*pressed) == hovered)
+        .or_else(|| if pressed.is_none() { hovered } else { None });
+    if let Some((widget, kind)) = owner {
+        let target = interaction_plan
+            .hit_targets
+            .iter()
+            .find(|target| target.widget == widget && target.kind == kind);
+        let theme = plan
+            .appearance
+            .iter()
+            .rev()
+            .find(|record| record.widget == Some(widget))
+            .map(|record| record.style.clone());
+        if let (Some(target), Some(theme)) = (target, theme) {
+            let palette = crate::Appearance {
+                colors: theme.colors.clone(),
+                ..Default::default()
+            };
+            let area = Rect {
+                x: target.bounds.x - 2,
+                y: target.bounds.y - 2,
+                width: target.bounds.width + 4,
+                height: target.bounds.height + 4,
+            };
+            for command in &mut plan.commands {
+                if command
+                    .paint_bounds()
+                    .is_some_and(|bounds| rect_contains(area, bounds))
+                {
+                    crate::appearance::style_command(
+                        command,
+                        &palette,
+                        &crate::ControlStyle::default(),
+                        target.bounds,
+                        dpi,
+                    );
+                }
             }
         }
-        _ => target.bounds,
-    };
-    #[cfg(not(feature = "date-picker"))]
-    let rect = target.bounds;
-    #[cfg(feature = "date-picker")]
-    let is_date_cell = matches!(kind, ViewHitTargetKind::DatePickerDay { .. });
-    #[cfg(not(feature = "date-picker"))]
-    let is_date_cell = false;
-    let radius = if is_date_cell {
-        rect.width.min(rect.height) / 2
-    } else {
-        Dp::new(4.0).to_px(dpi).round_i32().max(1)
-    };
-    plan.commands.insert(
-        insertion_index,
-        NativeDrawCommand::RoundFill {
-            rect,
-            fill: NativeDrawFill::RoleWithAlpha {
-                role: ColorRole::PrimaryText,
-                alpha: if is_pressed { 28 } else { 14 },
-            },
-            radius,
-        },
-    );
-    1
+    }
+    result
 }
 
 #[derive(Debug, Clone)]
@@ -2034,6 +2211,35 @@ fn native_text_visual_metrics(target: ViewHitTarget, dpi: Dpi) -> NativeTextVisu
     native_text_visual_metrics_with_scale(target, dpi, 1.0)
 }
 
+fn native_text_visual_metrics_with_backend(
+    target: ViewHitTarget,
+    dpi: Dpi,
+    backend: &NativeTextShapingBackend,
+) -> NativeTextVisualMetrics {
+    let mut metrics =
+        native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    if let Some(font) = backend.active_font() {
+        let role = crate::TextRole::Body.metrics_for(crate::ZsTypographyPlatformStyle::current());
+        let (size, height) = font.resolved_metrics(
+            role.size * backend.typography_scale(),
+            role.line_height * backend.typography_scale(),
+        );
+        metrics.line_height = Dp::new(height).to_px(dpi).round_i32().max(1);
+        metrics.character_width = Dp::new(8.0 * size / role.size.max(1.0))
+            .to_px(dpi)
+            .round_i32()
+            .max(1);
+    }
+    if let Some((mut bounds, multiline)) = backend.text_bounds() {
+        if !multiline {
+            bounds.y += ((bounds.height - metrics.line_height) / 2).max(0);
+            bounds.height = bounds.height.min(metrics.line_height).max(1);
+        }
+        metrics.text_bounds = bounds;
+    }
+    metrics
+}
+
 fn native_text_visual_metrics_with_scale(
     target: ViewHitTarget,
     dpi: Dpi,
@@ -2095,7 +2301,7 @@ fn native_text_viewport_lines_with_backend(
     dpi: Dpi,
     backend: &NativeTextShapingBackend,
 ) -> (Vec<NativeTextLine>, usize) {
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let lines = text_lines_with_backend(
         value,
         target.kind == ViewHitTargetKind::TextEditor,
@@ -2147,7 +2353,7 @@ pub(crate) fn native_text_visible_range_with_backend(
     }
     // Single-line inputs report the horizontally visible scalar window so
     // accessibility geometry matches the clipped paint and caret position.
-    let metrics = native_text_visual_metrics_with_scale(target, dpi, backend.typography_scale());
+    let metrics = native_text_visual_metrics_with_backend(target, dpi, backend);
     let left = i32::try_from(horizontal_scroll_px)
         .unwrap_or(i32::MAX)
         .max(0);

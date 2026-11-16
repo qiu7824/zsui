@@ -55,6 +55,14 @@ pub use controls::*;
 pub use crate::TextWrap;
 /// Semantic colors resolved by the active native theme.
 pub use crate::ThemeColorToken;
+/// Application themes, typography and state styles layered over native defaults.
+pub use crate::{
+    AppTheme, Appearance, ControlDensity, ControlState, ControlStyle, FocusAppearance, FontSpec,
+    StateStyles, TabAppearance, TextWeight,
+};
+/// Validated application vector icon resources.
+#[cfg(feature = "custom-icons")]
+pub use crate::{IconAsset, IconAssetId, IconPathSegment, IconSource};
 
 /// Typed native window commands, including show/hide and close-veto-aware close.
 #[cfg(feature = "window-chrome")]
@@ -231,6 +239,42 @@ pub struct Element<Message> {
 }
 
 impl<Message> Element<Message> {
+    /// Applies a shared theme to this subtree.
+    pub fn theme(mut self, theme: AppTheme) -> Self {
+        self.inner = self.inner.theme(theme);
+        self
+    }
+    /// Applies this element's state and appearance overrides.
+    pub fn appearance(mut self, appearance: Appearance) -> Self {
+        self.inner = self.inner.appearance(appearance);
+        self
+    }
+    /// Applies inherited typography to this subtree.
+    pub fn font(mut self, font: FontSpec) -> Self {
+        self.inner = self.inner.font(font);
+        self
+    }
+    /// Adds explicit selected, disabled or validation appearance state.
+    pub fn visual_state(mut self, state: ControlState) -> Self {
+        self.inner = self.inner.visual_state(state);
+        self
+    }
+    /// Marks an input as visually invalid without modifying its value.
+    pub fn invalid(mut self, invalid: bool) -> Self {
+        self.inner = self.inner.invalid(invalid);
+        self
+    }
+    /// Sets icon artwork size without changing its hit area.
+    pub fn glyph_size(mut self, size: Dp) -> Self {
+        self.inner = self.inner.glyph_size(size.into());
+        self
+    }
+    /// Assigns a semantic or custom vector icon to an icon or button.
+    #[cfg(feature = "custom-icons")]
+    pub fn icon_source(mut self, source: impl Into<IconSource>) -> Self {
+        self.inner = self.inner.icon_source(source);
+        self
+    }
     /// Selects a semantic appearance for this subtree and its native window.
     pub fn theme_mode(mut self, mode: ThemeMode) -> Self {
         self.inner = self.inner.theme_mode(mode);
@@ -435,6 +479,18 @@ pub fn column<Message>(children: impl IntoIterator<Item = Element<Message>>) -> 
     Element::from_raw(crate::column(children.into_iter().map(Element::into_raw)))
 }
 
+/// Builds a stable subtree only when its revision changes; all captured data
+/// and handler dependencies must be represented by that revision.
+pub fn memoized<Message>(
+    id: WidgetId,
+    revision: u64,
+    build: impl Fn() -> Element<Message> + Send + Sync + 'static,
+) -> Element<Message> {
+    Element::from_raw(crate::memoized(id.into(), revision, move || {
+        build().into_raw()
+    }))
+}
+
 /// Creates a horizontal stack from child elements.
 pub fn row<Message>(children: impl IntoIterator<Item = Element<Message>>) -> Element<Message> {
     Element::from_raw(crate::row(children.into_iter().map(Element::into_raw)))
@@ -480,6 +536,10 @@ pub struct UpdateContext<'a> {
 }
 
 impl UpdateContext<'_> {
+    /// Requests rebuilding a memoized subtree despite an unchanged revision.
+    pub fn invalidate_subtree(&mut self, widget: WidgetId) {
+        self.inner.invalidate_subtree(widget.into());
+    }
     /// Requests a native window action without exposing a platform handle.
     #[cfg(feature = "window-chrome")]
     pub fn window_command(&mut self, command: WindowCommand) {

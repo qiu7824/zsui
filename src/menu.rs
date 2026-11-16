@@ -236,14 +236,40 @@ mod accelerator_parsing_tests {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MenuSpec {
+    #[cfg(feature = "custom-icons")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub command_icons: Vec<(Command, crate::IconSource)>,
     pub id: Option<String>,
     pub title: Option<String>,
     pub items: Vec<MenuItemSpec>,
 }
 
 impl MenuSpec {
+    /// Associates a semantic or custom icon with a typed menu command.
+    #[cfg(feature = "custom-icons")]
+    pub fn command_icon(mut self, command: Command, icon: impl Into<crate::IconSource>) -> Self {
+        self.command_icons
+            .retain(|(candidate, _)| *candidate != command);
+        self.command_icons.push((command, icon.into()));
+        self
+    }
+    #[cfg(feature = "custom-icons")]
+    pub(crate) fn icon_for_command(&self, command: &Command) -> Option<&crate::IconSource> {
+        self.command_icons
+            .iter()
+            .find(|(candidate, _)| candidate == command)
+            .map(|(_, icon)| icon)
+            .or_else(|| {
+                self.items.iter().find_map(|item| match item {
+                    MenuItemSpec::Submenu { menu, .. } => menu.icon_for_command(command),
+                    _ => None,
+                })
+            })
+    }
     pub fn new() -> Self {
         Self {
+            #[cfg(feature = "custom-icons")]
+            command_icons: Vec::new(),
             id: None,
             title: None,
             items: Vec::new(),

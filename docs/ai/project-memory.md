@@ -438,14 +438,14 @@ history remain authoritative for implementation status.
   input state before dispatching one scalar to this shared model.
 - Shared edit actions use `ZsTextEditCommand` queued through `AppCx` for the
   focused editor or an explicit strong `WidgetId`. The per-window input runtime
-  may retain bounded undo snapshots as transient interaction state, but every
+  may retain a byte-bounded delta journal as transient interaction state, but every
   resulting value and selection returns through typed View messages so the
   application remains authoritative. Editable text is a compositional ViewNode
   capability rather than a hit-target-kind whitelist. TextBox/TextEditor,
   NumberBox drafts, AutoSuggestBox queries and CommandPalette queries use the
   full select-all/copy/paste/cut/undo policy; PasswordBox uses a protected
-  select-all/paste/undo policy whose history is zeroized and whose copy/cut
-  commands are consumed without clipboard access. Platform hosts map the exact
+  select-all/paste policy with no retained sensitive undo history; copy/cut
+  and undo/redo commands are consumed without clipboard access. Platform hosts map the exact
   primary A/C/V/X/Z chords once: Control on Windows/Linux and Command on macOS.
   Cut/copy/paste require the optional `clipboard` feature and use target-native
   clipboard services; examples do not call platform clipboard APIs directly.
@@ -775,8 +775,12 @@ history remain authoritative for implementation status.
   sources. Licensed vector assets are fallbacks, not private font code points.
 - Reusable settings composition means navigation, grouped cards, setting rows,
   explanatory text and action regions—not a product-specific settings page.
-- Follow modern Fluent/WinUI proportions on Windows while allowing AppKit and
-  the Linux platform profile to present native platform character.
+- Platform profiles provide native default proportions and typography. Application
+  themes, subtree inheritance and instance/state overrides may deliberately choose
+  another appearance while preserving the same controls and behavior. Functional
+  scope remains bounded by the product brief; visual design is not restricted to
+  the platform preset, and ordinary controls should not be rebuilt on Canvas just
+  to customize their appearance.
 - Platform-native character includes composition, not only control sizes:
   Windows may use Fluent navigation and card groups, macOS uses a source-list
   sidebar with aligned AppKit-style form stacks, and GTK uses sidebar

@@ -105,10 +105,6 @@ impl WindowsRustTextState {
             self.stats.engine_initializations = self.stats.engine_initializations.saturating_add(1);
         }
         let layout = engine.layout(text, style, bounds.width, bounds.height, dpi_scale);
-        if style.ellipsis && layout.overflows_horizontally() {
-            self.stats.fallback_count = self.stats.fallback_count.saturating_add(1);
-            return false;
-        }
         let profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
         if surface
             .composite(engine, &layout, bounds, clip, style.color, profile)
@@ -175,11 +171,6 @@ impl WindowsRustTextState {
             run.bounds.height,
             dpi_scale,
         );
-        // Character-safe ellipsis is not approximated. Until the Rust layout
-        // owns that operation, the host falls through to DirectWrite/GDI.
-        if style.ellipsis && layout.overflows_horizontally() {
-            return Err("Rust text ellipsis is not implemented".into());
-        }
 
         let raster_profile = windows_rust_text_raster_profile(style.semantic_role, self.profile);
         let start_x = visible.x.saturating_sub(run.bounds.x) as u32;

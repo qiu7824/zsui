@@ -25,7 +25,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "swash", "fontconfig", "shape-run-cache"], optional = true }
 fluent-bundle = { version = "0.16", optional = true }
 png = { version = "0.18", optional = true }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 skrifa = { version = "0.44", default-features = false, features = ["std"], optional = true }
 swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"], optional = true }
@@ -33,6 +33,8 @@ ttf-parser = { version = "0.25.1", default-features = false, optional = true }
 rust_decimal = { version = "1.42.1", default-features = false, features = ["maths", "std"], optional = true }
 sys-locale = { version = "0.3.2", optional = true }
 tiny-skia = { version = "0.11.4", optional = true }
+resvg = { version = "0.45.1", default-features = false, optional = true }
+roxmltree = { version = "0.20", optional = true }
 unic-langid = { version = "0.9.6", optional = true }
 unicode-bidi = { version = "0.3.18", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
@@ -147,6 +149,7 @@ clipboard = ["dep:arboard"]
 clipboard-files = ["clipboard", "windows-shell"]
 image = ["dep:png"]
 icon = ["widgets-base"]
+custom-icons = ["icon", "dep:resvg", "dep:roxmltree", "dep:tiny-skia"]
 image-preview = ["image", "widgets-base"]
 video = ["widgets-base"]
 native-smoke = ["image", "dep:objc2-core-graphics", "objc2-app-kit?/objc2-core-graphics", "objc2-app-kit?/NSScreen", "objc2-core-graphics/CGEvent", "objc2-core-graphics/CGEventSource", "objc2-core-graphics/CGEventTypes", "objc2-core-graphics/CGRemoteOperation", "windows-sys?/Win32_System_StationsAndDesktops", "windows-sys?/Win32_Security", "windows-sys?/Win32_System_DataExchange"]
@@ -160,7 +163,7 @@ desktop-winit = ["dep:winit"]
 windows-gdi = ["dep:windows-sys", "image"]
 windows-win32 = ["windows-rust-text"]
 windows-directwrite = ["windows-gdi", "dep:windows", "dep:windows-core", "windows/Win32_Graphics_DirectWrite", "windows/Win32_Graphics_Gdi"]
-rust-text = ["dep:cosmic-text", "dep:skrifa", "dep:swash", "dep:ttf-parser"]
+rust-text = ["dep:cosmic-text", "dep:skrifa", "dep:swash", "dep:ttf-parser", "dep:unicode-segmentation"]
 rust-text-proof = ["rust-text"]
 windows-rust-text = ["windows-gdi", "rust-text"]
 windows-font-sharing = ["windows-rust-text"]
@@ -175,6 +178,7 @@ linux-system-icons = ["linux-direct", "dep:freedesktop-icons", "dep:gdk-pixbuf"]
 desktop-native = ["windows-win32", "macos-appkit", "linux-direct"]
 all-widgets = ["button", "accordion", "badge", "split-view", "breadcrumb", "canvas", "flyout", "menu-flyout", "context-menu", "toggle-button", "icon", "label", "grid", "grid-view", "scroll", "list", "virtual-list", "paged-list", "image-preview", "video", "textbox", "password-box", "tooltip", "dialog", "toast", "info-bar", "teaching-tip", "checkbox", "toggle", "slider", "number-box", "radio", "progress", "progress-ring", "auto-suggest", "command-palette", "tree", "combo", "date-picker", "time-picker", "color-picker", "tabs", "table", "shell", "document-shell"]
 full = [
+    "custom-icons",
     "clipboard-files",
     "native-host",
     "window-surface",
@@ -219,6 +223,14 @@ panic = "abort"
 name = "native_integration"
 path = "examples/native_integration.rs"
 required-features = ["windows-shell", "window-chrome", "label", "dark-mode", "hotkey"]
+
+[[example]]
+name = "appearance_styles"
+required-features = ["window", "button", "label", "textbox", "tabs", "toggle", "icon"]
+
+[[example]]
+name = "appearance_offscreen_proof"
+required-features = ["windows-win32", "native-smoke", "custom-icons", "fluent-icons", "button", "label", "textbox", "tabs"]
 
 [dev-dependencies]
 serde_json = "1"

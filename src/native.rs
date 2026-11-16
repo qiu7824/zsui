@@ -1490,6 +1490,7 @@ pub struct NativeWindowSmokeRunReport {
     pub native_view_text_clipboard_read_count: usize,
     pub native_view_text_clipboard_write_count: usize,
     pub native_view_text_undo_count: usize,
+    pub native_view_text_redo_count: usize,
     pub native_view_text_edit_command_errors: Vec<String>,
     pub native_view_pointer_down_count: usize,
     pub native_view_pointer_move_count: usize,
@@ -1662,6 +1663,7 @@ impl NativeWindowSmokeRunReport {
             native_view_text_clipboard_read_count: 0,
             native_view_text_clipboard_write_count: 0,
             native_view_text_undo_count: 0,
+            native_view_text_redo_count: 0,
             native_view_text_edit_command_errors: Vec::new(),
             native_view_pointer_down_count: 0,
             native_view_pointer_move_count: 0,
@@ -1989,6 +1991,8 @@ pub(crate) struct NativeViewInputDispatchReport {
     pub text_clipboard_write_count: usize,
     #[cfg(feature = "text-input-core")]
     pub text_undo_count: usize,
+    #[cfg(feature = "text-input-core")]
+    pub text_redo_count: usize,
     pub text_drag_active: bool,
     #[cfg(feature = "resize")]
     pub resize_drag_active: bool,
@@ -6877,6 +6881,7 @@ impl NativeViewInputRuntime {
                         &before_value,
                         before_selection,
                         value.as_str(),
+                        state.selection,
                         secure,
                     );
                 }
@@ -7377,6 +7382,13 @@ impl NativeViewInputRuntime {
             feature = "tree"
         ))]
         if let Some(interaction_plan) = self.current_interaction_plan() {
+            plan.apply_appearance_states(
+                self.pointer_hover.map(|key| key.0),
+                self.pointer_pressed.map(|key| key.0),
+                self.focused_widget,
+                self.focus_outline_visible,
+                self.dpi,
+            );
             decorate_native_pointer_visuals(
                 &mut plan,
                 &interaction_plan,
@@ -7718,9 +7730,10 @@ impl NativeViewInputRuntime {
             }
             let bounds = text.bounds;
             let style = text.style;
-            *command = NativeDrawCommand::SecureText(crate::NativeDrawSecureTextCommand::new(
-                value, bounds, style, true,
-            ));
+            let font = text.font.clone();
+            let mut secure = crate::NativeDrawSecureTextCommand::new(value, bounds, style, true);
+            secure.font = font;
+            *command = NativeDrawCommand::SecureText(secure);
             break;
         }
     }
@@ -8199,6 +8212,26 @@ impl NativeViewInputRuntime {
     }
 
     fn widget_text_wrap(&self, widget: crate::WidgetId) -> crate::TextWrap {
+        let bounds = self
+            .live_view
+            .as_ref()
+            .and_then(|view| view.widget_text_bounds(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_text_bounds(widget))
+            });
+        self.text_shaping.set_text_bounds(bounds);
+        let font = self
+            .live_view
+            .as_ref()
+            .and_then(|view| view.widget_font(widget))
+            .or_else(|| {
+                self.ui_command_view
+                    .as_ref()
+                    .and_then(|view| view.widget_font(widget))
+            });
+        self.text_shaping.set_font(font);
         #[cfg(feature = "text-input-core")]
         {
             if let Some(wrap) = self
@@ -9043,6 +9076,7 @@ impl NativeViewInputRuntime {
         report.text_clipboard_read_count += usize::from(result.clipboard_read);
         report.text_clipboard_write_count += usize::from(result.clipboard_write);
         report.text_undo_count += usize::from(result.undo_applied);
+        report.text_redo_count += usize::from(result.redo_applied);
 
         #[cfg(feature = "password-box")]
         let event = if result.text_changed
@@ -10074,6 +10108,7 @@ pub(crate) fn record_native_view_input_reports(
             report.native_view_text_clipboard_read_count += dispatch.text_clipboard_read_count;
             report.native_view_text_clipboard_write_count += dispatch.text_clipboard_write_count;
             report.native_view_text_undo_count += dispatch.text_undo_count;
+            report.native_view_text_redo_count += dispatch.text_redo_count;
         }
         #[cfg(feature = "slider")]
         {
@@ -12842,11 +12877,11 @@ mod tests {
                 .widget_password_value(widget)
                 .as_ref()
                 .map(crate::ZsPassword::as_str),
-            Some("vault中")
+            Some("next🙂")
         );
         assert!(copied.handled);
         assert_eq!(copied.text_clipboard_write_count, 0);
-        assert_eq!(undone.text_undo_count, 1);
+        assert_eq!(undone.text_undo_count, 0);
         assert!(undone.errors.is_empty());
     }
 

@@ -40,7 +40,9 @@
       "optional": [
         "README.md",
         "src/view/mod.rs",
-        "src/platform/experience.rs"
+        "src/platform/experience.rs",
+        "docs/appearance-and-runtime.md",
+        "examples/appearance_styles.rs"
       ],
       "verify": [
         "cargo check --example compact_service_panel --no-default-features --features window,button,label,toggle",
@@ -136,7 +138,12 @@
         "src/stable_controls.rs",
         "docs/resizable-layout.md",
         "src/dispatch_queue.rs",
-        "src/native_dispatch_tests.rs"
+        "src/native_dispatch_tests.rs",
+        "src/appearance.rs",
+        "src/view/appearance.rs",
+        "src/view/memo.rs",
+        "docs/appearance-and-runtime.md",
+        "examples/appearance_styles.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -320,7 +327,10 @@
         "src/platform/windows/direct2d.rs",
         "src/platform/windows/chrome.rs",
         "src/platform/windows/integration.rs",
-        "docs/native-window-integration.md"
+        "docs/native-window-integration.md",
+        "src/rust_text_ellipsis.rs",
+        "src/windows_offscreen.rs",
+        "examples/appearance_offscreen_proof.rs"
       ],
       "verify": [
         "cargo test --features full --quiet",
@@ -350,7 +360,10 @@
         "src/windows_symbolic_icons.rs",
         "src/macos_symbolic_icons.rs",
         "src/stable_controls.rs",
-        "examples/resizable_layout.rs"
+        "examples/resizable_layout.rs",
+        "src/icon_asset.rs",
+        "docs/appearance-and-runtime.md",
+        "examples/appearance_offscreen_proof.rs"
       ],
       "verify": [
         "cargo test --no-default-features --features fluent-icons --quiet",

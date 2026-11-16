@@ -131,6 +131,9 @@ fn fill(
 ) -> D2D1_COLOR_F {
     let value = match fill {
         crate::NativeDrawFill::Color(value) => value,
+        crate::NativeDrawFill::RoleOverride { role, color, alpha } => {
+            crate::appearance::override_color(color, palette.resolve(role), alpha, high_contrast)
+        }
         crate::NativeDrawFill::Role(role) => palette.resolve(role),
         crate::NativeDrawFill::RoleWithAlpha { role, alpha } => {
             let mut value = palette.resolve(role);
@@ -232,6 +235,34 @@ impl Direct2dPainter {
             for command in &plan.commands {
                 unsafe {
                     match command {
+                        NativeDrawCommand::StyledRoundRect {
+                            rect: bounds,
+                            fill: ink,
+                            stroke,
+                            width,
+                            radius,
+                        } => {
+                            let inset = (*width).max(1) as f32 / 2.0;
+                            let mut bounds = rect(*bounds);
+                            bounds.left += inset;
+                            bounds.top += inset;
+                            bounds.right -= inset;
+                            bounds.bottom -= inset;
+                            let shape = D2D1_ROUNDED_RECT {
+                                rect: bounds,
+                                radiusX: (*radius as f32 - inset).max(0.0),
+                                radiusY: (*radius as f32 - inset).max(0.0),
+                            };
+                            brush.SetColor(&fill(palette, *ink, high_contrast));
+                            target.FillRoundedRectangle(&shape, &brush);
+                            brush.SetColor(&fill(palette, *stroke, high_contrast));
+                            target.DrawRoundedRectangle(
+                                &shape,
+                                &brush,
+                                (*width).max(1) as f32,
+                                None,
+                            );
+                        }
                         NativeDrawCommand::FillRect {
                             rect: bounds,
                             fill: ink,

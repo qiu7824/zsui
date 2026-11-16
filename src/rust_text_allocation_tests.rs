@@ -6,6 +6,15 @@ struct AllocationProbe;
 
 thread_local! {
     static ALLOCATIONS: Cell<Option<usize>> = const { Cell::new(None) };
+    static RETAINED_BYTES:Cell<Option<isize>>=const{Cell::new(None)};
+}
+
+fn retained(delta: isize) {
+    let _ = RETAINED_BYTES.try_with(|counter| {
+        if let Some(bytes) = counter.get() {
+            counter.set(Some(bytes + delta));
+        }
+    });
 }
 
 fn allocated() {
@@ -22,17 +31,21 @@ fn allocated() {
 unsafe impl GlobalAlloc for AllocationProbe {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         allocated();
+        retained(layout.size() as isize);
         unsafe { System.alloc(layout) }
     }
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         allocated();
+        retained(layout.size() as isize);
         unsafe { System.alloc_zeroed(layout) }
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
         allocated();
+        retained(size as isize - layout.size() as isize);
         unsafe { System.realloc(ptr, layout, size) }
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        retained(-(layout.size() as isize));
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -44,7 +57,25 @@ struct Counting;
 impl Drop for Counting {
     fn drop(&mut self) {
         ALLOCATIONS.with(|counter| counter.set(None));
+        RETAINED_BYTES.with(|counter| counter.set(None));
     }
+}
+
+pub(crate) struct AllocationReport {
+    pub allocations: usize,
+    pub retained_bytes: usize,
+}
+pub(crate) fn measure_retained<T>(build: impl FnOnce() -> T) -> (T, AllocationReport) {
+    ALLOCATIONS.with(|counter| counter.set(Some(0)));
+    RETAINED_BYTES.with(|counter| counter.set(Some(0)));
+    let guard = Counting;
+    let value = build();
+    let report = AllocationReport {
+        allocations: ALLOCATIONS.with(|counter| counter.get().unwrap()),
+        retained_bytes: RETAINED_BYTES.with(|counter| counter.get().unwrap().max(0) as usize),
+    };
+    drop(guard);
+    (value, report)
 }
 
 #[test]

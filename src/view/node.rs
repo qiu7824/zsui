@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct WidgetId(pub u64);
 
 impl WidgetId {
@@ -1280,20 +1280,12 @@ impl ViewStyle {
         self.padding_sides
             .or_else(|| self.padding.map(|value| [value; 4]))
     }
-
-    fn padding_extent_px(&self, dpi: Dpi, vertical: bool) -> i32 {
-        let sides = self.resolved_padding().unwrap_or([Dp::new(0.0); 4]);
-        let axis = usize::from(vertical);
-        sides[axis]
-            .to_px(dpi)
-            .round_i32()
-            .max(0)
-            .saturating_add(sides[axis + 2].to_px(dpi).round_i32().max(0))
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ViewNode<Msg> {
+    memo: Option<Box<MemoView<Msg>>>,
+    metadata: Option<Box<ViewMetadata>>,
     #[cfg(feature = "windows-shell")]
     file_drop_handler: Option<(
         crate::DragEffects,
@@ -1323,10 +1315,6 @@ pub struct ViewNode<Msg> {
     on_table_columns_change: Option<ViewMessageMapper<Vec<crate::ZsTableColumn>, Msg>>,
     #[cfg(feature = "text-input-core")]
     editable_text: Option<ViewEditableTextDescriptor>,
-    #[cfg(feature = "tooltip")]
-    tooltip: Option<crate::ZsTooltipSpec>,
-    #[cfg(feature = "accessibility")]
-    accessibility: Option<crate::ZsAccessibilitySpec>,
     bounds: Option<Rect>,
     layout_dpi: Dpi,
     #[cfg(all(
@@ -1434,6 +1422,8 @@ impl<Msg> ViewNode<Msg> {
     }
     pub fn new(kind: ViewNodeKind<Msg>) -> Self {
         Self {
+            memo: None,
+            metadata: None,
             #[cfg(feature = "windows-shell")]
             file_drop_handler: None,
             #[cfg(feature = "native-window-events")]
@@ -1460,10 +1450,6 @@ impl<Msg> ViewNode<Msg> {
             on_table_columns_change: None,
             #[cfg(feature = "text-input-core")]
             editable_text: None,
-            #[cfg(feature = "tooltip")]
-            tooltip: None,
-            #[cfg(feature = "accessibility")]
-            accessibility: None,
             bounds: None,
             layout_dpi: Dpi::standard(),
             #[cfg(all(
@@ -1630,7 +1616,7 @@ impl<Msg> ViewNode<Msg> {
     /// Attaches platform-neutral semantic metadata to this retained node.
     #[cfg(feature = "accessibility")]
     pub fn accessibility(mut self, accessibility: crate::ZsAccessibilitySpec) -> Self {
-        self.accessibility = Some(accessibility);
+        self.metadata_mut().accessibility = Some(accessibility);
         self
     }
 
@@ -1638,34 +1624,37 @@ impl<Msg> ViewNode<Msg> {
     #[cfg(feature = "accessibility")]
     pub fn accessibility_label(mut self, label: impl Into<String>) -> Self {
         let current = self
+            .metadata()
             .accessibility
-            .take()
+            .clone()
             .or_else(|| self.implicit_accessibility_spec())
             .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group));
-        self.accessibility = Some(current.label(label));
+        self.metadata_mut().accessibility = Some(current.label(label));
         self
     }
 
     #[cfg(feature = "accessibility")]
     pub fn accessibility_role(mut self, role: crate::ZsAccessibilityRole) -> Self {
         let mut current = self
+            .metadata()
             .accessibility
-            .take()
+            .clone()
             .or_else(|| self.implicit_accessibility_spec())
             .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(role));
         current.role = role;
-        self.accessibility = Some(current);
+        self.metadata_mut().accessibility = Some(current);
         self
     }
 
     #[cfg(feature = "accessibility")]
     pub fn accessibility_description(mut self, description: impl Into<String>) -> Self {
         let current = self
+            .metadata()
             .accessibility
-            .take()
+            .clone()
             .or_else(|| self.implicit_accessibility_spec())
             .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Group));
-        self.accessibility = Some(current.description(description));
+        self.metadata_mut().accessibility = Some(current.description(description));
         self
     }
 
@@ -1675,11 +1664,12 @@ impl<Msg> ViewNode<Msg> {
         live_region: crate::ZsAccessibilityLiveRegion,
     ) -> Self {
         let current = self
+            .metadata()
             .accessibility
-            .take()
+            .clone()
             .or_else(|| self.implicit_accessibility_spec())
             .unwrap_or_else(|| crate::ZsAccessibilitySpec::new(crate::ZsAccessibilityRole::Status));
-        self.accessibility = Some(current.live_region(live_region));
+        self.metadata_mut().accessibility = Some(current.live_region(live_region));
         self
     }
 
@@ -1743,11 +1733,11 @@ impl<Msg> ViewNode<Msg> {
             return true;
         }
         #[cfg(feature = "tooltip")]
-        if self.tooltip.is_some() {
+        if self.metadata().tooltip.is_some() {
             return true;
         }
         #[cfg(feature = "accessibility")]
-        if self.accessibility.is_some() {
+        if self.metadata().accessibility.is_some() {
             return true;
         }
         match &self.kind {
@@ -1861,19 +1851,19 @@ impl<Msg> ViewNode<Msg> {
 
     #[cfg(feature = "tooltip")]
     pub fn tooltip(mut self, text: impl Into<String>) -> Self {
-        self.tooltip = Some(crate::ZsTooltipSpec::new(text));
+        self.metadata_mut().tooltip = Some(crate::ZsTooltipSpec::new(text));
         self
     }
 
     #[cfg(feature = "tooltip")]
     pub fn tooltip_spec(mut self, spec: impl Into<crate::ZsTooltipSpec>) -> Self {
-        self.tooltip = Some(spec.into());
+        self.metadata_mut().tooltip = Some(spec.into());
         self
     }
 
     #[cfg(feature = "tooltip")]
     pub fn without_tooltip(mut self) -> Self {
-        self.tooltip = None;
+        self.metadata_mut().tooltip = None;
         self
     }
 

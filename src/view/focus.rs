@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Default)]
 pub struct LiveViewUpdate {
+    pub work: ViewWorkStats,
     #[cfg(feature = "windows-shell")]
     pub drop_response: Option<crate::DropResponse>,
     pub redraw: bool,
@@ -20,6 +21,8 @@ pub struct LiveViewUpdate {
 }
 
 trait LiveViewDriver: Send {
+    fn widget_text_bounds(&self, widget: WidgetId) -> Option<(Rect, bool)>;
+    fn widget_font(&self, widget: WidgetId) -> Option<Arc<crate::FontSpec>>;
     fn set_dispatch_allowance(&mut self, allowance: crate::dispatch_queue::DispatchAllowance);
     fn take_queue_rejections(&mut self) -> usize;
     #[allow(dead_code)]
@@ -164,6 +167,12 @@ pub struct SharedLiveViewRuntime {
 }
 
 impl SharedLiveViewRuntime {
+    pub(crate) fn widget_text_bounds(&self, widget: WidgetId) -> Option<(Rect, bool)> {
+        self.lock().widget_text_bounds(widget)
+    }
+    pub(crate) fn widget_font(&self, widget: WidgetId) -> Option<Arc<crate::FontSpec>> {
+        self.lock().widget_font(widget)
+    }
     #[allow(dead_code)]
     pub(crate) fn surface(&self) -> (Rect, Dpi) {
         self.lock().surface()
@@ -549,6 +558,8 @@ where
     revision: u64,
     animation_epoch: std::time::Instant,
     suspended: bool,
+    work: ViewWorkStats,
+    invalidated_subtrees: BTreeSet<WidgetId>,
     #[cfg(feature = "toast")]
     dismissed_toasts: Vec<(WidgetId, crate::ZsToastId)>,
 }
@@ -584,6 +595,8 @@ where
             revision: 0,
             animation_epoch: std::time::Instant::now(),
             suspended: false,
+            work: ViewWorkStats::default(),
+            invalidated_subtrees: BTreeSet::new(),
             #[cfg(feature = "toast")]
             dismissed_toasts: Vec::new(),
         };
@@ -595,7 +608,12 @@ where
         if self.suspended {
             return;
         }
-        let next_view = (self.view_fn)(&self.state);
+        let mut next_view = (self.view_fn)(&self.state);
+        self.work = ViewWorkStats::default();
+        let mut previous = std::collections::BTreeMap::new();
+        self.view.collect_memos(&mut previous);
+        next_view.resolve_memos(&mut previous, &self.invalidated_subtrees, &mut self.work);
+        self.invalidated_subtrees.clear();
         #[cfg(any(feature = "toast", feature = "context-menu"))]
         let mut next_view = next_view;
         #[cfg(feature = "toast")]
@@ -632,6 +650,9 @@ where
             .with_typography_scale(self.typography_scale())
             .with_text_measurements(self.text_measurements.clone());
         self.view.layout(&mut cx);
+        let (visited, reused) = cx.work.snapshot();
+        self.work.layout_nodes = visited;
+        self.work.reused_layout_nodes = reused;
     }
 
     fn typography_scale(&self) -> f32 {
@@ -647,10 +668,13 @@ where
         self.queue_rejections = self
             .queue_rejections
             .saturating_add(app_cx.rejected_count());
+        self.invalidated_subtrees
+            .extend(app_cx.invalidated_subtrees.iter().copied());
         self.rebuild_and_layout();
         self.revision = self.revision.saturating_add(1);
         LiveViewUpdate {
             redraw: !self.suspended,
+            work: self.work,
             #[cfg(feature = "windows-shell")]
             drop_response: app_cx.drop_response(),
             message_count,
@@ -676,6 +700,12 @@ where
     ViewFn: Fn(&State) -> ViewNode<Msg> + Send + 'static,
     UpdateFn: Fn(&mut State, Msg, &mut AppCx) + Send + 'static,
 {
+    fn widget_font(&self, widget: WidgetId) -> Option<Arc<crate::FontSpec>> {
+        self.view.widget_font(widget)
+    }
+    fn widget_text_bounds(&self, widget: WidgetId) -> Option<(Rect, bool)> {
+        self.view.widget_text_bounds(widget)
+    }
     fn set_dispatch_allowance(&mut self, allowance: crate::dispatch_queue::DispatchAllowance) {
         self.dispatch_allowance = allowance;
     }

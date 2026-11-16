@@ -57,7 +57,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TextWeight {
     /// Resolve the role's native default weight in the active backend.
     Automatic,
@@ -428,6 +428,8 @@ impl SemanticTextStyle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextStyle {
     pub font_family: String,
+    #[serde(default)]
+    pub fallback_families: Vec<String>,
     pub size: f32,
     #[serde(default)]
     pub line_height: f32,
@@ -443,9 +445,17 @@ pub struct TextStyle {
 }
 
 impl TextStyle {
+    /// A native family-list representation used by Pango and similar backends.
+    pub fn family_list(&self) -> String {
+        std::iter::once(self.font_family.as_str())
+            .chain(self.fallback_families.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
     pub fn line(font_family: impl Into<String>, size: f32, color: Color) -> Self {
         Self {
             font_family: font_family.into(),
+            fallback_families: Vec::new(),
             size,
             line_height: 0.0,
             semantic_role: None,
@@ -481,6 +491,7 @@ pub(crate) fn resolve_semantic_text_style(
         style.weight
     };
     TextStyle {
+        fallback_families: Vec::new(),
         font_family: font_family.to_string(),
         size: metrics.size,
         line_height: metrics.line_height,
@@ -592,8 +603,17 @@ pub const REQUIRED_RENDERER_HOST_OPERATIONS: [RendererHostOperation; 6] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NativeDrawFill {
     Color(Color),
+    /// Application override with a semantic high-contrast fallback.
+    RoleOverride {
+        role: ColorRole,
+        color: Color,
+        alpha: u8,
+    },
     Role(ColorRole),
-    RoleWithAlpha { role: ColorRole, alpha: u8 },
+    RoleWithAlpha {
+        role: ColorRole,
+        alpha: u8,
+    },
 }
 
 impl NativeDrawFill {
@@ -615,6 +635,8 @@ pub struct NativeDrawTextCommand {
     /// role's line-height ratio; used for icon-font glyphs and badges.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<ZsFontSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<Arc<crate::FontSpec>>,
 }
 
 /// A font size in DIPs kept at 1/100 precision so draw commands stay `Eq`.
@@ -639,6 +661,8 @@ impl ZsFontSize {
 #[cfg(feature = "password-box")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeDrawSecureTextCommand {
+    #[serde(default)]
+    pub(crate) font: Option<Arc<crate::FontSpec>>,
     #[serde(skip, default)]
     value: crate::ZsPassword,
     pub bounds: Rect,
@@ -655,6 +679,7 @@ impl NativeDrawSecureTextCommand {
         revealed: bool,
     ) -> Self {
         Self {
+            font: None,
             value,
             bounds,
             style,
@@ -681,8 +706,14 @@ impl NativeDrawSecureTextCommand {
 }
 
 impl NativeDrawTextCommand {
+    /// Sets resolved typography while retaining semantic high-contrast color.
+    pub fn with_font_override(mut self, font: Option<Arc<crate::FontSpec>>) -> Self {
+        self.font = font;
+        self
+    }
     pub fn new(text: impl Into<String>, bounds: Rect, style: SemanticTextStyle) -> Self {
         Self {
+            font: None,
             text: text.into(),
             bounds,
             style,
@@ -708,6 +739,21 @@ impl NativeDrawTextCommand {
             };
             style.size = size;
             style.line_height = size * ratio;
+        }
+        if let Some(font) = &self.font {
+            font.apply(style);
+        }
+    }
+
+    pub(crate) fn effective_font_override(&self) -> Option<Arc<crate::FontSpec>> {
+        if let Some(size) = self.size {
+            let mut font = self.font.as_deref().cloned().unwrap_or_default();
+            if font.size.is_none() {
+                font.size = Some(size);
+            }
+            Some(Arc::new(font))
+        } else {
+            self.font.clone()
         }
     }
 
@@ -1046,10 +1092,19 @@ pub enum NativeDrawCommand {
         fill: NativeDrawFill,
         radius: i32,
     },
+    StyledRoundRect {
+        rect: Rect,
+        fill: NativeDrawFill,
+        stroke: NativeDrawFill,
+        width: i32,
+        radius: i32,
+    },
     Text(NativeDrawTextCommand),
     #[cfg(feature = "password-box")]
     SecureText(NativeDrawSecureTextCommand),
     Icon(NativeDrawIconCommand),
+    #[cfg(feature = "custom-icons")]
+    VectorIcon(crate::NativeDrawVectorIcon),
     Image(NativeDrawImageCommand),
     PushClip {
         rect: Rect,
@@ -1065,11 +1120,14 @@ impl NativeDrawCommand {
             Self::StrokeArc { .. } => NativeDrawCommandOperation::StrokeArc,
             Self::FillTriangle { .. } => NativeDrawCommandOperation::FillTriangle,
             Self::RoundRect { .. } => NativeDrawCommandOperation::RoundRect,
+            Self::StyledRoundRect { .. } => NativeDrawCommandOperation::RoundRect,
             Self::RoundFill { .. } => NativeDrawCommandOperation::RoundFill,
             Self::Text(_) => NativeDrawCommandOperation::DrawText,
             #[cfg(feature = "password-box")]
             Self::SecureText(_) => NativeDrawCommandOperation::DrawText,
             Self::Icon(_) => NativeDrawCommandOperation::DrawIcon,
+            #[cfg(feature = "custom-icons")]
+            Self::VectorIcon(_) => NativeDrawCommandOperation::DrawIcon,
             Self::Image(_) => NativeDrawCommandOperation::DrawImage,
             Self::PushClip { .. } => NativeDrawCommandOperation::PushClip,
             Self::PopClip => NativeDrawCommandOperation::PopClip,
@@ -1133,6 +1191,8 @@ pub fn required_native_draw_command_operation_names() -> Vec<&'static str> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NativeDrawPlan {
+    #[serde(skip)]
+    pub(crate) appearance: Vec<crate::appearance::PaintAppearance>,
     #[cfg(feature = "native-host")]
     #[serde(default)]
     pub(crate) native_occlusions: Vec<crate::native_host::NativeSurfaceOcclusion>,
@@ -1168,6 +1228,7 @@ pub(crate) fn normalize_typography_scale_per_mille(scale: f32) -> u16 {
 impl Default for NativeDrawPlan {
     fn default() -> Self {
         Self {
+            appearance: Vec::new(),
             #[cfg(feature = "native-host")]
             native_occlusions: Vec::new(),
             #[cfg(feature = "windows-shell")]
@@ -1184,6 +1245,7 @@ impl Default for NativeDrawPlan {
 impl NativeDrawPlan {
     pub fn new(commands: impl IntoIterator<Item = NativeDrawCommand>) -> Self {
         Self {
+            appearance: Vec::new(),
             #[cfg(feature = "native-host")]
             native_occlusions: Vec::new(),
             #[cfg(feature = "windows-shell")]
@@ -1278,10 +1340,13 @@ impl NativeDrawCommand {
                 )
             }
             Self::RoundRect { rect, .. } | Self::RoundFill { rect, .. } => inflate_rect(*rect, 1),
+            Self::StyledRoundRect { rect, width, .. } => inflate_rect(*rect, (*width).max(1)),
             Self::Text(command) => inflate_rect(command.bounds, 1),
             #[cfg(feature = "password-box")]
             Self::SecureText(command) => inflate_rect(command.bounds, 1),
             Self::Icon(command) => inflate_rect(command.bounds, 1),
+            #[cfg(feature = "custom-icons")]
+            Self::VectorIcon(command) => inflate_rect(command.bounds, 1),
             Self::Image(command) => command.bounds,
             Self::PushClip { .. } | Self::PopClip => return None,
         };
@@ -1307,7 +1372,7 @@ impl NativeDrawCommand {
 
 impl ZsImageFrame {
     #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
-    fn is_same_frame(&self, other: &Self) -> bool {
+    pub(crate) fn is_same_frame(&self, other: &Self) -> bool {
         self.id == other.id
             && self.width == other.width
             && self.height == other.height
@@ -1325,9 +1390,10 @@ pub(crate) enum NativeDrawPlanDamage {
     Full,
 }
 
-/// Compares two plans command by command. A changed command damages both its
-/// old and new bounds; any structural difference (theme, typography, command
-/// count or clip state) damages the whole surface.
+/// Compares ordered visible commands after resolving their clip rectangles.
+/// Insertions and removals damage their old/new footprints. A changed middle
+/// span is repainted in scene order, including unchanged intersecting content.
+/// Theme, typography, native surfaces and malformed clips retain full repaint.
 #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
 pub(crate) fn native_draw_plan_damage(
     previous: &NativeDrawPlan,
@@ -1341,25 +1407,103 @@ pub(crate) fn native_draw_plan_damage(
     }
     if previous.theme_mode != next.theme_mode
         || previous.typography_scale_per_mille != next.typography_scale_per_mille
-        || previous.commands.len() != next.commands.len()
     {
         return NativeDrawPlanDamage::Full;
     }
+    if previous.commands.len() == next.commands.len()
+        && previous
+            .commands
+            .iter()
+            .zip(&next.commands)
+            .all(|(before, after)| before.paints_same_as(after))
+    {
+        return NativeDrawPlanDamage::Unchanged;
+    }
+    if previous.commands.len().max(next.commands.len()) > 65_536 {
+        return NativeDrawPlanDamage::Full;
+    }
+    let (Some(before), Some(after)) = (damage_commands(previous), damage_commands(next)) else {
+        return NativeDrawPlanDamage::Full;
+    };
+    let same = |left: &DamageCommand<'_>, right: &DamageCommand<'_>| {
+        left.bounds == right.bounds && left.command.paints_same_as(right.command)
+    };
+    let prefix = before
+        .iter()
+        .zip(&after)
+        .take_while(|(a, b)| same(a, b))
+        .count();
+    let suffix = before[prefix..]
+        .iter()
+        .rev()
+        .zip(after[prefix..].iter().rev())
+        .take_while(|(a, b)| same(a, b))
+        .count();
     let mut area: Option<Rect> = None;
-    for (before, after) in previous.commands.iter().zip(&next.commands) {
-        if before.paints_same_as(after) {
-            continue;
+    for record in before[prefix..before.len() - suffix]
+        .iter()
+        .chain(&after[prefix..after.len() - suffix])
+    {
+        area = Some(area.map_or(record.bounds, |area| union_rect(area, record.bounds)));
+    }
+    area.map_or(NativeDrawPlanDamage::Unchanged, NativeDrawPlanDamage::Area)
+}
+
+struct DamageCommand<'a> {
+    command: &'a NativeDrawCommand,
+    bounds: Rect,
+}
+
+fn damage_commands(plan: &NativeDrawPlan) -> Option<Vec<DamageCommand<'_>>> {
+    let mut clips: Vec<Rect> = Vec::new();
+    let mut visible = Vec::with_capacity(plan.commands.len());
+    let intersection = |a: Rect, b: Rect| {
+        let x = a.x.max(b.x);
+        let y = a.y.max(b.y);
+        Rect {
+            x,
+            y,
+            width: a
+                .x
+                .saturating_add(a.width)
+                .min(b.x.saturating_add(b.width))
+                .saturating_sub(x)
+                .max(0),
+            height: a
+                .y
+                .saturating_add(a.height)
+                .min(b.y.saturating_add(b.height))
+                .saturating_sub(y)
+                .max(0),
         }
-        let (Some(before), Some(after)) = (before.paint_bounds(), after.paint_bounds()) else {
-            return NativeDrawPlanDamage::Full;
-        };
-        for bounds in [before, after] {
-            if bounds.width > 0 && bounds.height > 0 {
-                area = Some(area.map_or(bounds, |area| union_rect(area, bounds)));
+    };
+    for command in &plan.commands {
+        match command {
+            NativeDrawCommand::PushClip { rect } => {
+                if clips.len() >= 256 || rect.width < 0 || rect.height < 0 {
+                    return None;
+                }
+                clips.push(
+                    clips
+                        .last()
+                        .map_or(*rect, |parent| intersection(*parent, *rect)),
+                );
+            }
+            NativeDrawCommand::PopClip => {
+                clips.pop()?;
+            }
+            _ => {
+                let bounds = command.paint_bounds()?;
+                let bounds = clips
+                    .last()
+                    .map_or(bounds, |clip| intersection(bounds, *clip));
+                if bounds.width > 0 && bounds.height > 0 {
+                    visible.push(DamageCommand { command, bounds });
+                }
             }
         }
     }
-    area.map_or(NativeDrawPlanDamage::Unchanged, NativeDrawPlanDamage::Area)
+    clips.is_empty().then_some(visible)
 }
 
 #[cfg_attr(not(all(windows, feature = "windows-win32")), allow(dead_code))]
@@ -1497,14 +1641,64 @@ mod draw_command_tests {
         let mut rethemed = previous.clone();
         rethemed.theme_mode = crate::ZsuiThemeMode::Dark;
 
-        for next in [&longer, &rethemed] {
-            assert_eq!(
-                native_draw_plan_damage(&previous, next),
-                NativeDrawPlanDamage::Full
-            );
-        }
+        assert!(matches!(
+            native_draw_plan_damage(&previous, &longer),
+            NativeDrawPlanDamage::Area(_)
+        ));
+        assert_eq!(
+            native_draw_plan_damage(&previous, &rethemed),
+            NativeDrawPlanDamage::Full
+        );
         assert_eq!(
             native_draw_plan_damage(&clipped, &reclipped),
+            NativeDrawPlanDamage::Unchanged
+        );
+    }
+
+    #[test]
+    fn insertion_deletion_and_clip_changes_repaint_visible_footprints() {
+        let mark = NativeDrawCommand::FillRect {
+            rect: Rect {
+                x: 20,
+                y: 20,
+                width: 10,
+                height: 10,
+            },
+            fill: NativeDrawFill::Color(Color::rgba(255, 0, 0, 120)),
+        };
+        let before = NativeDrawPlan::new([background()]);
+        let after = NativeDrawPlan::new([background(), mark.clone()]);
+        let expected = NativeDrawPlanDamage::Area(Rect {
+            x: 20,
+            y: 20,
+            width: 10,
+            height: 10,
+        });
+        assert_eq!(native_draw_plan_damage(&before, &after), expected);
+        assert_eq!(native_draw_plan_damage(&after, &before), expected);
+        let clipped = NativeDrawPlan::new([
+            NativeDrawCommand::PushClip {
+                rect: Rect {
+                    x: 22,
+                    y: 22,
+                    width: 3,
+                    height: 3,
+                },
+            },
+            mark,
+            NativeDrawCommand::PopClip,
+        ]);
+        assert_eq!(
+            native_draw_plan_damage(&NativeDrawPlan::default(), &clipped),
+            NativeDrawPlanDamage::Area(Rect {
+                x: 22,
+                y: 22,
+                width: 3,
+                height: 3
+            })
+        );
+        assert_eq!(
+            native_draw_plan_damage(&before, &NativeDrawPlan::new([NativeDrawCommand::PopClip])),
             NativeDrawPlanDamage::Full
         );
     }
