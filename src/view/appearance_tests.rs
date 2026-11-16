@@ -259,7 +259,7 @@ fn explicit_font_height_changes_layout_and_measurement_identity() {
         Dpi::standard(),
     ));
     assert!(
-        natural_height_px(
+        intrinsic_min_height_px(
             &view,
             300,
             Dpi::standard(),
