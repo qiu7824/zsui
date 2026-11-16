@@ -14,6 +14,18 @@ if ($LASTEXITCODE -ne 0) {
     throw "cargo metadata failed"
 }
 
+$rustdocHelp = (& rustdoc +nightly -Z unstable-options --help) -join [Environment]::NewLine
+if ($LASTEXITCODE -ne 0) {
+    throw "rustdoc coverage option discovery failed"
+}
+$coverageFlag = if ($rustdocHelp -match '(?m)^\s+--coverage(?:\s|$)') {
+    "--coverage"
+} elseif ($rustdocHelp -match '(?m)^\s+--show-coverage(?:\s|$)') {
+    "--show-coverage"
+} else {
+    throw "The selected nightly rustdoc exposes no documentation coverage option"
+}
+
 $arguments = @("+nightly", "rustdoc")
 if ($Locked) {
     $arguments += "--locked"
@@ -23,7 +35,7 @@ $arguments += @(
     "--all-features",
     "--",
     "-Z", "unstable-options",
-    "--show-coverage"
+    $coverageFlag
 )
 
 & cargo @arguments
