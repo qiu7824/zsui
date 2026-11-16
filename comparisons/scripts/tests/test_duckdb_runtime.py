@@ -48,6 +48,7 @@ class DuckDBRuntimeTests(unittest.TestCase):
         self.assertTrue(report["downloaded"])
         self.assertEqual((library / "duckdb.lib").read_bytes(), b"fixture:duckdb.lib")
         for profile in ("debug", "release"):
+            self.assertEqual((self.target / profile / "duckdb.dll").read_bytes(), b"fixture:duckdb.dll")
             self.assertEqual((self.target / profile / "deps/duckdb.dll").read_bytes(), b"fixture:duckdb.dll")
         self.assertEqual(cached_build.read_text(), "cached linker directives")
 
@@ -66,6 +67,19 @@ class DuckDBRuntimeTests(unittest.TestCase):
         missing.unlink()
         report = self.prepare()
         self.assertEqual(report["repaired_files"], [str(missing)])
+        self.assertEqual(self.downloads, 1)
+
+    def test_split_artifact_profile_runtime_is_repaired_without_rebuilding(self):
+        self.prepare()
+        executable = self.target / "debug/build/zsui-dataviewer-comparison/cached/out/test.exe"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"cached test executable")
+        missing = self.target / "debug/duckdb.dll"
+        missing.unlink()
+        report = self.prepare()
+        self.assertEqual(report["repaired_files"], [str(missing)])
+        self.assertEqual(missing.read_bytes(), b"fixture:duckdb.dll")
+        self.assertEqual(executable.read_bytes(), b"cached test executable")
         self.assertEqual(self.downloads, 1)
 
     def test_complete_warm_cache_does_no_network_or_rewrites(self):

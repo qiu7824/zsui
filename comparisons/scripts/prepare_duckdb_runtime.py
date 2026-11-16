@@ -123,11 +123,14 @@ def prepare_runtime(manifest, lock_text, target, target_directory, opener=urllib
     runtime = library_directory / entry["runtime"]
     runtime_hash = file_digest(runtime)
     for profile in ("debug", "release"):
-        destination = target_directory / profile / "deps" / entry["runtime"]
-        if not destination.is_file() or file_digest(destination) != runtime_hash:
-            with runtime.open("rb") as source:
-                atomic_write(destination, source)
-            repaired.append(str(destination))
+        # Cargo's split artifact layout searches the profile directory at
+        # runtime; older layouts also use its deps subdirectory.
+        for directory in (target_directory / profile, target_directory / profile / "deps"):
+            destination = directory / entry["runtime"]
+            if not destination.is_file() or file_digest(destination) != runtime_hash:
+                with runtime.open("rb") as source:
+                    atomic_write(destination, source)
+                repaired.append(str(destination))
     return {"target": target, "version": manifest["library_version"],
             "archive_sha256": entry["sha256"], "downloaded": downloaded,
             "library_directory": str(library_directory), "repaired_files": repaired}

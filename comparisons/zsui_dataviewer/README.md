@@ -38,7 +38,9 @@ be included when measuring or distributing the complete application package.
 CI restores the pinned official release archive through a separate native-library
 cache, verifies its SHA-256, and repairs linker files and debug/release runtime
 copies before invoking Cargo. This also covers a restored Rust build whose
-DuckDB download directory or Windows import library is missing. Native release
+DuckDB download directory or Windows import library is missing. Runtime files
+are available in the profile root used by Cargo's split artifact layout and
+the `deps` directory used by older layouts. Native release
 versions and checksums are recorded in `duckdb-runtime.json` and checked against
 `Cargo.lock`; update them together when upgrading DuckDB.
 
