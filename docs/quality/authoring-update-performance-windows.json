@@ -1,0 +1,1037 @@
+{
+  "schema": "zsui.authoring-update-performance/v1",
+  "platform": "Windows 11 x64, 10.0.26300",
+  "processor": "Intel Core i7-10700KF, 8 cores / 16 logical processors",
+  "toolchain": "rustc 1.99.0 x86_64-pc-windows-msvc",
+  "cargo_profile": "release opt-level=z thin LTO codegen-units=1 panic=abort",
+  "base_commit": "491638dea042d954ab3356e604831bfa42fb917c",
+  "baseline_platform_patch_sha256": "75a10c1faac889460a08b53a85206c3aecb19e79342d80355cf63cb217601878",
+  "execution_environment": "Shared workstation; independent background compilation was observed during the measurement period. No desktop input or window presentation is part of these workloads.",
+  "sampling": {
+    "pairs_per_workload": 12,
+    "process_order": "AB for even-numbered pairs (zero-based), BA for odd",
+    "warmup_per_process": 32,
+    "timed_iterations_per_process": 256,
+    "timing": "per-process nearest-rank percentiles, then median across processes",
+    "memory": "Rust global allocator live and high-water bytes; Win32 GetProcessMemoryInfo PrivateUsage and WorkingSetSize after the timed loop",
+    "allocation_calls": "successful allocations and growing reallocations per iteration",
+    "interval": "95% percentile interval of 10000 bootstrapped paired median differences, candidate minus baseline",
+    "pair_order": [
+      "before",
+      "after"
+    ]
+  },
+  "workloads": {
+    "memoized_list": {
+      "entry": "examples/memo_workload.rs",
+      "content": "1000 explicitly identified static text nodes, one changing push button",
+      "timed_region": "dispatch typed ViewEvent, rebuild and layout; native presentation excluded",
+      "features": [
+        "button",
+        "label",
+        "native-smoke",
+        "windows-gdi"
+      ],
+      "binary_sha256": {
+        "before": "c7b138fb56d9038791980400079d54686e856d808796f97715daa3f43a23cda7",
+        "after": "d6c31fa32990607fdfaa2c3e5fea93d9b0c2d65ecc4a3cbe5015661071934a7e"
+      },
+      "summary": {
+        "live_bytes": {
+          "before": 381898.0,
+          "after": 268104.0,
+          "change_pct": -29.8,
+          "paired_delta_ci95": [
+            -113794.0,
+            -113794.0
+          ]
+        },
+        "peak_live_bytes": {
+          "before": 433042.0,
+          "after": 291736.0,
+          "change_pct": -32.63,
+          "paired_delta_ci95": [
+            -141306.0,
+            -141306.0
+          ]
+        },
+        "allocations_per_update": {
+          "before": 356.0,
+          "after": 18.0,
+          "change_pct": -94.94,
+          "paired_delta_ci95": [
+            -338.0,
+            -338.0
+          ]
+        },
+        "private_bytes": {
+          "before": 1157120.0,
+          "after": 1015808.0,
+          "change_pct": -12.21,
+          "paired_delta_ci95": [
+            -221184.0,
+            -135168.0
+          ]
+        },
+        "rss_bytes": {
+          "before": 4763648.0,
+          "after": 4622336.0,
+          "change_pct": -2.97,
+          "paired_delta_ci95": [
+            -196608.0,
+            -143360.0
+          ]
+        },
+        "p50_ns": {
+          "before": 945150.0,
+          "after": 795650.0,
+          "change_pct": -15.82,
+          "paired_delta_ci95": [
+            -170700.0,
+            -139800.0
+          ]
+        },
+        "p95_ns": {
+          "before": 1061550.0,
+          "after": 888850.0,
+          "change_pct": -16.27,
+          "paired_delta_ci95": [
+            -344800.0,
+            29700.0
+          ]
+        }
+      },
+      "metric_order": [
+        "live_bytes",
+        "peak_live_bytes",
+        "allocations_per_update",
+        "private_bytes",
+        "rss_bytes",
+        "p50_ns",
+        "p95_ns"
+      ],
+      "paired_samples": [
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1150976,
+            4763648,
+            933900,
+            1025900
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1015808,
+            4620288,
+            798200,
+            1248700
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1241088,
+            4820992,
+            940500,
+            1079400
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1019904,
+            4624384,
+            804600,
+            931600
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1249280,
+            4833280,
+            949500,
+            1031800
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1015808,
+            4624384,
+            793300,
+            848700
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1150976,
+            4759552,
+            942300,
+            1162100
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1011712,
+            4616192,
+            790400,
+            901800
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1155072,
+            4763648,
+            939600,
+            1177500
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1024000,
+            4628480,
+            794800,
+            873700
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1224704,
+            4820992,
+            959200,
+            1019400
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1015808,
+            4624384,
+            791700,
+            901200
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1146880,
+            4759552,
+            943500,
+            1010300
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1007616,
+            4616192,
+            806600,
+            843700
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1245184,
+            4820992,
+            977000,
+            1314700
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1003520,
+            4616192,
+            803100,
+            876500
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1241088,
+            4816896,
+            967600,
+            1231000
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1019904,
+            4624384,
+            788700,
+            845200
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1150976,
+            4763648,
+            946800,
+            1396900
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1015808,
+            4616192,
+            797300,
+            856000
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1146880,
+            4759552,
+            979300,
+            1043700
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1011712,
+            4616192,
+            796500,
+            1221300
+          ]
+        ],
+        [
+          [
+            381898,
+            433042,
+            356.0,
+            1159168,
+            4763648,
+            935500,
+            1036500
+          ],
+          [
+            268104,
+            291736,
+            18.0,
+            1019904,
+            4624384,
+            792800,
+            1230000
+          ]
+        ]
+      ]
+    },
+    "common": {
+      "entry": "examples/invoice_tool.rs::invoice_shell",
+      "timed_region": "Retained shell draw plan regeneration at 1000x700",
+      "features": [
+        "window",
+        "shell",
+        "list",
+        "dialog",
+        "textbox",
+        "native-smoke"
+      ],
+      "pixel_capture": "One uncompressed Windows memory-DC RGBA surface per executable at 96 DPI before sampling; byte equality checked across the pair",
+      "rgba_sha256": "201b8f79039866ba4f4438c91d1b69bbcd05c5b3d59a0f2e2b68fd8fc48dd786",
+      "binary_and_source_sha256": {
+        "before": {
+          "source_sha256": "8d8d0b7dc6ba8a497006b1a5af9d7b6054229ca6e37c241eb5c26d75a3456e12",
+          "sha256": "dac2658450fedae9596366dd249a203e9cde4bb8bb361ad3cac5d7993c870170"
+        },
+        "after": {
+          "source_sha256": "81ec6eb835f8d43420e062e3bc8b7be65c093a68bb94899e8d0a15ec8e0b0c50",
+          "sha256": "fb43e4d45f8c7424a8ba85b96db5b83f15781ff4cb7b362014c45c84f3fd1f67"
+        }
+      },
+      "summary": {
+        "commands": {
+          "before": 63.0,
+          "after": 63.0,
+          "change_pct": 0.0,
+          "paired_delta_ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "live_bytes": {
+          "before": 4593.0,
+          "after": 4593.0,
+          "change_pct": 0.0,
+          "paired_delta_ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "allocations_per_update": {
+          "before": 152.0,
+          "after": 152.0,
+          "change_pct": 0.0,
+          "paired_delta_ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "private_bytes": {
+          "before": 1792000.0,
+          "after": 1761280.0,
+          "change_pct": -1.71,
+          "paired_delta_ci95": [
+            -53248.0,
+            137216.0
+          ]
+        },
+        "rss_bytes": {
+          "before": 9887744.0,
+          "after": 9830400.0,
+          "change_pct": -0.58,
+          "paired_delta_ci95": [
+            -71680.0,
+            14336.0
+          ]
+        },
+        "p50_ns": {
+          "before": 23900.0,
+          "after": 24500.0,
+          "change_pct": 2.51,
+          "paired_delta_ci95": [
+            200.0,
+            1550.0
+          ]
+        },
+        "p95_ns": {
+          "before": 26250.0,
+          "after": 27350.0,
+          "change_pct": 4.19,
+          "paired_delta_ci95": [
+            -100.0,
+            4550.0
+          ]
+        }
+      },
+      "metric_order": [
+        "commands",
+        "live_bytes",
+        "allocations_per_update",
+        "private_bytes",
+        "rss_bytes",
+        "p50_ns",
+        "p95_ns"
+      ],
+      "paired_samples": [
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1708032,
+            9834496,
+            22400,
+            24300
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1753088,
+            9834496,
+            22600,
+            24200
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1814528,
+            9887744,
+            21100,
+            27900
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1732608,
+            9826304,
+            22600,
+            24500
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1814528,
+            9887744,
+            20800,
+            22600
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1802240,
+            9859072,
+            23700,
+            25700
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1789952,
+            9887744,
+            24600,
+            26200
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1695744,
+            9789440,
+            24800,
+            28800
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1875968,
+            9916416,
+            24100,
+            25400
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            2109440,
+            9809920,
+            26300,
+            29000
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1761280,
+            9830400,
+            23500,
+            28100
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1769472,
+            9859072,
+            24500,
+            55400
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1667072,
+            9789440,
+            23300,
+            28600
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1888256,
+            9932800,
+            24800,
+            28500
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1789952,
+            9891840,
+            25100,
+            26300
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1753088,
+            9809920,
+            24600,
+            31800
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1806336,
+            9891840,
+            24300,
+            25600
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            2318336,
+            9887744,
+            24500,
+            26200
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1703936,
+            9805824,
+            24100,
+            25200
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1753088,
+            9756672,
+            23400,
+            25200
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1794048,
+            9887744,
+            24500,
+            29700
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1724416,
+            9826304,
+            26100,
+            36200
+          ]
+        ],
+        [
+          [
+            63,
+            4593,
+            152.0,
+            1826816,
+            9846784,
+            23700,
+            31500
+          ],
+          [
+            63,
+            4593,
+            152.0,
+            1880064,
+            9912320,
+            24400,
+            25900
+          ]
+        ]
+      ]
+    },
+    "large-text": {
+      "entry": "examples/ui_memory_lifecycle.rs::view(large_text=true)",
+      "timed_region": "Live refresh and draw plan regeneration at 1080x760",
+      "features": [
+        "window",
+        "shell",
+        "list",
+        "dialog",
+        "textbox",
+        "native-smoke"
+      ],
+      "pixel_capture": "One uncompressed Windows memory-DC RGBA surface per executable at 96 DPI before sampling; byte equality checked across the pair",
+      "rgba_sha256": "ea0450fdad628da32d8846fb4cd9d79eeab4cbd124b16d6ae1a1b95617a72da1",
+      "binary_and_source_sha256": {
+        "before": {
+          "source_sha256": "8d8d0b7dc6ba8a497006b1a5af9d7b6054229ca6e37c241eb5c26d75a3456e12",
+          "sha256": "dac2658450fedae9596366dd249a203e9cde4bb8bb361ad3cac5d7993c870170"
+        },
+        "after": {
+          "source_sha256": "81ec6eb835f8d43420e062e3bc8b7be65c093a68bb94899e8d0a15ec8e0b0c50",
+          "sha256": "fb43e4d45f8c7424a8ba85b96db5b83f15781ff4cb7b362014c45c84f3fd1f67"
+        }
+      },
+      "summary": {
+        "commands": {
+          "before": 6.0,
+          "after": 6.0,
+          "change_pct": 0.0,
+          "paired_delta_ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "live_bytes": {
+          "before": 5555.0,
+          "after": 5555.0,
+          "change_pct": 0.0,
+          "paired_delta_ci95": [
+            0.0,
+            0.0
+          ]
+        },
+        "allocations_per_update": {
+          "before": 44.0,
+          "after": 40.0,
+          "change_pct": -9.09,
+          "paired_delta_ci95": [
+            -4.0,
+            -4.0
+          ]
+        },
+        "private_bytes": {
+          "before": 1906688.0,
+          "after": 1769472.0,
+          "change_pct": -7.2,
+          "paired_delta_ci95": [
+            -198656.0,
+            -8192.0
+          ]
+        },
+        "rss_bytes": {
+          "before": 9809920.0,
+          "after": 9768960.0,
+          "change_pct": -0.42,
+          "paired_delta_ci95": [
+            -59392.0,
+            -20480.0
+          ]
+        },
+        "p50_ns": {
+          "before": 35750.0,
+          "after": 35200.0,
+          "change_pct": -1.54,
+          "paired_delta_ci95": [
+            -1950.0,
+            750.0
+          ]
+        },
+        "p95_ns": {
+          "before": 43150.0,
+          "after": 42050.0,
+          "change_pct": -2.55,
+          "paired_delta_ci95": [
+            -19200.0,
+            4550.0
+          ]
+        }
+      },
+      "metric_order": [
+        "commands",
+        "live_bytes",
+        "allocations_per_update",
+        "private_bytes",
+        "rss_bytes",
+        "p50_ns",
+        "p95_ns"
+      ],
+      "paired_samples": [
+        [
+          [
+            6,
+            5555,
+            44.0,
+            2392064,
+            9814016,
+            35700,
+            38400
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1736704,
+            9764864,
+            35700,
+            41500
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            2080768,
+            9797632,
+            36400,
+            67600
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            2408448,
+            9768960,
+            34600,
+            37700
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1794048,
+            9785344,
+            35800,
+            39800
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1728512,
+            9728000,
+            20300,
+            31000
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            2068480,
+            9756672,
+            33400,
+            43700
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1875968,
+            9748480,
+            35500,
+            59200
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1806336,
+            9809920,
+            36200,
+            38600
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1724416,
+            9748480,
+            35200,
+            40200
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1818624,
+            9834496,
+            35600,
+            38200
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1757184,
+            9785344,
+            35200,
+            41300
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            2170880,
+            9805824,
+            34300,
+            45800
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1732608,
+            9768960,
+            35300,
+            67700
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1761280,
+            9826304,
+            36200,
+            42600
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1794048,
+            9781248,
+            36700,
+            48600
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            2158592,
+            9850880,
+            35700,
+            72200
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            2109440,
+            9764864,
+            35000,
+            42600
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1798144,
+            9809920,
+            35900,
+            93700
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1998848,
+            9797632,
+            33800,
+            42700
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1982464,
+            9797632,
+            29900,
+            41900
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1777664,
+            9789440,
+            35500,
+            38400
+          ]
+        ],
+        [
+          [
+            6,
+            5555,
+            44.0,
+            1830912,
+            9842688,
+            36600,
+            71700
+          ],
+          [
+            6,
+            5555,
+            40.0,
+            1761280,
+            9768960,
+            34500,
+            64200
+          ]
+        ]
+      ]
+    }
+  }
+}

@@ -206,12 +206,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             child.clear_layout_bounds();
         }
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
         #[cfg(feature = "scroll")]
         let adaptive_child_bounds = if self.style.overflow_y == ViewOverflow::Auto {
             let natural_content_px = selected_index
@@ -289,12 +284,7 @@ impl<Msg: Clone> ViewNode<Msg> {
         }
 
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
         let split = 1.min(self.children.len());
         let (page_children, overlay_children) = self.children.split_at_mut(split);
         let Some(page) = page_children.first_mut() else {
@@ -388,12 +378,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             child.clear_layout_bounds();
         }
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
         for (index, child) in row_indices.into_iter().zip(self.children.iter_mut()) {
             if !viewport.materialized_range.contains(index) {
                 continue;
@@ -459,12 +444,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             child.clear_layout_bounds();
         }
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
 
         let content_index = item_count.saturating_add(footer_count);
         let split_index = content_index.min(self.children.len());
@@ -574,12 +554,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             child.clear_layout_bounds();
         }
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
         if let Some(content) = self.children.get_mut(1) {
             let mut content_cx = cx.child(layout.content);
             children.extend(content.layout(&mut content_cx).children);
@@ -603,8 +578,34 @@ impl<Msg: Clone> View<Msg> for ViewNode<Msg> {
             self.assign_automatic_ids();
             self.restore_memo_state();
         }
-        if let Some(output) = self.cached_memo_layout(cx) {
-            cx.work.reuse(self.node_count());
+        let bounds = Rect {
+            width: cx.bounds.width.min(self.axis_limit(false, cx.dpi)),
+            height: cx.bounds.height.min(self.axis_limit(true, cx.dpi)),
+            ..cx.bounds
+        };
+        let mut constrained;
+        let cx = if bounds == cx.bounds {
+            cx
+        } else {
+            constrained = cx.clone();
+            constrained.bounds = bounds;
+            &mut constrained
+        };
+        if let Some(cached) = self.cached_memo_layout(cx) {
+            cx.work.reuse(cached.node_count);
+            let output = if cx.collect_nodes {
+                cached.output.clone()
+            } else {
+                LayoutOutput {
+                    bounds: cx.bounds,
+                    children: Vec::new(),
+                }
+            };
+            if !Arc::ptr_eq(&cached.measurements, &cx.text_measurements) {
+                if let Some(layout) = self.memo.as_mut().and_then(|memo| memo.layout.as_mut()) {
+                    layout.measurements = cx.text_measurements.clone();
+                }
+            }
             return output;
         }
         cx.work.visit();
@@ -4019,12 +4020,7 @@ impl<Msg: Clone> ViewNode<Msg> {
             *scene = builder.build(&context);
         }
         let mut children = Vec::new();
-        if let Some(id) = self.id {
-            children.push(LayoutNode {
-                component: id.into(),
-                bounds: cx.bounds,
-            });
-        }
+        cx.record_node(&mut children, self.id);
 
         let content_bounds = inset_bounds(cx.bounds, self.resolved_padding(), cx.dpi);
         #[cfg(feature = "list")]
@@ -4076,12 +4072,13 @@ impl<Msg: Clone> ViewNode<Msg> {
             && !matches!(self.kind, ViewNodeKind::Scroll { .. })
         {
             let padding = self.padding_extent_px(cx.dpi, true);
-            let natural_content_px = natural_height_px(
+            let natural_content_px = unbounded_height_px(
                 self,
                 cx.bounds.width,
                 cx.dpi,
                 cx.typography_scale(),
                 cx.text_measurements.as_ref(),
+                HeightMeasurement::Natural,
             )
             .saturating_sub(padding);
             let resolved_content_px = content_bounds.height.max(natural_content_px);

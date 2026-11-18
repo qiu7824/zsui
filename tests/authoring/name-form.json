@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "root": {
+    "id": "form",
+    "component": "stack",
+    "layout": {
+      "max_width": 640,
+      "max_height": 240
+    },
+    "children": [
+      {
+        "id": "name",
+        "component": "textbox",
+        "properties": {
+          "value": "Ada"
+        }
+      },
+      {
+        "id": "save",
+        "component": "button",
+        "properties": {
+          "label": "Save"
+        },
+        "action_bindings": {
+          "click": "save"
+        }
+      }
+    ]
+  }
+}

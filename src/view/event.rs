@@ -1256,6 +1256,7 @@ impl ViewHitTargetKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewLayoutCx {
+    collect_nodes: bool,
     work: LayoutWork,
     pub bounds: Rect,
     pub dpi: Dpi,
@@ -1267,6 +1268,7 @@ pub struct ViewLayoutCx {
 impl ViewLayoutCx {
     pub fn new(bounds: Rect, dpi: Dpi) -> Self {
         Self {
+            collect_nodes: true,
             work: LayoutWork::default(),
             bounds,
             dpi,
@@ -1277,8 +1279,20 @@ impl ViewLayoutCx {
         }
     }
 
+    fn record_node(&self, nodes: &mut Vec<LayoutNode>, id: Option<WidgetId>) {
+        if self.collect_nodes {
+            if let Some(id) = id {
+                nodes.push(LayoutNode {
+                    component: id.into(),
+                    bounds: self.bounds,
+                });
+            }
+        }
+    }
+
     pub(crate) fn child(&self, bounds: Rect) -> Self {
         Self {
+            collect_nodes: self.collect_nodes,
             work: self.work.clone(),
             bounds,
             dpi: self.dpi,

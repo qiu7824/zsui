@@ -1,5 +1,7 @@
 #[derive(Debug, Clone, Default)]
 struct ViewMetadata {
+    max_width: Option<Dp>,
+    max_height: Option<Dp>,
     #[cfg(feature = "custom-icons")]
     icon_source: Option<crate::IconSource>,
     #[cfg(feature = "tooltip")]
@@ -13,6 +15,8 @@ struct ViewMetadata {
 }
 impl ViewMetadata {
     const EMPTY: Self = Self {
+        max_width: None,
+        max_height: None,
         #[cfg(feature = "custom-icons")]
         icon_source: None,
         #[cfg(feature = "tooltip")]

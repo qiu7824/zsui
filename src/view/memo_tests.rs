@@ -2,6 +2,47 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
+fn retained_rebuild_paints_text_and_can_export_complete_geometry_after_live_layout() {
+    let build = || {
+        memoized(WidgetId(10), 1, || {
+            crate::text::<()>("retained").id(WidgetId(11))
+        })
+    };
+    let mut cx = ViewLayoutCx::new(
+        Rect {
+            x: 10,
+            y: 20,
+            width: 320,
+            height: 64,
+        },
+        Dpi::standard(),
+    );
+    cx.collect_nodes = false;
+    let mut old = build();
+    assert!(old.layout(&mut cx).children.is_empty());
+    let mut previous = std::collections::BTreeMap::new();
+    old.collect_memos(&mut previous);
+    let mut next = build();
+    next.resolve_memos(
+        &mut previous,
+        &BTreeSet::new(),
+        &mut ViewWorkStats::default(),
+    );
+    next.layout(&mut cx);
+    let mut paint = ViewPaintCx::new(cx.dpi);
+    next.paint(&mut paint);
+    assert!(paint.plan().commands.iter().any(|command| matches!(command,
+        NativeDrawCommand::Text(text) if text.text == "retained")));
+    cx.collect_nodes = true;
+    let exported = next.layout(&mut cx);
+    assert!(exported
+        .children
+        .iter()
+        .any(|child| child.component == WidgetId(11).into()));
+    assert_eq!(next.layout(&mut cx), exported);
+}
+
+#[test]
 fn nested_invalidation_rebuilds_the_owner_and_reuses_the_untouched_sibling() {
     fn tree(counts: Arc<[AtomicUsize; 3]>) -> ViewNode<()> {
         memoized(WidgetId(10), 0, move || {
@@ -65,6 +106,55 @@ fn nested_invalidation_rebuilds_the_owner_and_reuses_the_untouched_sibling() {
             "model_update_and_layout_microseconds":elapsed.as_micros(),"native_frame_time_measured":false
         })).unwrap()).unwrap();
     }
+}
+
+#[test]
+#[cfg(feature = "scroll")]
+fn memo_wrapper_preserves_its_scroll_geometry_on_reuse() {
+    let tree = || {
+        memoized(WidgetId(30), 0, || {
+            crate::spacer::<()>().height(Dp::new(320.0))
+        })
+        .auto_scroll_y()
+    };
+    let mut cx = ViewLayoutCx::new(
+        Rect {
+            x: 0,
+            y: 0,
+            width: 200,
+            height: 80,
+        },
+        Dpi::standard(),
+    );
+    let mut first = tree();
+    first.layout(&mut cx);
+    first.event(
+        &mut ViewEventCx::new(),
+        &ViewEvent::ScrollBy {
+            widget: WidgetId(30),
+            delta_y: Dp::new(40.0),
+        },
+    );
+    first.layout(&mut cx);
+    let offset = first.adaptive_scroll_offset_y;
+    let content_height = first.resolved_scroll_content_height;
+    assert!(offset.0 > 0.0 && content_height.0 > 80.0);
+    let mut previous = std::collections::BTreeMap::new();
+    first.collect_memos(&mut previous);
+    let mut next = tree();
+    next.resolve_memos(
+        &mut previous,
+        &BTreeSet::new(),
+        &mut ViewWorkStats::default(),
+    );
+    next.layout(&mut cx);
+    assert_eq!(
+        (
+            next.adaptive_scroll_offset_y,
+            next.resolved_scroll_content_height
+        ),
+        (offset, content_height)
+    );
 }
 
 #[test]

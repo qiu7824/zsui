@@ -51,6 +51,21 @@ use std::{fmt, path::PathBuf};
 mod controls;
 pub use controls::*;
 
+#[cfg(any(
+    feature = "button",
+    feature = "label",
+    feature = "textbox",
+    feature = "toggle"
+))]
+#[path = "stable_typed.rs"]
+pub mod typed;
+
+#[cfg(any(feature = "grid", feature = "canvas", feature = "image-preview"))]
+#[path = "stable_design.rs"]
+mod design;
+#[cfg(any(feature = "grid", feature = "canvas", feature = "image-preview"))]
+pub use design::*;
+
 /// Wrapping policy for labels and multiline text editors.
 pub use crate::TextWrap;
 /// Semantic colors resolved by the active native theme.
@@ -426,6 +441,18 @@ impl<Message> Element<Message> {
     #[cfg(feature = "scroll")]
     pub fn auto_scroll_y(mut self) -> Self {
         self.inner = self.inner.auto_scroll_y();
+        self
+    }
+
+    /// Caps the outer width, including padding, in logical pixels.
+    pub fn max_width(mut self, width: Dp) -> Self {
+        self.inner = self.inner.max_width(width.into());
+        self
+    }
+
+    /// Caps the outer height, including padding, in logical pixels.
+    pub fn max_height(mut self, height: Dp) -> Self {
+        self.inner = self.inner.max_height(height.into());
         self
     }
 

@@ -649,6 +649,9 @@ where
         let mut cx = ViewLayoutCx::new(self.bounds, self.dpi)
             .with_typography_scale(self.typography_scale())
             .with_text_measurements(self.text_measurements.clone());
+        // Input, accessibility and drawing use retained node bounds. Only external
+        // layout callers need a second, flattened copy of the geometry.
+        cx.collect_nodes = false;
         self.view.layout(&mut cx);
         let (visited, reused) = cx.work.snapshot();
         self.work.layout_nodes = visited;

@@ -50,8 +50,7 @@ and is not part of normal task context.
 | `quickstart` | Stable public entry points and one-line windows |
 | `app-authoring` | Build a product UI from an explicit brief with the smallest component tree |
 | `features` | Cargo features, optional dependencies, compile trimming |
-| `ui-document` | Versioned UI documents, typed bindings, validation, handoff and release artifacts |
-| `ui-document-runtime` | Feature-pruned release UI-document to View compilation |
+| `ui-document` | Versioned UI documents, typed bindings, validation, handoff and feature-pruned release compilation |
 | `ui-viewer` | Prebuilt native UI document Viewer, stable IDs and source reload |
 | `view-widgets` | `View<Msg>`, state/update, basic controls, input routing |
 | `long-list` | Virtual rows, background pagination, prefetch and LRU caching |

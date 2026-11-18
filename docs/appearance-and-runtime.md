@@ -103,6 +103,11 @@ construction remains the unconditional fallback. `LiveViewUpdate::work` reports
 rebuilding and layout work; it is distinct from native frame time and process
 memory.
 
+Live updates retain node bounds directly. Explicit layout queries return a
+flattened geometry snapshot. Memoized subtrees reuse their geometry and scroll
+state across ordinary rebuilds and check the retained scene when native text
+measurements change.
+
 Tooltip and explicit accessibility metadata are allocated only when used.
 Memory comparisons include strings, child vectors, memo state and optional
 metadata, rather than reporting only the inline node size.
@@ -168,6 +173,29 @@ The nested memo regression rebuilds four of six nodes and reuses two layout
 nodes when one nested subtree is invalidated; the unaffected sibling keeps its
 geometry. Revision changes preserve scroll offsets. The generated work report
 records model update/layout time separately from native frame time.
+
+### Windows release update workloads
+
+Twelve alternating process pairs ran 32 warm-up updates followed by 256 timed
+updates per process on Windows 11 x64. The list workload dispatches a typed
+event and lays out a changing counter beside 1,000 retained labels with
+explicit IDs. Common regenerates the invoice shell's draw plan. The large-text
+case refreshes the multilingual page and regenerates its draw plan. The two
+page cases produced byte-identical 96 DPI offscreen RGBA images across versions.
+
+| Workload | Private Bytes (KiB), baseline → candidate | Allocations or growths per update | Median update (µs) | p95 update (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| Memoized list | 1,130 → 992 | 356 → 18 | 945.15 → 795.65 | 1,061.55 → 888.85 |
+| Common | 1,750 → 1,720 | 152 → 152 | 23.90 → 24.50 | 26.25 → 27.35 |
+| Large text | 1,862 → 1,728 | 44 → 40 | 35.75 → 35.20 | 43.15 → 42.05 |
+
+The list's live Rust allocations fell from 381,898 to 268,104 bytes. Its paired
+95% interval for the median update was −170.7 to −139.8 µs. The interval for
+p95 included zero, as did the interval for Common private memory. Neither page
+reached the 512 KiB savings target. Native presentation, first frame and
+compositor latency require a separate windowed measurement. The
+[raw pairs, build identities and confidence intervals](quality/authoring-update-performance-windows.json)
+record the workload-specific measurement boundaries.
 
 The icon proof covers 4,380 cases across 73 semantic icons, five logical sizes,
 four scales and three sources. The measured Windows run has no blank or

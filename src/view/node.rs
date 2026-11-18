@@ -1687,7 +1687,11 @@ impl<Msg> ViewNode<Msg> {
     }
 
     fn collect_explicit_widget_ids(&self, used: &mut BTreeSet<u64>) {
-        if let Some(id) = self.id {
+        // Automatic IDs can only collide inside their reserved namespace.
+        if let Some(id) = self
+            .id
+            .filter(|id| id.0 & !FRAMEWORK_WIDGET_ID_PAYLOAD_MASK == AUTOMATIC_WIDGET_ID_NAMESPACE)
+        {
             used.insert(id.0);
         }
         for child in &self.children {
@@ -1930,6 +1934,31 @@ impl<Msg> ViewNode<Msg> {
     pub fn height(mut self, height: Dp) -> Self {
         self.style.height = Some(height);
         self
+    }
+
+    /// Limits the outer width in logical pixels.
+    pub fn max_width(mut self, width: Dp) -> Self {
+        self.metadata_mut().max_width = Some(width);
+        self
+    }
+
+    /// Limits the outer height in logical pixels.
+    pub fn max_height(mut self, height: Dp) -> Self {
+        self.metadata_mut().max_height = Some(height);
+        self
+    }
+
+    fn axis_limit(&self, vertical: bool, dpi: Dpi) -> i32 {
+        self.metadata
+            .as_ref()
+            .and_then(|metadata| {
+                if vertical {
+                    metadata.max_height
+                } else {
+                    metadata.max_width
+                }
+            })
+            .map_or(i32::MAX, |limit| limit.to_px(dpi).round_i32().max(0))
     }
 
     pub fn min_width(mut self, min_width: Dp) -> Self {

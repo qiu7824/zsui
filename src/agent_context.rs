@@ -1174,7 +1174,6 @@ mod tests {
         let packs = manifest["packs"]
             .as_array()
             .expect("AI context packs should be an array");
-        assert_eq!(packs.len(), 19);
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let mut ids = HashSet::new();
         for pack in packs {
@@ -1207,5 +1206,15 @@ mod tests {
                 "AI context pack has no verification command: {id}"
             );
         }
+        let routes: HashSet<_> = include_str!("../docs/ai-agent.md")
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix("| `")?
+                    .split_once("` |")
+                    .map(|(id, _)| id)
+            })
+            .collect();
+        assert!(!routes.is_empty());
+        assert_eq!(ids, routes, "bootstrap routes must match selectable packs");
     }
 }

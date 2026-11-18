@@ -677,7 +677,12 @@ fn grid_track_minimums<Msg>(
         } else {
             intrinsic_min_width_px(child, dpi, typography_scale, text_measurements)
         };
-        minimums[track] = minimums[track].max(fixed.max(minimum).max(intrinsic));
+        minimums[track] = minimums[track].max(
+            fixed
+                .max(minimum)
+                .max(intrinsic)
+                .min(child.axis_limit(vertical, dpi)),
+        );
     }
     minimums
 }
@@ -1000,6 +1005,7 @@ fn constrained_child_axis_length<Msg>(
             .max(minimum)
         })
         .unwrap_or_else(|| available.max(minimum))
+        .min(child.axis_limit(vertical, dpi))
 }
 
 #[cfg(feature = "grid")]
@@ -1253,6 +1259,7 @@ fn allocate_axis_lengths<Msg>(
                 } else {
                     value.to_px(dpi).round_i32().max(0)
                 }
+                .min(child.axis_limit(vertical, dpi))
             })
         })
         .collect::<Vec<_>>();
@@ -1285,9 +1292,10 @@ fn allocate_axis_lengths<Msg>(
                 intrinsic_preferred_width_px(child, dpi, typography_scale, text_measurements),
             )
         };
-        let floor = declared.max(intrinsic_minimum);
+        let limit = child.axis_limit(vertical, dpi);
+        let floor = declared.max(intrinsic_minimum).min(limit);
         minimums.push(floor);
-        preferreds.push(declared.max(intrinsic_preferred).max(floor));
+        preferreds.push(declared.max(intrinsic_preferred).max(floor).min(limit));
     }
     // Non-fixed children request their preferred (natural) length. Only
     // ellipsizable no-wrap text reports a preferred width above its floor, so
@@ -1341,33 +1349,33 @@ fn allocate_axis_lengths<Msg>(
         return lengths;
     }
 
-    let remaining = (available - base_total).max(0);
-    let flexible = requested
+    let mut remaining = (available - base_total).max(0);
+    let mut flexible: Vec<usize> = requested
         .iter()
         .enumerate()
-        .filter(|(index, value)| value.is_none() && children[*index].style.flex > f32::EPSILON)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    if flexible.is_empty() {
-        return lengths;
-    }
-
-    let flex_total: f32 = flexible
-        .iter()
-        .map(|index| children[*index].style.flex.max(0.0))
-        .sum();
-    let denominator = flex_total;
-    let mut assigned = 0;
-    for (position, index) in flexible.iter().enumerate() {
-        let length = if position + 1 == flexible.len() {
-            remaining - assigned
-        } else {
-            let weight = children[*index].style.flex.max(0.0);
-            ((remaining as f32) * weight / denominator).floor() as i32
+        .filter(|(i, request)| request.is_none() && children[*i].style.flex > f32::EPSILON)
+        .map(|(i, _)| i)
+        .collect();
+    while remaining > 0 && !flexible.is_empty() {
+        let weight: f32 = flexible.iter().map(|&i| children[i].style.flex).sum();
+        let mut assigned = 0;
+        let mut consumed = 0;
+        for (position, &i) in flexible.iter().enumerate() {
+            let share = if position + 1 == flexible.len() {
+                remaining - assigned
+            } else {
+                ((remaining as f32 * children[i].style.flex / weight).floor() as i32)
+                    .clamp(0, remaining - assigned)
+            };
+            assigned += share;
+            let growth = share.min(children[i].axis_limit(vertical, dpi) - lengths[i]);
+            lengths[i] += growth;
+            consumed += growth;
         }
-        .max(0);
-        lengths[*index] = lengths[*index].saturating_add(length);
-        assigned += length;
+        remaining -= consumed;
+        if remaining > 0 {
+            flexible.retain(|&i| lengths[i] < children[i].axis_limit(vertical, dpi));
+        }
     }
     lengths
 }
@@ -1469,6 +1477,7 @@ fn cross_axis_length<Msg>(
             }
             ViewAlign::Auto => available.max(minimum),
         })
+        .min(child.axis_limit(vertical, dpi))
 }
 
 /// Whether a node fills its stack's cross axis under [`ViewAlign::Auto`]
@@ -1571,7 +1580,7 @@ fn intrinsic_width_px<Msg>(
 
     #[cfg(feature = "scroll")]
     if matches!(node.kind, ViewNodeKind::Scroll { .. }) {
-        return declared;
+        return declared.min(node.axis_limit(false, dpi));
     }
 
     let content = match &node.kind {
@@ -1683,7 +1692,9 @@ fn intrinsic_width_px<Msg>(
             .max()
             .unwrap_or(0),
     };
-    declared.max(content.saturating_add(padding))
+    declared
+        .max(content.saturating_add(padding))
+        .min(node.axis_limit(false, dpi))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1736,6 +1747,26 @@ fn measured_height_px<Msg>(
     text_measurements: &ViewTextMeasurements,
     measurement: HeightMeasurement,
 ) -> i32 {
+    unbounded_height_px(
+        node,
+        available_width,
+        dpi,
+        typography_scale,
+        text_measurements,
+        measurement,
+    )
+    .min(node.axis_limit(true, dpi))
+}
+
+fn unbounded_height_px<Msg>(
+    node: &ViewNode<Msg>,
+    available_width: i32,
+    dpi: Dpi,
+    typography_scale: f32,
+    text_measurements: &ViewTextMeasurements,
+    measurement: HeightMeasurement,
+) -> i32 {
+    let available_width = available_width.min(node.axis_limit(false, dpi));
     let scoped = text_measurements.with_font(node.effective_font());
     let text_measurements = &scoped;
     let declared_height = |value| node.native_height_px(value, dpi, typography_scale);

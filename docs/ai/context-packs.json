@@ -42,10 +42,16 @@
         "src/view/mod.rs",
         "src/platform/experience.rs",
         "docs/appearance-and-runtime.md",
-        "examples/appearance_styles.rs"
+        "examples/appearance_styles.rs",
+        "src/stable_typed.rs",
+        "src/stable_design.rs",
+        "examples/image_inspector.rs",
+        "docs/ai/authoring-acceptance.md",
+        "tests/authoring_contracts.rs"
       ],
       "verify": [
         "cargo check --example compact_service_panel --no-default-features --features window,button,label,toggle",
+        "cargo test --locked --no-default-features --features ui-document-runtime,button,label,textbox,canvas,virtual-list --test authoring_contracts",
         "cargo test --no-default-features --quiet"
       ]
     },

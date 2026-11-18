@@ -4020,6 +4020,12 @@ fn apply_layout<Msg>(mut view: ViewNode<Msg>, node: &UiNode) -> ViewNode<Msg> {
     if let Some(value) = node.layout.height {
         view = view.height(Dp::new(value));
     }
+    if let Some(value) = node.layout.max_width {
+        view = view.max_width(Dp::new(value));
+    }
+    if let Some(value) = node.layout.max_height {
+        view = view.max_height(Dp::new(value));
+    }
     if let Some(value) = node.layout.min_width {
         view = view.min_width(Dp::new(value));
     }

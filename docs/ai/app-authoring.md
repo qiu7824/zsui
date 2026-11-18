@@ -101,6 +101,13 @@ Use [`examples/compact_service_panel.rs`](../../examples/compact_service_panel.r
 as the application-shape reference. It intentionally contains one status
 region and one action region, without a shell.
 
+Use `typed::{button,textbox,toggle,text}` to configure control events before
+converting to `Element<Msg>` with `.into()`. The compiler checks the event
+against the control type at that boundary. The [image inspector](../../examples/image_inspector.rs)
+composes typed buttons, a Grid toolbar and retained PNG pixels through the
+prelude. The [authoring acceptance briefs](authoring-acceptance.md) cover
+document geometry, custom drawing and global selection in a virtual list.
+
 ## Text, spacing and retained scrolling
 
 Use `.text_wrap(TextWrap::Word)` on a label for width-aware wrapping. The same

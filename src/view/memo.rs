@@ -59,7 +59,8 @@ struct MemoLayout {
     style: ViewStyle,
     appearance: Option<Arc<crate::Appearance>>,
     measurements: Arc<ViewTextMeasurements>,
-    text: Vec<crate::NativeDrawTextCommand>,
+    node_count: usize,
+    collected_nodes: bool,
     output: LayoutOutput,
 }
 
@@ -113,10 +114,20 @@ impl<Msg: Clone> ViewNode<Msg> {
                     old.memo
                         .as_ref()
                         .is_some_and(|old| old.revision == memo.revision)
-                        && !old.contains_invalidated(invalidated)
+                        && (invalidated.is_empty() || !old.contains_invalidated(invalidated))
                 });
                 if reuse {
                     let mut old = old.take().unwrap();
+                    // Cached layout is usable only together with its retained geometry.
+                    self.bounds = old.bounds;
+                    self.layout_dpi = old.layout_dpi;
+                    #[cfg(feature = "scroll")]
+                    if self.style.overflow_y == ViewOverflow::Auto
+                        && old.style.overflow_y == ViewOverflow::Auto
+                    {
+                        self.adaptive_scroll_offset_y = old.adaptive_scroll_offset_y;
+                        self.resolved_scroll_content_height = old.resolved_scroll_content_height;
+                    }
                     self.children = std::mem::take(&mut old.children);
                     memo.layout = old.memo.as_mut().and_then(|old| old.layout.take());
                     stats.reused_subtrees += 1;
@@ -199,9 +210,11 @@ impl<Msg: Clone> ViewNode<Msg> {
                 .any(|child| child.contains_invalidated(ids))
     }
 
-    fn cached_memo_layout(&self, cx: &ViewLayoutCx) -> Option<LayoutOutput> {
+    fn cached_memo_layout(&self, cx: &ViewLayoutCx) -> Option<&MemoLayout> {
         let cached = self.memo.as_ref()?.layout.as_ref()?;
-        if cached.bounds != cx.bounds
+        if self.bounds != Some(cx.bounds)
+            || (cx.collect_nodes && !cached.collected_nodes)
+            || cached.bounds != cx.bounds
             || cached.dpi != cx.dpi
             || cached.scale != cx.typography_scale_per_mille
             || cached.style != self.style
@@ -210,7 +223,14 @@ impl<Msg: Clone> ViewNode<Msg> {
             return None;
         }
         if !Arc::ptr_eq(&cached.measurements, &cx.text_measurements) {
-            for text in &cached.text {
+            // Native measurement revisions are infrequent. Consult the retained
+            // scene on demand instead of owning every painted string twice.
+            let mut paint = ViewPaintCx::new(cx.dpi);
+            self.paint(&mut paint);
+            for command in paint.into_plan().commands {
+                let NativeDrawCommand::Text(text) = command else {
+                    continue;
+                };
                 for width in [0, text.bounds.width] {
                     if cached
                         .measurements
@@ -226,23 +246,13 @@ impl<Msg: Clone> ViewNode<Msg> {
                 }
             }
         }
-        Some(cached.output.clone())
+        Some(cached)
     }
     fn store_memo_layout(&mut self, cx: &ViewLayoutCx, output: &LayoutOutput) {
         if self.memo.is_none() {
             return;
         }
-        let mut paint = ViewPaintCx::new(cx.dpi);
-        self.paint(&mut paint);
-        let text = paint
-            .into_plan()
-            .commands
-            .into_iter()
-            .filter_map(|command| match command {
-                NativeDrawCommand::Text(text) => Some(text),
-                _ => None,
-            })
-            .collect();
+        let node_count = self.node_count();
         let appearance = self.effective_appearance().cloned();
         self.memo.as_mut().unwrap().layout = Some(MemoLayout {
             bounds: cx.bounds,
@@ -251,7 +261,8 @@ impl<Msg: Clone> ViewNode<Msg> {
             style: self.style,
             appearance,
             measurements: cx.text_measurements.clone(),
-            text,
+            node_count,
+            collected_nodes: cx.collect_nodes,
             output: output.clone(),
         });
     }

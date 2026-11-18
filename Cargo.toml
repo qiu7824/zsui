@@ -236,6 +236,14 @@ required-features = ["windows-win32", "native-smoke", "custom-icons", "fluent-ic
 serde_json = "1"
 
 [[example]]
+name = "memo_workload"
+required-features = ["button", "label", "native-smoke"]
+
+[[example]]
+name = "image_inspector"
+required-features = ["window", "button", "grid", "image-preview"]
+
+[[example]]
 name = "basic"
 path = "examples/basic.rs"
 

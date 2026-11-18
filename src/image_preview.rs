@@ -223,7 +223,7 @@ fn image_preview_worker(shared: Arc<PreviewShared>) {
     }
 }
 
-fn decode_png_frame(
+pub(crate) fn decode_png_frame(
     frame_id: ZsImageFrameId,
     png: &[u8],
     max_decoded_bytes: usize,

@@ -228,6 +228,8 @@ cargo run --bin zsui-uic `
 
 ## 布局与文字完整性
 
+`layout.max_width` 与 `layout.max_height` 以 DP 限制节点含内边距的外部尺寸。根节点和子节点共享此规则。Row 和 Column 会把达到上限后剩余的主轴空间分配给其他可伸展子节点。内容超出时可使用滚动布局。
+
 `layout.padding_token` 和 `layout.gap_token` 使用平台体验层的间距，不把某个平台的
 固定数值复制到另外两个平台。可用值为 `xs`、`sm`、`md`、`lg`、`xl`、
 `content_gap`、`content_padding` 和 `page_padding`。同一节点的 `padding` 与
