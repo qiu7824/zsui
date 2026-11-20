@@ -10,6 +10,7 @@ Build Windows, macOS and Linux applications from one Rust state, message and vie
 [![Docs](https://docs.rs/zsui/badge.svg)](https://docs.rs/zsui)
 [![CI](https://github.com/qiu7824/zsui/actions/workflows/ci.yml/badge.svg)](https://github.com/qiu7824/zsui/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/qiu7824/zsui)](https://github.com/qiu7824/zsui/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/qiu7824/zsui?style=flat&logo=github)](https://github.com/qiu7824/zsui/stargazers)
 
 [简体中文](https://github.com/qiu7824/zsui/blob/main/README.md) · [English](https://github.com/qiu7824/zsui/blob/main/README.en.md)
 
