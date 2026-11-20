@@ -1,3 +1,147 @@
+/// The native host owns its UI thread's DPI context, including applications
+/// without an executable manifest and hosts embedded in another process.
+/// Restore the caller's context on return; never change process-wide policy.
+pub(crate) struct WindowsDpiScope {
+    previous: windows_sys::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl WindowsDpiScope {
+    pub(crate) fn enter() -> ZsuiResult<Self> {
+        use windows_sys::Win32::UI::HiDpi::{
+            SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        };
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        if previous.is_null() {
+            return Err(ZsuiError::host(
+                "windows_dpi_awareness",
+                format!("SetThreadDpiAwarenessContext failed: {}", unsafe {
+                    GetLastError()
+                }),
+            ));
+        }
+        Ok(Self {
+            previous,
+            _thread: std::marker::PhantomData,
+        })
+    }
+}
+
+impl Drop for WindowsDpiScope {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(self.previous);
+        }
+    }
+}
+
+fn windows_logical_dimension_to_pixels(value: i32, dpi: u32) -> i32 {
+    ((i64::from(value.max(1)) * i64::from(dpi.max(96)) + 48) / 96).clamp(1, i64::from(i32::MAX))
+        as i32
+}
+
+#[cfg(test)]
+mod dpi_tests {
+    use super::*;
+    use windows_sys::Win32::UI::HiDpi::{
+        AreDpiAwarenessContextsEqual, GetThreadDpiAwarenessContext, SetThreadDpiAwarenessContext,
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, DPI_AWARENESS_CONTEXT_UNAWARE,
+    };
+
+    #[test]
+    fn ui_dpi_scope_upgrades_unaware_callers_and_restores_nested_contexts() {
+        std::thread::spawn(|| unsafe {
+            let original = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+            assert!(!original.is_null());
+            {
+                let _outer = WindowsDpiScope::enter().unwrap();
+                assert_ne!(
+                    AreDpiAwarenessContextsEqual(
+                        GetThreadDpiAwarenessContext(),
+                        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                    ),
+                    0
+                );
+                {
+                    let _inner = WindowsDpiScope::enter().unwrap();
+                }
+                assert_ne!(
+                    AreDpiAwarenessContextsEqual(
+                        GetThreadDpiAwarenessContext(),
+                        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                    ),
+                    0
+                );
+            }
+            assert_ne!(
+                AreDpiAwarenessContextsEqual(
+                    GetThreadDpiAwarenessContext(),
+                    DPI_AWARENESS_CONTEXT_UNAWARE
+                ),
+                0
+            );
+            SetThreadDpiAwarenessContext(original);
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn client_and_minimum_sizes_scale_once_at_each_supported_dpi() {
+        for (dpi, width, height) in [
+            (96, 1280, 800),
+            (120, 1600, 1000),
+            (144, 1920, 1200),
+            (192, 2560, 1600),
+        ] {
+            assert_eq!(
+                unsafe {
+                    windows_win32_outer_size_for_client_at_dpi(1280, 800, WS_POPUP, 0, false, dpi)
+                },
+                (width, height)
+            );
+            assert_eq!(
+                windows_logical_dimension_to_pixels(1100, dpi),
+                1100 * dpi as i32 / 96
+            );
+        }
+        assert_eq!(windows_logical_dimension_to_pixels(i32::MAX, 192), i32::MAX);
+    }
+
+    #[test]
+    fn hidden_native_windows_are_per_monitor_v2_without_a_process_manifest() {
+        let _lock = windows_win32_view_input_route_test_lock();
+        std::thread::spawn(|| unsafe {
+            use windows_sys::Win32::UI::HiDpi::GetWindowDpiAwarenessContext;
+            let original = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+            let windows =
+                create_owned_windows_for_specs(&[WindowSpec::new("DPI creation regression")
+                    .size(320, 200)
+                    .visible(false)])
+                .unwrap();
+            assert_ne!(
+                AreDpiAwarenessContextsEqual(
+                    GetWindowDpiAwarenessContext(windows[0].main()),
+                    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+                ),
+                0
+            );
+            assert_ne!(
+                AreDpiAwarenessContextsEqual(
+                    GetThreadDpiAwarenessContext(),
+                    DPI_AWARENESS_CONTEXT_UNAWARE
+                ),
+                0
+            );
+            drop(windows);
+            SetThreadDpiAwarenessContext(original);
+        })
+        .join()
+        .unwrap();
+    }
+}
+
 fn windows_palette_for_draw_plan(draw_plan: Option<&NativeDrawPlan>) -> WindowsGdiPalette {
     match resolved_windows_theme_mode(
         draw_plan

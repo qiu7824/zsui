@@ -72,22 +72,36 @@ fn integrated_caption_metrics(
         )
     } >= 0
         && buttons.right > buttons.left;
-    let width = if available {
-        buttons.right - buttons.left
+    let mut window: RECT = unsafe { zeroed() };
+    let mut origin = POINT { x: 0, y: 0 };
+    let mapped = available
+        && unsafe {
+            GetWindowRect(hwnd, &mut window) != 0
+                && windows_sys::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut origin) != 0
+        };
+    let buttons = if mapped {
+        // DWMWA_CAPTION_BUTTON_BOUNDS is window-relative, not client-relative.
+        let left = (buttons.left + window.left - origin.x).clamp(0, client.right.max(0));
+        let top = (buttons.top + window.top - origin.y).clamp(0, height);
+        let right = (buttons.right + window.left - origin.x).clamp(left, client.right.max(left));
+        let bottom = (buttons.bottom + window.top - origin.y).clamp(top, height);
+        crate::Rect {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+        }
     } else {
-        (138.0 * dpi as f32 / 96.0).round() as i32
-    };
-    crate::CaptionMetrics {
-        buttons: crate::Rect {
+        let width = windows_logical_dimension_to_pixels(138, dpi).min(client.right.max(0));
+        crate::Rect {
             x: (client.right - width).max(0),
             y: 0,
-            width: width.min(client.right).max(0),
-            height: if available {
-                (buttons.bottom - buttons.top).max(1).min(height)
-            } else {
-                height
-            },
-        },
+            width,
+            height,
+        }
+    };
+    crate::CaptionMetrics {
+        buttons,
         dpi,
         backdrop_active,
     }
@@ -150,6 +164,15 @@ unsafe fn paint_integrated_caption(hwnd: HWND, paint: &mut WindowsBufferedPaint)
     let Some(metrics) = services.caption_metrics.get() else {
         return;
     };
+    if services.caption_composited.get() {
+        let b = metrics.buttons;
+        paint.prepare_caption_alpha(RECT {
+            left: b.x,
+            top: b.y,
+            right: b.x + b.width,
+            bottom: b.y + b.height,
+        });
+    }
     if metrics.backdrop_active {
         let Some(title) = services.integration.borrow().title_bar else {
             return;

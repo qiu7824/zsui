@@ -78,7 +78,10 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             let minmax = lparam as *mut MINMAXINFO;
             if !state.is_null() && !minmax.is_null() {
                 if let Some(min_size) = (*state).params.min_size {
-                    let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+                    let mut style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+                    if (*state).params.custom_title_bar {
+                        style &= !WS_CAPTION;
+                    }
                     let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
                     let (width, height) = windows_win32_outer_size_for_client_at_dpi(
                         min_size.width,
@@ -231,6 +234,8 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
                     SWP_NOACTIVATE | SWP_NOZORDER,
                 );
             }
+            #[cfg(feature = "window-chrome")]
+            update_integrated_caption(hwnd);
             let shell_handled = refresh_windows_win32_window_shell_surface(hwnd).is_some();
             let live_view_handled = refresh_windows_win32_window_live_view_surface(hwnd);
             if shell_handled || live_view_handled {
@@ -268,6 +273,12 @@ pub unsafe extern "system" fn zsui_win32_default_window_proc(
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
+        }
+        #[cfg(feature = "window-chrome")]
+        windows_sys::Win32::UI::WindowsAndMessaging::WM_ACTIVATE => {
+            update_integrated_caption(hwnd);
+            InvalidateRect(hwnd, null(), 0);
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         #[cfg(feature = "window-chrome")]
         windows_sys::Win32::UI::WindowsAndMessaging::WM_DWMCOMPOSITIONCHANGED => {

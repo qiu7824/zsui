@@ -185,17 +185,21 @@ impl WindowsWin32MainWindowHost {
         module: HINSTANCE,
         options: &NativeWindowOptions,
     ) -> HWND {
+        let Ok(_dpi) = WindowsDpiScope::enter() else {
+            return null_mut();
+        };
         let style_plan = windows_win32_main_window_style_plan(role, options);
-        let (outer_width, outer_height) = windows_win32_outer_size_for_client(
-            width,
-            height,
-            style_plan.style,
-            style_plan.ex_style,
-        );
+        let client_style = if options.custom_title_bar && options.decorations {
+            style_plan.style & !WS_CAPTION
+        } else {
+            style_plan.style
+        };
+        let (outer_width, outer_height) =
+            windows_win32_outer_size_for_client(width, height, client_style, style_plan.ex_style);
         let class_name = wide_null(role.class_name(self.class_names));
         let create_params = WindowsWindowCreateParams::new(role, options.min_size)
             .with_custom_title_bar(options.custom_title_bar && options.decorations);
-        CreateWindowExW(
+        let hwnd = CreateWindowExW(
             style_plan.ex_style,
             class_name.as_ptr(),
             title.as_ptr(),
@@ -208,7 +212,32 @@ impl WindowsWin32MainWindowHost {
             null_mut(),
             module,
             &create_params as *const WindowsWindowCreateParams as _,
-        )
+        );
+        if !hwnd.is_null() {
+            // Windows chooses the initial monitor. Its scale need not equal
+            // the primary monitor used for the provisional creation size.
+            let dpi = GetDpiForWindow(hwnd).max(96);
+            if dpi != GetDpiForSystem().max(96) {
+                let (w, h) = windows_win32_outer_size_for_client_at_dpi(
+                    width,
+                    height,
+                    client_style,
+                    style_plan.ex_style,
+                    false,
+                    dpi,
+                );
+                SetWindowPos(
+                    hwnd,
+                    null_mut(),
+                    0,
+                    0,
+                    w,
+                    h,
+                    SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOMOVE,
+                );
+            }
+        }
+        hwnd
     }
 }
 
@@ -236,8 +265,8 @@ unsafe fn windows_win32_outer_size_for_client_at_dpi(
     has_menu: bool,
     dpi: u32,
 ) -> (i32, i32) {
-    let width = width.max(1);
-    let height = height.max(1);
+    let width = windows_logical_dimension_to_pixels(width, dpi);
+    let height = windows_logical_dimension_to_pixels(height, dpi);
     let mut rect = RECT {
         left: 0,
         top: 0,

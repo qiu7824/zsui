@@ -54,6 +54,12 @@ pub struct IntegratedTitleBar {
 }
 
 impl IntegratedTitleBar {
+    /// Whether this build's native host can supply integrated system captions.
+    /// Applications may retain the ordinary native title bar on other hosts.
+    pub const fn is_supported() -> bool {
+        cfg!(all(windows, feature = "windows-win32"))
+    }
+
     /// Creates a title bar with a finite height between 24 and 256 DP.
     pub fn new(height: crate::Dp) -> crate::ZsuiResult<Self> {
         if !height.0.is_finite() || !(24.0..=256.0).contains(&height.0) {

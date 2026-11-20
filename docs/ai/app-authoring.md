@@ -143,6 +143,31 @@ reusable gap, with the existing feature and compatibility gates.
 
 ## Text, spacing and retained scrolling
 
+### Native window and release integration
+
+The Win32 host establishes Per-Monitor V2 awareness on its owning UI thread
+before creating windows and restores the caller's thread context afterwards.
+Window sizes and minimum sizes are logical units. Applications must not apply
+an additional DPI multiplier or rasterize a 96-DPI window and scale its bitmap.
+Windows executables should also embed a PerMonitorV2 application manifest so
+startup dialogs and other process-owned windows share the same default.
+
+Use the ordinary system title bar unless integrated application content is
+required. For an integrated header, enable `window-chrome`, check
+`IntegratedTitleBar::is_supported()`, and use `integrated_title_bar`; keep the
+ordinary native title bar on unsupported hosts. Reserve the geometry reported
+by `NativeWindowEvent::CaptionChanged`. Do not recreate minimize, maximize and
+close as Canvas icons when system caption buttons are required. See
+[native window integration](../native-window-integration.md#integrated-title-bars).
+
+For vendored dependencies, record the upstream commit and retained local
+extensions. Updating the framework repository alone does not update the
+application's vendored source or an installed executable. Verify the resolved
+dependency, the release executable's embedded manifest, and the installed
+file hashes, in addition to source and unit tests. Desktop installers use an
+explicit runtime-file allowlist; developer tools, test data and optional
+command-line programs are separate deliverables unless needed at runtime.
+
 Use `.text_wrap(TextWrap::Word)` on a label for width-aware wrapping. The same
 modifier configures a multiline text editor; single-line inputs remain single
 line. A wrapping label beside an action needs `.flex(1.0)` to receive the row's
@@ -197,6 +222,9 @@ Reject the implementation before visual polish if any answer is “yes”:
 - Is one action duplicated in multiple regions?
 - Was a demo window size, placeholder or sample record copied?
 - Is `full` enabled for a small application?
+- Does the application resolve an older framework copy than its recorded revision?
+- Are native caption buttons reconstructed on Canvas despite an integrated-title requirement?
+- Is the packaged Windows executable missing its DPI manifest or release-file verification?
 - Is visible framework-owned English mixed into localized application copy?
 - Do background or streaming results use a zero-size Video, animation, timer
   widget or fixed-rate polling loop instead of `InvalidationHandle`?

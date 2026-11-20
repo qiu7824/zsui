@@ -256,6 +256,7 @@ pub fn create_owned_windows_for_specs_with_routes(
     input_routes: &[Option<WindowsWin32ViewInputRoute>],
     shell_routes: &[Option<WindowsWin32ShellInputRoute>],
 ) -> ZsuiResult<Vec<WindowsWin32OwnedMainWindowHandles>> {
+    let _dpi = WindowsDpiScope::enter()?;
     ACTIVE_MAIN_WINDOW_COUNT.store(0, Ordering::SeqCst);
     clear_windows_win32_window_draw_plans();
     clear_windows_win32_window_view_input_routes();
@@ -605,6 +606,7 @@ pub fn run_windows_win32_native_window_event_loop_with_routes_and_status_items(
     shell_routes: &[Option<WindowsWin32ShellInputRoute>],
     status_items: &[TraySpec],
 ) -> ZsuiResult<()> {
+    let _dpi = WindowsDpiScope::enter()?;
     if specs.is_empty() {
         return Ok(());
     }

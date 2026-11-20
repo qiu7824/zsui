@@ -27,6 +27,7 @@ impl DesktopRuntimeBackend for Backend {
     }
 
     fn run_event_loop(self, request: DesktopRuntimeRequest) -> ZsuiResult<()> {
+        let _dpi = crate::windows_win32_host::WindowsDpiScope::enter()?;
         let _paint_session = crate::windows_gdi_renderer::WindowsBufferedPaintSession::new();
         #[cfg(feature = "windows-font-sharing")]
         let _font_sharing =
@@ -54,6 +55,7 @@ impl DesktopRuntimeBackend for Backend {
         self,
         request: DesktopSmokeRequest,
     ) -> ZsuiResult<NativeWindowSmokeRunReport> {
+        let _dpi = crate::windows_win32_host::WindowsDpiScope::enter()?;
         let _paint_session = crate::windows_gdi_renderer::WindowsBufferedPaintSession::new();
         #[cfg(feature = "windows-font-sharing")]
         let _font_sharing =

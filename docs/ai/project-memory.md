@@ -329,6 +329,13 @@ history remain authoritative for implementation status.
   `window_drag_region()` (inside a drag-region Canvas only its hover regions are
   interactive) and caption buttons raise `ZsWindowCommand`s. Hosts without
   support keep their native title bar.
+- Win32 window creation and event loops own a scoped Per-Monitor V2 thread
+  context even without a process manifest; logical window/minimum sizes are
+  scaled once. Release applications also embed a DPI manifest. System caption
+  requirements use `integrated_title_bar`, with DWM pixels reserved for solid
+  and Mica backdrops. Vendored applications record their actual upstream
+  revision and local extensions; source checks do not substitute for verifying
+  the packaged manifest, runtime-file allowlist and installed file hashes.
 - Updates can move focus with `AppCx::focus`, applied after layout and before
   queued text edit commands; focus outlines keep following the keyboard
   focus-visible rule.

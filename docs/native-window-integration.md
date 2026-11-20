@@ -80,6 +80,15 @@ including destruction that occurs inside a filter callback.
 
 ## Integrated title bars
 
+The Win32 host enters a scoped Per-Monitor V2 thread context before native
+window creation and for its event loop, including executables without a manifest.
+It restores the calling thread's prior context when it returns. Initial and
+minimum client sizes are logical units and are converted once at the window's
+DPI. `WM_DPICHANGED` applies the suggested physical rectangle and refreshes
+retained layout, text and caption geometry. Executables should additionally
+declare `PerMonitorV2` in their application manifest for process-wide startup
+and auxiliary-window defaults.
+
 `WindowBuilder::integrated_title_bar(height, backdrop)` uses the native resize
 frame and system caption buttons. `WindowBackdrop::Mica` requests the system
 backdrop and falls back to a solid themed surface when unavailable. Caption hit
@@ -92,6 +101,12 @@ with `window_drag_region()`. Handle `NativeWindowEvent::CaptionChanged` and rese
 follow creation, size and scale changes. Integrated captions require decorated,
 opaque windows; the existing application-drawn `custom_title_bar` path remains
 available.
+
+`IntegratedTitleBar::is_supported()` reports whether the selected native host
+implements this policy. A portable application can retain its ordinary native
+title bar on unsupported hosts. The Win32 buffered painter reserves transparent
+DWM button pixels for both solid and Mica captions; application content remains
+opaque outside the explicitly composited regions.
 
 ## Transparent and desktop surfaces
 

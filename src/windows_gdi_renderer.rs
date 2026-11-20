@@ -366,6 +366,18 @@ impl WindowsBufferedPaint {
     }
 
     #[cfg(all(feature = "windows-win32", feature = "window-chrome"))]
+    pub(crate) unsafe fn prepare_caption_alpha(&mut self, buttons: RECT) {
+        // GDI drawing does not preserve alpha. Keep the application opaque,
+        // but let DWM own the actual caption-button pixels for every backdrop.
+        windows_sys::Win32::UI::Controls::BufferedPaintSetAlpha(
+            self.buffer as isize,
+            std::ptr::null(),
+            255,
+        );
+        windows_sys::Win32::UI::Controls::BufferedPaintClear(self.buffer as isize, &buttons);
+    }
+
+    #[cfg(all(feature = "windows-win32", feature = "window-chrome"))]
     pub(crate) unsafe fn clear_background_alpha(&mut self, rect: RECT, background: Color) {
         let mut bits = std::ptr::null_mut();
         let mut stride = 0;
@@ -375,11 +387,6 @@ impl WindowsBufferedPaint {
         {
             return;
         }
-        windows_sys::Win32::UI::Controls::BufferedPaintSetAlpha(
-            self.buffer as isize,
-            std::ptr::null(),
-            255,
-        );
         let left = rect.left.max(self.rect.left);
         let top = rect.top.max(self.rect.top);
         let right = rect.right.min(self.rect.right);
