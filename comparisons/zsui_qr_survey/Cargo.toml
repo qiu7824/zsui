@@ -1,0 +1,24 @@
+[package]
+name = "zsui-qr-survey"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+image = { version = "0.25", default-features = false }
+qrcode = { version = "0.14.1", default-features = false, features = ["image"] }
+serde_json = "1"
+zsui = { path = "../..", default-features = false, features = [
+    "window",
+    "label",
+    "textbox",
+    "image-preview",
+    "accessibility",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
