@@ -31,11 +31,10 @@
     },
     {
       "id": "app-authoring",
-      "purpose": "Product UI authoring with explicit intent and minimum component composition",
+      "purpose": "Design-led native authoring with optional platform-controls composition",
       "required": [
         "docs/ai/app-authoring.md",
-        "src/stable.rs",
-        "examples/compact_service_panel.rs"
+        "src/stable.rs"
       ],
       "optional": [
         "README.md",
@@ -43,15 +42,41 @@
         "src/platform/experience.rs",
         "docs/appearance-and-runtime.md",
         "examples/appearance_styles.rs",
+        "examples/compact_service_panel.rs",
         "src/stable_typed.rs",
         "src/stable_design.rs",
         "examples/image_inspector.rs",
         "docs/ai/authoring-acceptance.md",
-        "tests/authoring_contracts.rs"
+        "tests/authoring_contracts.rs",
+        "docs/ai/design-capabilities.md"
       ],
       "verify": [
         "cargo check --example compact_service_panel --no-default-features --features window,button,label,toggle",
         "cargo test --locked --no-default-features --features ui-document-runtime,button,label,textbox,canvas,virtual-list --test authoring_contracts",
+        "cargo test --no-default-features --quiet"
+      ]
+    },
+    {
+      "id": "html-to-rust",
+      "purpose": "HTML design reconstruction as native Rust without an HTML/CSS runtime",
+      "required": [
+        "docs/ai/html-to-rust.md",
+        "docs/ai/design-capabilities.md"
+      ],
+      "optional": [
+        "docs/ai/app-authoring.md",
+        "src/stable.rs",
+        "src/stable_controls.rs",
+        "src/appearance.rs",
+        "src/canvas.rs",
+        "src/render_protocol.rs",
+        "docs/appearance-and-runtime.md",
+        "examples/appearance_offscreen_proof.rs"
+      ],
+      "verify": [
+        ".\\scripts\\ai-context.ps1 -Validate",
+        ".\\scripts\\check-native-boundary.ps1 -Locked",
+        "git diff --check",
         "cargo test --no-default-features --quiet"
       ]
     },

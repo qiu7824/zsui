@@ -48,7 +48,8 @@ and is not part of normal task context.
 | Pack | Use it for |
 | --- | --- |
 | `quickstart` | Stable public entry points and one-line windows |
-| `app-authoring` | Build a product UI from an explicit brief with the smallest component tree |
+| `app-authoring` | Choose a design-led or platform-controls route from the product brief |
+| `html-to-rust` | Reconstruct an HTML design as native Rust using capability mapping and visual acceptance |
 | `features` | Cargo features, optional dependencies, compile trimming |
 | `ui-document` | Versioned UI documents, typed bindings, validation, handoff and feature-pruned release compilation |
 | `ui-viewer` | Prebuilt native UI document Viewer, stable IDs and source reload |
@@ -70,8 +71,12 @@ and is not part of normal task context.
 Do not load `completion-audit` just to implement a control. Do not load
 platform backends for a pure layout or engine task.
 
-Application-building tasks select `app-authoring`, not a framework component
-pack. Start from `zsui::prelude` / `zsui::stable` and the minimum View tree.
+Application-building tasks select `app-authoring`; HTML design conversions
+select `html-to-rust`. Begin with the brief's visual intent and functional scope,
+not a component catalog or sample window. Native execution does not require a
+platform-styled appearance. Platform-controls composition is opt-in when the
+brief requests system conventions or standard controls. Use verified public
+Rust APIs; the capability map distinguishes stable and compatibility surfaces.
 Select `navigation-shell` or `document-shell` only when the brief
 explicitly requires that composition's defining regions. Words such as
 “manager”, “console”, “service”, “task”, “status” and “log” do not select a
@@ -90,6 +95,9 @@ absent from the product brief. The full decision contract is
 - Keep functionality faithful to the brief while allowing visual customization
   through shared themes, typography, state styles and typed icon resources.
   Platform appearance is a default preset, not an exclusive application design.
+- HTML/CSS may be design-time input only for `html-to-rust` work. Deliver Rust
+  layout, drawing and typed behavior without a shipping HTML/CSS runtime or
+  WebView. See `docs/ai/html-to-rust.md`; do not load its details for other tasks.
 - Do not place private icon-font code points or local palettes in components.
 - Preserve buffered no-flicker Windows painting and background-erase
   suppression when changing self-drawn surfaces.
@@ -127,8 +135,14 @@ history.
 
 ## Verification Rule
 
-Run the selected pack's focused checks first. Run the full gate only for shared
-protocols, public feature changes, renderer/host changes or release work:
+Documentation-only authoring/routing edits require context-manifest validation,
+local-link checks and `git diff --check`. The compilation and runtime commands
+below apply to code changes; UI control additionally requires explicit user
+authorization. Offscreen rendering is distinct from native interaction proof.
+
+For code changes, run the selected pack's focused checks first. Run the full gate
+only for shared protocols, public feature changes, renderer/host changes or
+release work:
 
 ```powershell
 cargo fmt --all -- --check

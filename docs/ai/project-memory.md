@@ -18,12 +18,26 @@ history remain authoritative for implementation status.
 
 - Preserve one shared Rust application shape across Win32, AppKit and Linux:
   `native_window(...).stateful_view(...).run()`.
-- AI-authored product UI starts from `zsui::stable` and the smallest component
-  tree that satisfies explicit regions, actions and data. Composite navigation
+- AI-authored product UI starts from the brief's visual intent and functional
+  scope. Design-led native drawing is the default authoring route;
+  platform-controls composition is opt-in for system-style/standard-control
+  requirements. "Native" alone does not choose a system skin. Existing controls
+  and themes remain reusable choices, not mandatory design templates. Use the
+  stable API where it covers the required capability; explicitly distinguish
+  compatibility drawing APIs until a stable facade exists. Composite navigation
   and document shells are opt-in workflow contracts, never templates
   inferred from words such as manager, console, service, task, status or log.
   Examples prove capabilities and must not donate unspecified regions, sample
   data, copy or window dimensions to an application.
+- HTML/CSS conversion uses the source only as a design reference. Extract layout
+  constraints, computed appearance, assets and interaction states, then generate
+  native Rust layout, drawing and typed behavior. The shipped program has no
+  HTML/CSS interpreter, DOM rendering engine, JavaScript UI runtime or WebView.
+  Design extraction and visual comparison are development tools. The conversion
+  contract and capability map live in `docs/ai/html-to-rust.md` and
+  `docs/ai/design-capabilities.md`; gaps must remain explicit until implemented
+  and verified. Prefer concise agent entry points and optional capabilities to
+  a larger default runtime. UI control requires explicit user authorization.
 - Application code must not expose platform `cfg`, raw handles, Objective-C or
   GTK objects, drawing handles, or native event loops.
 - A concise native-window entry is important, but it is only the bootstrap
@@ -779,8 +793,10 @@ history remain authoritative for implementation status.
   themes, subtree inheritance and instance/state overrides may deliberately choose
   another appearance while preserving the same controls and behavior. Functional
   scope remains bounded by the product brief; visual design is not restricted to
-  the platform preset, and ordinary controls should not be rebuilt on Canvas just
-  to customize their appearance.
+  the platform preset. Reuse controls when they fit the intended structure and
+  appearance; native primitives and custom drawing are equally valid design
+  tools. Preserve input, focus, keyboard and accessibility behavior on either
+  route; do not equate a painted surface with a complete interactive control.
 - Platform-native character includes composition, not only control sizes:
   Windows may use Fluent navigation and card groups, macOS uses a source-list
   sidebar with aligned AppKit-style form stacks, and GTK uses sidebar

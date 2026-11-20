@@ -12,8 +12,9 @@ platform host into a copy of a product application.
 
 1. Read `docs/ai-agent.md` only.
 2. Select one task pack with `scripts/ai-context.ps1 -Pack <id>`.
-   Use `app-authoring` when building a product UI. Component packs are for modifying or verifying that framework component, not
-   templates selected from product keywords.
+   Use `app-authoring` for a product brief and `html-to-rust` for HTML design
+   reconstruction. Component packs are for modifying or verifying that framework
+   component, not templates selected from product keywords.
 3. Read only the pack's required paths and use `rg` inside them.
 4. Load optional paths only when a concrete question remains unanswered.
 5. Use `completion-audit` for framework-wide progress and
@@ -47,11 +48,14 @@ platform host into a copy of a product application.
 ## Common Workflow
 
 1. Classify the task boundary. For application UI authoring, read
-   `docs/ai/app-authoring.md`, extract only the required regions/actions/data
-   and begin with the smallest stable View composition. Do not infer a
-   navigation shell from words such as manager, console, service,
-   task, status, tool or log. Examples demonstrate capabilities and are not
-   product templates.
+   `docs/ai/app-authoring.md` and follow the brief's visual intent and functional
+   scope. Design-led native drawing is the default; platform-controls composition
+   is opt-in for system-style/standard-control requirements. Use the capability
+   map to distinguish stable and compatibility APIs. For HTML design input,
+   follow `docs/ai/html-to-rust.md` and ship Rust code without an HTML/CSS runtime
+   or WebView. Do not infer a navigation shell from product keywords or copy a
+   demo layout. Decorative structure may serve the design without adding a
+   business feature.
 2. Identify the feature surface: app declaration audit, Cargo feature gate,
    window, tray/status menu, menu, hotkey, clipboard, settings, generic
    navigation/card shell layout, document-editor
@@ -73,13 +77,13 @@ platform host into a copy of a product application.
    Built-in visuals must consume the selected desktop component profile and
    semantic `ZsIcon` catalog. Do not add private PUA glyph strings, local
    palettes or duplicate control metrics to component modules.
-   Reuse `ZsDocumentShellSpec` for text-oriented application chrome. Treat
+   Use `ZsDocumentShellSpec` when the brief selects that document composition. Treat
    `examples/zsui_notepad.rs` as a shared self-drawn acceptance application,
    not as the source of reusable editor, file-dialog, accelerator or
    document-lifecycle architecture. The Windows native editor service remains
    optional and must not replace the shared application path.
-   Reuse `ZsCalculatorEngine` and `ZsCalculatorShellSpec` for standard decimal
-   calculator behavior and presentation. Keep scientific/conversion modes and
+   Reuse `ZsCalculatorEngine` for standard decimal behavior; select
+   `ZsCalculatorShellSpec` only when its presentation fits the brief. Keep scientific/conversion modes and
    product-specific commands outside that shell until their contracts exist.
 4. For Android, inspect `mobile_runtime_host_scaffold(platform)` and
    `mobile_runtime_bridge_contract(platform)` before editing Activity
@@ -113,8 +117,10 @@ platform host into a copy of a product application.
    `examples/product_adapter_native_driver.rs`.
 9. Update docs and source guards when a new host surface, smoke log or platform
    proof expectation is added.
-10. Run local Rust checks, then require target OS smoke artifacts before marking
-   a backend runtime complete.
+10. For code changes, run local Rust checks, then require target OS smoke artifacts
+   before marking a backend runtime complete. Documentation-only changes use
+   manifest/link validation and `git diff --check`. Native UI control requires
+   explicit authorization; offscreen checks do not establish interaction proof.
 
 ## Completion Reporting
 

@@ -26,10 +26,15 @@
 - Keep public APIs safe and raw platform handles inside backend modules.
 - Keep optional dependencies and advanced capabilities behind Cargo features.
 - Use shared typed units, theme tokens and semantic icons in built-in UI.
-- Keep requested functionality bounded while allowing deliberate visual design;
-  platform appearance is the default preset, not a mandatory application skin.
-  Prefer application themes, typography and per-control state styles over
-  reimplementing standard controls on Canvas.
+- Let the brief or reference design determine visual structure. Native Rust
+  execution is mandatory; platform-styled component composition is an opt-in
+  authoring route, not the default design template. Reuse control behavior
+  where it fits, and use native drawing for deliberate custom visuals.
+- For HTML design references, select `html-to-rust`: extract design facts,
+  generate Rust layout/paint/state code, and compare native output. The shipped
+  application must not depend on HTML/CSS interpretation, a DOM engine or WebView.
+- Keep agent entry points small and feature-selectable; do not add a second UI
+  runtime, global registry or heavy dependency merely to simplify authoring.
 - Preserve the buffered no-flicker Windows paint path.
 - Do not introduce an unrelated reactive runtime layer.
 - Do not add global mutable widget/control registries.
@@ -37,7 +42,9 @@
 
 ## Verification
 
-- Run the focused checks listed by the selected context pack.
+- Run the focused checks listed by the selected context pack for code changes.
+  Documentation-only authoring changes require context-manifest validation,
+  local-link checks and `git diff --check`; do not rebuild unrelated runtime code.
 - For shared/public/release changes, run formatting, no-default tests, full
   tests and the locked feature matrix.
 - Keep `docs/ai/context-packs.json` valid when files or verification commands
